@@ -117,10 +117,10 @@ export default function TransactionsPage() {
       if (typeFilter) params.type = typeFilter;
       if (categoryFilter) params.category_id = categoryFilter;
       if (confirmedOnly !== "") params.is_confirmed = confirmedOnly;
-      const res = await api.get("/transactions", { params });
+      const res = await api.get("/transactions/recent", { params });
       return res.data as TransactionListResponse;
     },
-    keepPreviousData: true,
+    placeholderData: (previousData) => previousData,
   });
 
   const transactions = useMemo(() => listQuery.data?.items ?? [], [listQuery.data?.items]);

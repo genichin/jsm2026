@@ -79,7 +79,7 @@ export default function AssetsPage() {
       const res = await api.get("/assets", { params });
       return res.data as AssetListResponse;
     },
-    keepPreviousData: true,
+    placeholderData: (previousData) => previousData,
   });
 
   const assets = useMemo(() => listQuery.data?.items ?? [], [listQuery.data?.items]);
