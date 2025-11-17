@@ -91,15 +91,19 @@ alembic upgrade head
 # 초기 관리자 계정 생성 및 데이터베이스 초기화
 ENV=development python scripts/init_db.py
 
-# 개발 서버 실행 (HTTP - 자동 리로드)
-uvicorn app.main:app --reload
+# 개발 서버 실행 (HTTP)
+ENV=development uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 
-# HTTPS 서버 실행 (필요시)
-# 1. SSL 인증서 생성 (자체 서명 - 개발용)
-openssl req -x509 -newkey rsa:4096 -keyout key.pem -out cert.pem -days 365 -nodes
-
-# 2. HTTPS로 서버 실행
-ENV=development uvicorn app.main:app --ssl-keyfile=./key.pem --ssl-certfile=./cert.pem --host 0.0.0.0 --port 8000 --reload
+# 파일 감시 제한 오류 발생 시 해결 방법:
+# 
+# 방법 1: --reload 없이 실행 (권장)
+ENV=development uvicorn app.main:app --host 0.0.0.0 --port 8000
+#
+# 방법 2: inotify 한도 일시적으로 증가 (재부팅 시 초기화됨)
+# echo 524288 > /proc/sys/fs/inotify/max_user_watches
+# 
+# 방법 3: 특정 디렉토리만 감시 (--reload-dir 사용)
+# ENV=development uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload --reload-dir app
 ```
 
 ### Docker로 실행

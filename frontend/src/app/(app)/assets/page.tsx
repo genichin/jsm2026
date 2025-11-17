@@ -5,6 +5,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { DataTable } from "@/components/DataTable";
 import { ColumnDef } from "@tanstack/react-table";
+import { useRouter } from "next/navigation";
 
 // Backend enums
 export type AssetType = "stock" | "crypto" | "bond" | "fund" | "etf" | "cash";
@@ -50,6 +51,7 @@ const assetTypeOptions: { value: AssetType; label: string }[] = [
 
 export default function AssetsPage() {
   const qc = useQueryClient();
+  const router = useRouter();
 
   // Filters & paging
   const [qText, setQText] = useState("");
@@ -192,7 +194,18 @@ export default function AssetsPage() {
   }
 
   const columns: ColumnDef<Asset>[] = [
-    { accessorKey: "name", header: "자산명" },
+    {
+      accessorKey: "name",
+      header: "자산명",
+      cell: ({ row }) => (
+        <button
+          onClick={() => router.push(`/assets/${row.original.id}`)}
+          className="text-blue-600 hover:underline text-left"
+        >
+          {row.original.name}
+        </button>
+      ),
+    },
     {
       accessorKey: "asset_type",
       header: "유형",

@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { ColumnDef } from "@tanstack/react-table";
 import { DataTable } from "@/components/DataTable";
+import { useState } from "react";
 
 type User = {
   id: string;
@@ -14,8 +15,22 @@ type User = {
   created_at: string;
 };
 
+type RegisterRequest = {
+  email: string;
+  username: string;
+  password: string;
+  full_name?: string;
+};
+
 export default function AdminUsersPage() {
   const qc = useQueryClient();
+  const [isCreating, setIsCreating] = useState(false);
+  const [formData, setFormData] = useState<RegisterRequest>({
+    email: "",
+    username: "",
+    password: "",
+    full_name: "",
+  });
 
   const meQuery = useQuery<User>({
     queryKey: ["me"],
@@ -43,6 +58,41 @@ export default function AdminUsersPage() {
     mutationFn: async (user: User) => (await api.delete(`/auth/users/${user.id}`)).data,
     onSuccess: () => qc.invalidateQueries({ queryKey: ["admin-users"] }),
   });
+
+  const createMut = useMutation({
+    mutationFn: async (data: RegisterRequest) => (await api.post("/auth/register", data)).data,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["admin-users"] });
+      setIsCreating(false);
+      resetForm();
+      alert("사용자가 생성되었습니다.");
+    },
+    onError: (error: any) => {
+      alert(error.response?.data?.detail || "사용자 생성에 실패했습니다.");
+    },
+  });
+
+  const resetForm = () => {
+    setFormData({
+      email: "",
+      username: "",
+      password: "",
+      full_name: "",
+    });
+  };
+
+  const handleCreate = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!formData.email || !formData.username || !formData.password) {
+      alert("이메일, 사용자명, 비밀번호는 필수입니다.");
+      return;
+    }
+    if (formData.password.length < 8) {
+      alert("비밀번호는 최소 8자 이상이어야 합니다.");
+      return;
+    }
+    createMut.mutate(formData);
+  };
 
   const me = meQuery.data;
   const rows: User[] = listQuery.data ?? [];
@@ -117,7 +167,97 @@ export default function AdminUsersPage() {
 
   return (
     <div className="space-y-4">
-      <p className="text-sm text-slate-600">관리자만 접근 가능한 사용자 목록/권한 관리 화면입니다.</p>
+      <div className="flex justify-between items-center">
+        <p className="text-sm text-slate-600">관리자만 접근 가능한 사용자 목록/권한 관리 화면입니다.</p>
+        <button
+          onClick={() => setIsCreating(true)}
+          className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+        >
+          사용자 추가
+        </button>
+      </div>
+
+      {/* 사용자 생성 폼 */}
+      {isCreating && (
+        <div className="p-4 border rounded-lg bg-gray-50">
+          <h2 className="text-lg font-semibold mb-4">새 사용자 추가</h2>
+          <form onSubmit={handleCreate} className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label htmlFor="email" className="block text-sm font-medium mb-1">
+                  이메일 *
+                </label>
+                <input
+                  id="email"
+                  type="email"
+                  value={formData.email}
+                  onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                  className="w-full px-3 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  required
+                />
+              </div>
+              <div>
+                <label htmlFor="username" className="block text-sm font-medium mb-1">
+                  사용자명 *
+                </label>
+                <input
+                  id="username"
+                  type="text"
+                  value={formData.username}
+                  onChange={(e) => setFormData({ ...formData, username: e.target.value })}
+                  className="w-full px-3 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  required
+                />
+              </div>
+              <div>
+                <label htmlFor="password" className="block text-sm font-medium mb-1">
+                  비밀번호 * (최소 8자)
+                </label>
+                <input
+                  id="password"
+                  type="password"
+                  value={formData.password}
+                  onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                  className="w-full px-3 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  minLength={8}
+                  required
+                />
+              </div>
+              <div>
+                <label htmlFor="full_name" className="block text-sm font-medium mb-1">
+                  이름 (선택)
+                </label>
+                <input
+                  id="full_name"
+                  type="text"
+                  value={formData.full_name}
+                  onChange={(e) => setFormData({ ...formData, full_name: e.target.value })}
+                  className="w-full px-3 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <button
+                type="submit"
+                disabled={createMut.isPending}
+                className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
+              >
+                {createMut.isPending ? "생성 중..." : "생성"}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsCreating(false);
+                  resetForm();
+                }}
+                className="px-4 py-2 border rounded hover:bg-gray-100"
+              >
+                취소
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
 
       {meQuery.isLoading ? (
         <div>권한 확인 중...</div>
