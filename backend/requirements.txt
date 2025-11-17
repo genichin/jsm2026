@@ -1,0 +1,37 @@
+# FastAPI and ASGI server
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+pydantic==2.10.5
+pydantic-settings==2.7.0
+
+# Database
+sqlalchemy==2.0.36
+alembic==1.14.0
+psycopg2-binary==2.9.10
+
+# Redis
+redis==5.0.1
+
+# Authentication & Security
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+python-multipart==0.0.6
+
+# Utilities
+python-dotenv==1.0.0
+email-validator==2.1.0
+pandas==2.2.3
+openpyxl==3.1.5
+xlrd==2.0.1
+msoffcrypto-tool==5.4.1
+
+# Testing
+pytest==7.4.3
+pytest-asyncio==0.21.1
+httpx==0.25.2
+freezegun==1.5.5
+
+# Development
+black==23.11.0
+flake8==6.1.0
+mypy==1.7.1

@@ -1,0 +1,4 @@
+transaction_date,type,quantity,price,fee,tax,description,memo
+2025-11-01 10:00:00,deposit,100000,1.0,0,0,월급 입금,
+2025-11-02 14:30:00,withdraw,-50000,1.0,0,0,ATM 출금,생활비
+2025-11-03 09:15:00,card_payment,-25000,1.0,0,0,카드결제,식비

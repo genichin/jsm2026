@@ -1,0 +1,90 @@
+### OS
+.DS_Store
+Thumbs.db
+
+### Editors/IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*.orig
+
+### Python
+__pycache__/
+*.py[cod]
+*.so
+.Python
+.venv/
+venv/
+env/
+pip-wheel-metadata/
+*.egg-info/
+.eggs/
+dist/
+build/
+wheels/
+*.egg
+*.manifest
+*.spec
+
+### Python tooling caches
+.pytest_cache/
+.coverage
+.coverage.*
+.cache/
+htmlcov/
+.mypy_cache/
+.pyre/
+.pytype/
+.tox/
+.hypothesis/
+.ruff_cache/
+
+### Environment files (keep examples)
+.env
+.env.*
+!.env.example
+
+### Logs
+*.log
+logs/
+*.pid
+
+### Local databases / artifacts
+*.sqlite
+*.sqlite3
+*.db
+
+### Redis dump files
+dump.rdb
+appendonly.aof
+
+### Jupyter
+.ipynb_checkpoints/
+
+### Alembic (keep migrations tracked, ignore bytecode)
+backend/alembic/**/__pycache__/
+
+### Backend virtualenv
+backend/.venv/
+
+### Frontend (Node)
+frontend/node_modules/
+frontend/.next/
+frontend/.nuxt/
+frontend/dist/
+frontend/build/
+frontend/.turbo/
+frontend/.cache/
+
+### Test/coverage reports
+coverage.xml
+test-results/
+junit.xml
+
+### Docker local overrides
+docker-compose.override.yml
+
+### Misc
+*.tmp
+*.bak
