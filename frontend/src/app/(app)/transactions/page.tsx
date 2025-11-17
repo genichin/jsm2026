@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { DataTable } from "@/components/DataTable";
+import { Modal } from "@/components/Modal";
 import { ColumnDef } from "@tanstack/react-table";
 
 // Backend enums
@@ -59,7 +60,7 @@ type TransactionListResponse = {
   pages: number;
 };
 
-type AssetsListResponse = { items: { id: string; name: string; asset_type: string }[] };
+type AssetsListResponse = { items: { id: string; name: string; asset_type: string; currency?: string; account_id?: string }[] };
 type AccountsListResponse = { total: number; accounts: { id: string; name: string }[] };
 type CategoriesTreeResponse = { id: string; name: string; flow_type: string }[];
 
@@ -90,6 +91,7 @@ export default function TransactionsPage() {
   const [confirmedOnly, setConfirmedOnly] = useState<boolean | "">(true);
   const [page, setPage] = useState(1);
   const [size, setSize] = useState(20);
+  const [isModalOpen, setIsModalOpen] = useState(false);
 
   // Assets, Accounts, Categories for filters/create
   const assetsQuery = useQuery<AssetsListResponse>({
@@ -125,6 +127,40 @@ export default function TransactionsPage() {
 
   const transactions = useMemo(() => listQuery.data?.items ?? [], [listQuery.data?.items]);
 
+  // Inline create/edit state
+  const [editing, setEditing] = useState<Partial<Transaction> | null>(null);
+  const [selectedType, setSelectedType] = useState<TransactionType | "">("");
+  const [selectedAssetId, setSelectedAssetId] = useState<string>("");
+
+  // 선택한 자산의 계좌에 속한 현금 자산 필터링
+  const cashAssetsInSameAccount = useMemo(() => {
+    if (!selectedAssetId || !assetsQuery.data?.items) return [];
+    
+    const selectedAsset = assetsQuery.data.items.find(a => a.id === selectedAssetId);
+    if (!selectedAsset) return [];
+    
+    // 선택한 자산과 같은 계좌의 현금 자산만 필터링
+    return assetsQuery.data.items.filter(a => 
+      a.asset_type === 'cash' &&
+      a.account_id === selectedAsset.account_id
+    );
+  }, [selectedAssetId, assetsQuery.data?.items]);
+
+  // 매수/매도 시 동일 통화의 현금 자산 필터링
+  const cashAssetsForBuySell = useMemo(() => {
+    if (!selectedAssetId || !assetsQuery.data?.items) return [];
+    
+    const selectedAsset = assetsQuery.data.items.find(a => a.id === selectedAssetId);
+    if (!selectedAsset) return [];
+    
+    // 선택한 자산과 같은 통화의 현금 자산만 필터링
+    return assetsQuery.data.items.filter(a => 
+      a.asset_type === 'cash' &&
+      a.currency === selectedAsset.currency &&
+      a.account_id === selectedAsset.account_id
+    );
+  }, [selectedAssetId, assetsQuery.data?.items]);
+
   // Mutations
   const createMut = useMutation({
     mutationFn: async (payload: any) => (await api.post("/transactions", payload)).data as Transaction,
@@ -132,6 +168,7 @@ export default function TransactionsPage() {
       qc.invalidateQueries({ queryKey: ["transactions"] });
       qc.invalidateQueries({ queryKey: ["assets"] });
       setEditing(null);
+      setIsModalOpen(false);
     },
     onError: (err: any) => {
       const msg = err?.response?.data?.detail || "거래 생성 중 오류가 발생했습니다.";
@@ -146,6 +183,7 @@ export default function TransactionsPage() {
       qc.invalidateQueries({ queryKey: ["transactions"] });
       qc.invalidateQueries({ queryKey: ["assets"] });
       setEditing(null);
+      setIsModalOpen(false);
     },
   });
 
@@ -161,36 +199,38 @@ export default function TransactionsPage() {
     },
   });
 
-  // Inline create/edit state
-  const [editing, setEditing] = useState<Partial<Transaction> | null>(null);
-
   function startCreate() {
+    const initialType = (typeFilter || "deposit") as TransactionType;
+    const initialAssetId = assetFilter || assetsQuery.data?.items?.[0]?.id || "";
+    setSelectedType(initialType);
+    setSelectedAssetId(initialAssetId);
     setEditing({
-      asset_id: assetFilter || assetsQuery.data?.items?.[0]?.id || "",
-      type: (typeFilter || "deposit") as TransactionType,
+      asset_id: initialAssetId,
+      type: initialType,
       quantity: 0,
       price: 1,
       fee: 0,
       tax: 0,
-      transaction_date: new Date().toISOString().slice(0, 16),
+      transaction_date: new Date().toISOString().slice(0, 19),
       description: "",
       memo: "",
       is_confirmed: true,
     });
+    setIsModalOpen(true);
   }
 
   function startEdit(row: Transaction) {
-    setEditing({
-      id: row.id,
-      description: row.description || "",
-      memo: row.memo || "",
-      is_confirmed: row.is_confirmed,
-      category_id: row.category_id || "",
-    });
+    setSelectedType(row.type);
+    setSelectedAssetId(row.asset_id);
+    setEditing(row);
+    setIsModalOpen(true);
   }
 
   function cancelEdit() {
     setEditing(null);
+    setSelectedType("");
+    setSelectedAssetId("");
+    setIsModalOpen(false);
   }
 
   async function submitForm(e: React.FormEvent<HTMLFormElement>) {
@@ -227,6 +267,25 @@ export default function TransactionsPage() {
         is_confirmed: fd.get("is_confirmed") === "on",
         category_id: fd.get("category_id")?.toString() || null,
       };
+
+      // 환전인 경우 대상 자산과 금액 추가
+      if (type === "exchange") {
+        const target_asset_id = fd.get("target_asset_id")?.toString();
+        const target_amount = fd.get("target_amount")?.toString();
+        if (!target_asset_id) return alert("환전 대상 자산을 선택하세요.");
+        if (!target_amount || parseFloat(target_amount) <= 0) return alert("환전 대상 금액을 입력하세요.");
+        payload.target_asset_id = target_asset_id;
+        payload.target_amount = parseFloat(target_amount);
+      }
+
+      // 매수/매도인 경우 현금 자산 추가
+      if (type === "buy" || type === "sell") {
+        const cash_asset_id = fd.get("cash_asset_id")?.toString();
+        if (cash_asset_id) {
+          payload.cash_asset_id = cash_asset_id;
+        }
+      }
+
       await createMut.mutateAsync(payload);
     }
   }
@@ -340,15 +399,25 @@ export default function TransactionsPage() {
         <button onClick={startCreate} className="px-3 py-2 rounded bg-emerald-600 text-white">새 거래</button>
       </div>
 
-      {/* Inline Form */}
-      {editing && (
-        <form onSubmit={submitForm} className="border rounded p-3 space-y-2 bg-slate-50">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-            {editing.id ? null : (
+      {/* Modal Form */}
+      <Modal
+        isOpen={isModalOpen}
+        onClose={cancelEdit}
+        title={editing?.id ? "거래 수정" : "새 거래"}
+        size="xl"
+      >
+        <form onSubmit={submitForm} className="space-y-4">
+          <div className="grid grid-cols-2 gap-4">
+            {editing?.id ? null : (
               <>
                 <div>
-                  <label className="block text-xs text-slate-600 mb-1">자산</label>
-                  <select name="asset_id" defaultValue={editing.asset_id || ""} className="w-full border rounded px-2 py-1">
+                  <label className="block text-sm font-medium text-slate-700 mb-1">자산 *</label>
+                  <select 
+                    name="asset_id" 
+                    value={selectedAssetId} 
+                    onChange={(e) => setSelectedAssetId(e.target.value)}
+                    className="w-full border rounded px-3 py-2"
+                  >
                     <option value="">선택하세요</option>
                     {(assetsQuery.data?.items || []).map((a) => (
                       <option key={a.id} value={a.id}>{a.name}</option>
@@ -356,38 +425,76 @@ export default function TransactionsPage() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-xs text-slate-600 mb-1">유형</label>
-                  <select name="type" defaultValue={(editing.type || "deposit") as string} className="w-full border rounded px-2 py-1">
+                  <label className="block text-sm font-medium text-slate-700 mb-1">유형 *</label>
+                  <select 
+                    name="type" 
+                    value={selectedType} 
+                    onChange={(e) => setSelectedType(e.target.value as TransactionType)}
+                    className="w-full border rounded px-3 py-2"
+                  >
                     {txTypeOptions.map((o) => (
                       <option key={o.value} value={o.value}>{o.label}</option>
                     ))}
                   </select>
                 </div>
                 <div>
-                  <label className="block text-xs text-slate-600 mb-1">수량</label>
-                  <input type="number" step="any" name="quantity" defaultValue={editing.quantity ?? 0} className="w-full border rounded px-2 py-1" required />
+                  <label className="block text-sm font-medium text-slate-700 mb-1">수량 *</label>
+                  <input type="number" step="any" name="quantity" defaultValue={editing?.quantity ?? 0} className="w-full border rounded px-3 py-2" required />
                 </div>
                 <div>
-                  <label className="block text-xs text-slate-600 mb-1">가격</label>
-                  <input type="number" step="any" name="price" defaultValue={editing.price ?? 1} className="w-full border rounded px-2 py-1" required />
+                  <label className="block text-sm font-medium text-slate-700 mb-1">가격 *</label>
+                  <input type="number" step="any" name="price" defaultValue={editing?.price ?? 1} className="w-full border rounded px-3 py-2" required />
                 </div>
                 <div>
-                  <label className="block text-xs text-slate-600 mb-1">수수료</label>
-                  <input type="number" step="any" name="fee" defaultValue={editing.fee ?? 0} className="w-full border rounded px-2 py-1" />
+                  <label className="block text-sm font-medium text-slate-700 mb-1">수수료</label>
+                  <input type="number" step="any" name="fee" defaultValue={editing?.fee ?? 0} className="w-full border rounded px-3 py-2" />
                 </div>
                 <div>
-                  <label className="block text-xs text-slate-600 mb-1">세금</label>
-                  <input type="number" step="any" name="tax" defaultValue={editing.tax ?? 0} className="w-full border rounded px-2 py-1" />
+                  <label className="block text-sm font-medium text-slate-700 mb-1">세금</label>
+                  <input type="number" step="any" name="tax" defaultValue={editing?.tax ?? 0} className="w-full border rounded px-3 py-2" />
                 </div>
-                <div>
-                  <label className="block text-xs text-slate-600 mb-1">거래일시</label>
-                  <input type="datetime-local" name="transaction_date" defaultValue={editing.transaction_date?.slice(0, 16) || ""} className="w-full border rounded px-2 py-1" required />
+                <div className="col-span-2">
+                  <label className="block text-sm font-medium text-slate-700 mb-1">거래일시 *</label>
+                  <input type="datetime-local" name="transaction_date" defaultValue={editing?.transaction_date?.slice(0, 19) || ""} className="w-full border rounded px-3 py-2" step="1" required />
                 </div>
+                {(selectedType === "buy" || selectedType === "sell") && (
+                  <div className="col-span-2">
+                    <label className="block text-sm font-medium text-slate-700 mb-1">
+                      현금 자산 {cashAssetsForBuySell.length === 0 ? "" : "(선택사항)"}
+                    </label>
+                    <select name="cash_asset_id" defaultValue="" className="w-full border rounded px-3 py-2">
+                      <option value="">자동 선택</option>
+                      {cashAssetsForBuySell.map((a) => (
+                        <option key={a.id} value={a.id}>{a.name}</option>
+                      ))}
+                    </select>
+                    {cashAssetsForBuySell.length === 0 && (
+                      <p className="text-xs text-amber-600 mt-1">동일 계좌·통화의 현금 자산이 없습니다. 자동으로 생성됩니다.</p>
+                    )}
+                  </div>
+                )}
+                {selectedType === "exchange" && (
+                  <>
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-1">환전 대상 자산 (현금) *</label>
+                      <select name="target_asset_id" defaultValue="" className="w-full border rounded px-3 py-2" required>
+                        <option value="">선택하세요</option>
+                        {cashAssetsInSameAccount.map((a) => (
+                          <option key={a.id} value={a.id}>{a.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-1">환전 대상 금액 *</label>
+                      <input type="number" step="any" name="target_amount" defaultValue={0} className="w-full border rounded px-3 py-2" required />
+                    </div>
+                  </>
+                )}
               </>
             )}
             <div>
-              <label className="block text-xs text-slate-600 mb-1">카테고리</label>
-              <select name="category_id" defaultValue={editing.category_id || ""} className="w-full border rounded px-2 py-1">
+              <label className="block text-sm font-medium text-slate-700 mb-1">카테고리</label>
+              <select name="category_id" defaultValue={editing?.category_id || ""} className="w-full border rounded px-3 py-2">
                 <option value="">없음</option>
                 {(categoriesQuery.data || []).map((c) => (
                   <option key={c.id} value={c.id}>{c.name}</option>
@@ -395,24 +502,24 @@ export default function TransactionsPage() {
               </select>
             </div>
             <div>
-              <label className="block text-xs text-slate-600 mb-1">설명</label>
-              <input name="description" defaultValue={editing.description || ""} className="w-full border rounded px-2 py-1" />
+              <label className="block text-sm font-medium text-slate-700 mb-1">설명</label>
+              <input name="description" defaultValue={editing?.description || ""} className="w-full border rounded px-3 py-2" />
             </div>
-            <div>
-              <label className="block text-xs text-slate-600 mb-1">메모</label>
-              <input name="memo" defaultValue={editing.memo || ""} className="w-full border rounded px-2 py-1" />
+            <div className="col-span-2">
+              <label className="block text-sm font-medium text-slate-700 mb-1">메모</label>
+              <input name="memo" defaultValue={editing?.memo || ""} className="w-full border rounded px-3 py-2" />
             </div>
-            <div className="flex items-center gap-2 pt-5">
-              <input type="checkbox" name="is_confirmed" defaultChecked={editing.is_confirmed ?? true} />
-              <span>확정</span>
+            <div className="col-span-2 flex items-center gap-2">
+              <input type="checkbox" name="is_confirmed" id="is_confirmed" defaultChecked={editing?.is_confirmed ?? true} className="w-4 h-4" />
+              <label htmlFor="is_confirmed" className="text-sm font-medium text-slate-700">거래 확정</label>
             </div>
           </div>
-          <div className="flex gap-2">
-            <button type="submit" className="px-3 py-2 rounded bg-slate-800 text-white">{editing.id ? "수정" : "생성"}</button>
-            <button type="button" onClick={cancelEdit} className="px-3 py-2 rounded bg-slate-200">취소</button>
+          <div className="flex justify-end gap-3 pt-4 border-t">
+            <button type="button" onClick={cancelEdit} className="px-4 py-2 rounded bg-slate-200 hover:bg-slate-300">취소</button>
+            <button type="submit" className="px-4 py-2 rounded bg-emerald-600 text-white hover:bg-emerald-700">{editing?.id ? "수정" : "생성"}</button>
           </div>
         </form>
-      )}
+      </Modal>
 
       {/* Table */}
       {listQuery.isLoading ? (

@@ -809,8 +809,39 @@ async def get_recent_transactions(
         # 페이지 수 계산
         pages = (total + size - 1) // size if total > 0 else 0
         
+        # SQLAlchemy 객체를 dict로 명시적 변환 (asset 관계 포함)
+        items = []
+        for tx in transactions:
+            item = {
+                "id": tx.id,
+                "asset_id": tx.asset_id,
+                "category_id": getattr(tx, "category_id", None),
+                "type": tx.type,
+                "quantity": tx.quantity,
+                "price": tx.price,
+                "fee": tx.fee,
+                "tax": tx.tax,
+                "realized_profit": tx.realized_profit,
+                "transaction_date": tx.transaction_date,
+                "description": tx.description,
+                "memo": tx.memo,
+                "is_confirmed": tx.is_confirmed,
+                "external_id": tx.external_id,
+                "created_at": tx.created_at,
+                "updated_at": tx.updated_at,
+                "asset": {
+                    "id": tx.asset.id,
+                    "name": tx.asset.name,
+                    "asset_type": tx.asset.asset_type,
+                    "symbol": tx.asset.symbol,
+                    "currency": tx.asset.currency,
+                    "is_active": tx.asset.is_active,
+                } if tx.asset else None
+            }
+            items.append(item)
+        
         return TransactionListResponse(
-            items=transactions,
+            items=items,
             total=total,
             page=page,
             size=size,
