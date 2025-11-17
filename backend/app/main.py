@@ -89,8 +89,9 @@ app = FastAPI(
 )
 
 # HTTPS Redirect - HTTP 요청을 HTTPS로 리다이렉트
-if not settings.DEBUG:
-    app.add_middleware(HTTPSRedirectMiddleware)
+# 프로덕션에서 리버스 프록시(Nginx/Caddy)가 SSL 처리하는 경우 비활성화
+# if not settings.DEBUG:
+#     app.add_middleware(HTTPSRedirectMiddleware)
 
 # Trusted Host - 허용된 호스트만 접근 가능
 if settings.ALLOWED_HOSTS:
