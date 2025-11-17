@@ -38,7 +38,7 @@ export default function Sidebar({ onNavigate }: { onNavigate?: () => void } = {}
   
   return (
     <aside className="w-64 md:w-56 shrink-0 border-r bg-white h-full flex flex-col">
-      <div className="p-4 text-xl font-semibold">J's Money</div>
+      <div className="p-4 text-xl font-semibold">J&apos;s Money</div>
       <nav className="px-2 space-y-1 flex-1">{nav.map((n) => (
           <Link
             key={n.href}

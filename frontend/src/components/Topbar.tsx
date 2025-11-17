@@ -38,7 +38,7 @@ export default function Topbar({ onMenuClick }: { onMenuClick?: () => void }) {
               onClick={() => router.push("/dashboard")}
               className="text-sm font-bold text-blue-600 hover:text-blue-700"
             >
-              J's Money
+              J&apos;s Money
             </button>
             <span className="text-slate-400">›</span>
             <span className="text-sm font-medium text-slate-700">{pageTitle}</span>
