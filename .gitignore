@@ -44,6 +44,8 @@ htmlcov/
 .env
 .env.*
 !.env.example
+!.env.development
+!.env.production
 
 ### Logs
 *.log
@@ -88,3 +90,5 @@ docker-compose.override.yml
 ### Misc
 *.tmp
 *.bak
+
+certs/
