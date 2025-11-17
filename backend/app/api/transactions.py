@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status, UploadFile, File, Form
 from sqlalchemy.orm import Session, joinedload
-from sqlalchemy import desc, asc, and_, or_
+from sqlalchemy import desc, asc, and_, or_, func
 import pandas as pd
 import io
 from pathlib import Path
@@ -749,6 +749,79 @@ async def get_portfolio_summary(
         total_unrealized_profit=0,  # 현재가 정보가 있을 때 계산
         asset_summaries=asset_summaries
     )
+
+
+@router.get(
+    "/recent",
+    response_model=TransactionListResponse,
+    summary="최근 거래 목록 조회",
+    description="사용자의 모든 자산에 대한 최근 거래 내역을 페이징하여 조회합니다."
+)
+async def get_recent_transactions(
+    page: int = Query(1, ge=1, description="페이지 번호 (1부터 시작)"),
+    size: int = Query(20, ge=1, le=100, description="페이지당 항목 수"),
+    is_confirmed: Optional[bool] = Query(None, description="확정 상태 필터 (true/false/null)"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    현재 사용자의 모든 자산에 대한 최근 거래 내역을 시간순으로 조회합니다.
+    
+    - **page**: 페이지 번호 (1부터 시작)
+    - **size**: 페이지당 항목 수 (기본 20, 최대 100)
+    - **is_confirmed**: 확정 거래만 필터링 (선택사항)
+    """
+    try:
+        # 사용자 소유 자산 ID 목록 조회
+        user_asset_ids = [asset.id for asset in db.query(Asset).filter(Asset.user_id == current_user.id).all()]
+        
+        if not user_asset_ids:
+            # 자산이 없으면 빈 결과 반환
+            return TransactionListResponse(
+                items=[],
+                total=0,
+                page=page,
+                size=size,
+                pages=0
+            )
+        
+        # 거래 내역 쿼리 (자산 정보와 조인)
+        query = (
+            db.query(AssetTransaction)
+            .options(joinedload(AssetTransaction.asset))
+            .filter(AssetTransaction.asset_id.in_(user_asset_ids))
+        )
+        
+        # is_confirmed 필터 적용
+        if is_confirmed is not None:
+            query = query.filter(AssetTransaction.is_confirmed == is_confirmed)
+        
+        # 최신순 정렬
+        query = query.order_by(desc(AssetTransaction.transaction_date), desc(AssetTransaction.id))
+        
+        # 전체 개수 조회
+        total = query.count()
+        
+        # 페이징 적용
+        offset = (page - 1) * size
+        transactions = query.offset(offset).limit(size).all()
+        
+        # 페이지 수 계산
+        pages = (total + size - 1) // size if total > 0 else 0
+        
+        return TransactionListResponse(
+            items=transactions,
+            total=total,
+            page=page,
+            size=size,
+            pages=pages
+        )
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"거래 내역 조회 중 오류: {str(e)}"
+        )
 
 
 @router.get("/{transaction_id}", response_model=TransactionWithAsset)
