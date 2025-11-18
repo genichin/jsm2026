@@ -131,6 +131,11 @@ export default function TransactionsPage() {
   const [editing, setEditing] = useState<Partial<Transaction> | null>(null);
   const [selectedType, setSelectedType] = useState<TransactionType | "">("");
   const [selectedAssetId, setSelectedAssetId] = useState<string>("");
+  
+  // 환전 관련 상태
+  const [exchangeSourceAmount, setExchangeSourceAmount] = useState<number>(0);
+  const [exchangeTargetAmount, setExchangeTargetAmount] = useState<number>(0);
+  const [exchangeRate, setExchangeRate] = useState<number | null>(null);
 
   // 선택한 자산의 계좌에 속한 현금 자산 필터링
   const cashAssetsInSameAccount = useMemo(() => {
@@ -204,6 +209,9 @@ export default function TransactionsPage() {
     const initialAssetId = assetFilter || assetsQuery.data?.items?.[0]?.id || "";
     setSelectedType(initialType);
     setSelectedAssetId(initialAssetId);
+    setExchangeSourceAmount(0);
+    setExchangeTargetAmount(0);
+    setExchangeRate(null);
     setEditing({
       asset_id: initialAssetId,
       type: initialType,
@@ -230,6 +238,9 @@ export default function TransactionsPage() {
     setEditing(null);
     setSelectedType("");
     setSelectedAssetId("");
+    setExchangeSourceAmount(0);
+    setExchangeTargetAmount(0);
+    setExchangeRate(null);
     setIsModalOpen(false);
   }
 
@@ -276,6 +287,13 @@ export default function TransactionsPage() {
         if (!target_amount || parseFloat(target_amount) <= 0) return alert("환전 대상 금액을 입력하세요.");
         payload.target_asset_id = target_asset_id;
         payload.target_amount = parseFloat(target_amount);
+        
+        // 환율 정보를 transaction_metadata에 추가
+        if (exchangeRate !== null) {
+          payload.transaction_metadata = {
+            exchange_rate: exchangeRate
+          };
+        }
       }
 
       // 매수/매도인 경우 현금 자산 추가
@@ -445,36 +463,44 @@ export default function TransactionsPage() {
                     ))}
                   </select>
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">수량 *</label>
-                  <input 
-                    type="number" 
-                    step="any" 
-                    name="quantity" 
-                    defaultValue={editing?.quantity ?? 0} 
-                    className="w-full border rounded px-3 py-2" 
-                    required 
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">가격 *</label>
-                  <input 
-                    type="number" 
-                    step="any" 
-                    name="price" 
-                    defaultValue={selectedType === "dividend" ? 0 : (editing?.price ?? 1)} 
-                    className="w-full border rounded px-3 py-2" 
-                    required 
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">수수료</label>
-                  <input type="number" step="any" name="fee" defaultValue={editing?.fee ?? 0} className="w-full border rounded px-3 py-2" />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">세금</label>
-                  <input type="number" step="any" name="tax" defaultValue={editing?.tax ?? 0} className="w-full border rounded px-3 py-2" />
-                </div>
+                {selectedType !== "exchange" && (
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">수량 *</label>
+                    <input 
+                      type="number" 
+                      step="any" 
+                      name="quantity" 
+                      defaultValue={editing?.quantity ?? 0} 
+                      className="w-full border rounded px-3 py-2" 
+                      required 
+                    />
+                  </div>
+                )}
+                {selectedType !== "exchange" && (
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">가격 *</label>
+                    <input 
+                      type="number" 
+                      step="any" 
+                      name="price" 
+                      defaultValue={selectedType === "dividend" ? 0 : (editing?.price ?? 1)} 
+                      className="w-full border rounded px-3 py-2" 
+                      required 
+                    />
+                  </div>
+                )}
+                {selectedType !== "exchange" && (
+                  <>
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-1">수수료</label>
+                      <input type="number" step="any" name="fee" defaultValue={editing?.fee ?? 0} className="w-full border rounded px-3 py-2" />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-1">세금</label>
+                      <input type="number" step="any" name="tax" defaultValue={editing?.tax ?? 0} className="w-full border rounded px-3 py-2" />
+                    </div>
+                  </>
+                )}
                 <div className="col-span-2">
                   <label className="block text-sm font-medium text-slate-700 mb-1">거래일시 *</label>
                   <input type="datetime-local" name="transaction_date" defaultValue={editing?.transaction_date?.slice(0, 19) || ""} className="w-full border rounded px-3 py-2" step="1" required />
@@ -497,7 +523,7 @@ export default function TransactionsPage() {
                 )}
                 {selectedType === "exchange" && (
                   <>
-                    <div>
+                    <div className="col-span-2">
                       <label className="block text-sm font-medium text-slate-700 mb-1">환전 대상 자산 (현금) *</label>
                       <select name="target_asset_id" defaultValue="" className="w-full border rounded px-3 py-2" required>
                         <option value="">선택하세요</option>
@@ -507,9 +533,75 @@ export default function TransactionsPage() {
                       </select>
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-slate-700 mb-1">환전 대상 금액 *</label>
-                      <input type="number" step="any" name="target_amount" defaultValue={0} className="w-full border rounded px-3 py-2" required />
+                      <label className="block text-sm font-medium text-slate-700 mb-1">환전 출발 금액 *</label>
+                      <input 
+                        type="number" 
+                        step="any" 
+                        name="quantity" 
+                        value={exchangeSourceAmount || ""} 
+                        onChange={(e) => {
+                          const val = parseFloat(e.target.value) || 0;
+                          setExchangeSourceAmount(val);
+                          if (val > 0 && exchangeTargetAmount > 0) {
+                            const selectedAsset = assetsQuery.data?.items.find(a => a.id === selectedAssetId);
+                            const sourceCurrency = selectedAsset?.currency || "";
+                            // KRW 항상 분자: KRW가 출발이면 KRW/외화, KRW가 대상이면 KRW/외화
+                            const rate = sourceCurrency === "KRW" 
+                              ? val / exchangeTargetAmount 
+                              : exchangeTargetAmount / val;
+                            setExchangeRate(rate);
+                          }
+                        }}
+                        className="w-full border rounded px-3 py-2" 
+                        required 
+                      />
                     </div>
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-1">환전 대상 금액 *</label>
+                      <input 
+                        type="number" 
+                        step="any" 
+                        name="target_amount" 
+                        value={exchangeTargetAmount || ""} 
+                        onChange={(e) => {
+                          const val = parseFloat(e.target.value) || 0;
+                          setExchangeTargetAmount(val);
+                          if (exchangeSourceAmount > 0 && val > 0) {
+                            const selectedAsset = assetsQuery.data?.items.find(a => a.id === selectedAssetId);
+                            const sourceCurrency = selectedAsset?.currency || "";
+                            // KRW 항상 분자: KRW가 출발이면 KRW/외화, KRW가 대상이면 KRW/외화
+                            const rate = sourceCurrency === "KRW" 
+                              ? exchangeSourceAmount / val 
+                              : val / exchangeSourceAmount;
+                            setExchangeRate(rate);
+                          }
+                        }}
+                        className="w-full border rounded px-3 py-2" 
+                        required 
+                      />
+                    </div>
+                    <div className="col-span-2">
+                      <label className="block text-sm font-medium text-slate-700 mb-1">환전 수수료</label>
+                      <input type="number" step="any" name="fee" defaultValue={editing?.fee ?? 0} className="w-full border rounded px-3 py-2" />
+                    </div>
+                    {exchangeRate !== null && exchangeRate > 0 && (
+                      <div className="col-span-2">
+                        <div className="bg-blue-50 border border-blue-200 rounded px-4 py-3">
+                          <p className="text-sm font-medium text-blue-900">
+                            환율: {exchangeRate.toFixed(2)} KRW
+                          </p>
+                          <p className="text-xs text-blue-700 mt-1">
+                            {(() => {
+                              const selectedAsset = assetsQuery.data?.items.find(a => a.id === selectedAssetId);
+                              const sourceCurrency = selectedAsset?.currency || "";
+                              return sourceCurrency === "KRW"
+                                ? `${exchangeSourceAmount.toLocaleString()} KRW → ${exchangeTargetAmount.toLocaleString()}`
+                                : `${exchangeSourceAmount.toLocaleString()} → ${exchangeTargetAmount.toLocaleString()} KRW`;
+                            })()}
+                          </p>
+                        </div>
+                      </div>
+                    )}
                   </>
                 )}
                 {selectedType === "dividend" && (
@@ -530,7 +622,7 @@ export default function TransactionsPage() {
                 )}
               </>
             )}
-            {selectedType !== "dividend" && (
+            {selectedType !== "dividend" && selectedType !== "exchange" && (
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">카테고리</label>
                 <select name="category_id" defaultValue={editing?.category_id || ""} className="w-full border rounded px-3 py-2">
