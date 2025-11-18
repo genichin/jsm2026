@@ -134,6 +134,7 @@ def serialize_transaction(tx: AssetTransaction):
         "memo": tx.memo,
         "is_confirmed": tx.is_confirmed,
         "external_id": tx.external_id,
+        "transaction_metadata": tx.transaction_metadata,
         "created_at": tx.created_at,
         "updated_at": tx.updated_at,
     }
@@ -405,7 +406,8 @@ async def create_transaction(
             description=transaction.description or f"환전 출발 ({source_asset.currency}→{target_asset.currency})",
             memo=transaction.memo,
             is_confirmed=transaction.is_confirmed,
-            external_id=transaction.external_id
+            external_id=transaction.external_id,
+            transaction_metadata=transaction.transaction_metadata
         )
         
         # 도착 거래 생성
@@ -421,7 +423,8 @@ async def create_transaction(
             description=transaction.description or f"환전 유입 ({source_asset.currency}→{target_asset.currency})",
             memo=transaction.memo,
             is_confirmed=transaction.is_confirmed,
-            external_id=transaction.external_id
+            external_id=transaction.external_id,
+            transaction_metadata=transaction.transaction_metadata
         )
         
         db.add(source_tx)
@@ -498,7 +501,8 @@ async def create_transaction(
         related_transaction_id=transaction.related_transaction_id,
         is_confirmed=transaction.is_confirmed,
         external_id=transaction.external_id,
-    category_id=chosen_category_id
+        transaction_metadata=transaction.transaction_metadata,
+        category_id=chosen_category_id
     )
     
     db.add(db_transaction)
@@ -827,6 +831,7 @@ async def get_recent_transactions(
                 "memo": tx.memo,
                 "is_confirmed": tx.is_confirmed,
                 "external_id": tx.external_id,
+                "transaction_metadata": tx.transaction_metadata,
                 "created_at": tx.created_at,
                 "updated_at": tx.updated_at,
                 "asset": {

@@ -1081,6 +1081,7 @@ CREATE TABLE asset_transactions (
     -- 메타데이터
     is_confirmed BOOLEAN DEFAULT TRUE,  -- 미확정 거래 (예: 카드 승인 대기)
     external_id VARCHAR(100),           -- 외부 시스템 거래 ID (API 연동용)
+    transaction_metadata JSONB,         -- 추가 정보 저장 (예: {"exchange_rate": 1400.0})
     
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
@@ -1108,6 +1109,7 @@ CREATE INDEX idx_asset_transactions_confirmed ON asset_transactions(is_confirmed
 - `price`: 거래 단가 (현금은 1)
 - `realized_profit`: 실현 손익 (사용자 설정 방식에 따라 계산)
 - `related_transaction_id`: 복식부기 연결 (교환 거래 시 쌍)
+- `transaction_metadata`: 추가 정보를 담을 수 있는 JSONB 필드 (예: 환율, 외부 시스템 데이터 등)
 
 **거래 유형 설명 (TransactionType Enum)**:
 

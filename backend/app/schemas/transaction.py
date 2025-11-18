@@ -120,6 +120,7 @@ class TransactionBase(BaseModel):
     memo: Optional[str] = Field(None, description="사용자 메모")
     is_confirmed: bool = Field(default=True, description="거래 확정 여부")
     external_id: Optional[str] = Field(None, max_length=100, description="외부 시스템 거래 ID")
+    transaction_metadata: Optional[dict] = Field(None, description="추가 정보 (예: 환율, 외부 시스템 데이터 등)")
     category_id: Optional[str] = Field(None, description="카테고리 ID (사용자 정의 의미 분류)")
 
 
@@ -191,6 +192,7 @@ class TransactionUpdate(BaseModel):
     description: Optional[str] = None
     memo: Optional[str] = None
     is_confirmed: Optional[bool] = None
+    transaction_metadata: Optional[dict] = Field(None, description="추가 정보 (예: 환율, 외부 시스템 데이터 등)")
     category_id: Optional[str] = Field(None, description="카테고리 ID (변경/해제)")
 
 

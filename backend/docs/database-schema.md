@@ -89,6 +89,8 @@ asset_transactions (거래)
 - `quantity < 0`: 자산 감소
 - `quantity = 0`: 마커 (예: 배당 기록용)
 
+추가로 `transaction_metadata` JSONB 필드를 통해 거래별 상세 정보(환율, 외부 ID 등)를 유연하게 저장할 수 있습니다.
+
 ### 4. 실시간 데이터 하이브리드
 - **PostgreSQL**: 모든 거래 이력 (ACID 보장)
 - **Redis**: 실시간 자산 잔고, 현재가 캐시

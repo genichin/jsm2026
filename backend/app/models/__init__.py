@@ -277,11 +277,10 @@ class AssetTransaction(Base):
     # 메타데이터
     is_confirmed = Column(Boolean, default=True, nullable=False)   # 미확정 거래
     external_id = Column(String(100))                 # 외부 시스템 거래 ID
+    transaction_metadata = Column(JSONB)              # 추가 정보 (예: {"exchange_rate": 1400.0})
     
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
-    
-    # Constraints
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)    # Constraints
     __table_args__ = (
         CheckConstraint(
             "type IN ('buy', 'sell', 'deposit', 'withdraw', 'dividend', 'interest', 'fee', "
