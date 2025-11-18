@@ -286,6 +286,14 @@ export default function TransactionsPage() {
         }
       }
 
+      // 배당인 경우 현금 자산 추가 (선택사항)
+      if (type === "dividend") {
+        const cash_asset_id = fd.get("cash_asset_id")?.toString();
+        if (cash_asset_id) {
+          payload.cash_asset_id = cash_asset_id;
+        }
+      }
+
       await createMut.mutateAsync(payload);
     }
   }
@@ -439,11 +447,25 @@ export default function TransactionsPage() {
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">수량 *</label>
-                  <input type="number" step="any" name="quantity" defaultValue={editing?.quantity ?? 0} className="w-full border rounded px-3 py-2" required />
+                  <input 
+                    type="number" 
+                    step="any" 
+                    name="quantity" 
+                    defaultValue={editing?.quantity ?? 0} 
+                    className="w-full border rounded px-3 py-2" 
+                    required 
+                  />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">가격 *</label>
-                  <input type="number" step="any" name="price" defaultValue={editing?.price ?? 1} className="w-full border rounded px-3 py-2" required />
+                  <input 
+                    type="number" 
+                    step="any" 
+                    name="price" 
+                    defaultValue={selectedType === "dividend" ? 0 : (editing?.price ?? 1)} 
+                    className="w-full border rounded px-3 py-2" 
+                    required 
+                  />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">수수료</label>
@@ -490,17 +512,35 @@ export default function TransactionsPage() {
                     </div>
                   </>
                 )}
+                {selectedType === "dividend" && (
+                  <div className="col-span-2">
+                    <label className="block text-sm font-medium text-slate-700 mb-1">
+                      배당금 입금 계좌 (현금)
+                    </label>
+                    <select name="cash_asset_id" defaultValue="" className="w-full border rounded px-3 py-2">
+                      <option value="">없음 (가격이 0인 경우)</option>
+                      {cashAssetsForBuySell.map((a) => (
+                        <option key={a.id} value={a.id}>{a.name}</option>
+                      ))}
+                    </select>
+                    {cashAssetsForBuySell.length === 0 && (
+                      <p className="text-xs text-amber-600 mt-1">동일 계좌·통화의 현금 자산이 없습니다. 가격 &gt; 0이면 자동으로 생성됩니다.</p>
+                    )}
+                  </div>
+                )}
               </>
             )}
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">카테고리</label>
-              <select name="category_id" defaultValue={editing?.category_id || ""} className="w-full border rounded px-3 py-2">
-                <option value="">없음</option>
-                {(categoriesQuery.data || []).map((c) => (
-                  <option key={c.id} value={c.id}>{c.name}</option>
-                ))}
-              </select>
-            </div>
+            {selectedType !== "dividend" && (
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">카테고리</label>
+                <select name="category_id" defaultValue={editing?.category_id || ""} className="w-full border rounded px-3 py-2">
+                  <option value="">없음</option>
+                  {(categoriesQuery.data || []).map((c) => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+                </select>
+              </div>
+            )}
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">설명</label>
               <input name="description" defaultValue={editing?.description || ""} className="w-full border rounded px-3 py-2" />

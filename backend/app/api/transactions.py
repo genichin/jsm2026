@@ -274,19 +274,19 @@ def validate_transaction_business_rules(transaction: TransactionCreate, asset: A
     # 주식/암호화폐 등 거래 가능한 자산의 경우 매수/매도 허용
     tradeable_types = ['stock', 'crypto', 'etf', 'fund', 'bond']
     if asset.asset_type in tradeable_types:
-        if transaction.type.value in ['buy', 'sell']:
-            # 매수/매도는 가격이 0보다 커야 함
-            if transaction.price <= 0:
+        if transaction.type.value in ['buy', 'sell', 'dividend']:
+            # 매수/매도는 가격이 0보다 커야 함 (배당은 0 허용)
+            if transaction.type.value in ['buy', 'sell'] and transaction.price <= 0:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="매수/매도 거래의 가격은 0보다 커야 합니다"
                 )
     else:
         # 거래 불가능한 자산에서 매수/매도 시도시 에러
-        if transaction.type.value in ['buy', 'sell']:
+        if transaction.type.value in ['buy', 'sell', 'dividend']:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"{asset.asset_type} 자산에는 매수/매도가 허용되지 않습니다"
+                detail=f"{asset.asset_type} 자산에는 매수/매도/배당이 허용되지 않습니다"
             )
     
     # 음수 가격/수수료/세금 검증
@@ -566,6 +566,69 @@ async def create_transaction(
                 # 원래 거래에 related_transaction_id 업데이트
                 db_transaction.related_transaction_id = cash_transaction.id
                 db.commit()
+        else:
+            # 계좌를 찾을 수 없는 경우 에러
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="연결된 계좌를 찾을 수 없습니다"
+            )
+    
+    # 배당의 경우 수량이 0이고 가격이 0보다 클 때 현금 자산과 연결된 입금 거래 자동 생성
+    if transaction.type.value == 'dividend' and db_transaction.quantity == 0 and db_transaction.price > 0:
+        cash_asset = None
+        
+        # 1. 사용자가 지정한 현금 자산이 있으면 해당 자산 사용
+        if transaction.cash_asset_id:
+            cash_asset = db.query(Asset).filter(
+                Asset.id == transaction.cash_asset_id,
+                Asset.user_id == current_user.id,
+                Asset.asset_type == 'cash'
+            ).first()
+            
+            if not cash_asset:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="지정한 현금 자산을 찾을 수 없습니다"
+                )
+        else:
+            # 2. 지정하지 않았으면 같은 계좌의 현금 자산 찾기
+            cash_asset = find_cash_asset_in_account(db, current_user.id, asset.account_id)
+            
+            # 3. 현금 자산이 없으면 자동 생성
+            if not cash_asset:
+                cash_asset = create_cash_asset_if_needed(db, current_user.id, asset.account_id)
+        
+        if cash_asset:
+            # 현금배당: 현금 거래의 수량 = 배당 거래의 가격 - 세금
+            dividend_amount = db_transaction.price - db_transaction.tax
+            
+            # 연결된 현금 입금 거래 생성
+            cash_transaction = AssetTransaction(
+                asset_id=cash_asset.id,
+                type='deposit',
+                quantity=dividend_amount,
+                price=1.0,
+                fee=0,
+                tax=0,
+                realized_profit=0,
+                transaction_date=db_transaction.transaction_date,
+                description=f"{asset.name} 배당금 입금",
+                memo=f"연결거래: {db_transaction.id}",
+                related_transaction_id=db_transaction.id,
+                is_confirmed=db_transaction.is_confirmed,
+                external_id=db_transaction.external_id
+            )
+            
+            db.add(cash_transaction)
+            db.commit()
+            db.refresh(cash_transaction)
+            
+            # 현금 자산 잔고도 Redis에 업데이트
+            calculate_and_update_balance(db, cash_asset.id)
+            
+            # 원래 거래에 related_transaction_id 업데이트
+            db_transaction.related_transaction_id = cash_transaction.id
+            db.commit()
         else:
             # 계좌를 찾을 수 없는 경우 에러
             raise HTTPException(

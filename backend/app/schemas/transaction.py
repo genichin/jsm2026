@@ -154,9 +154,7 @@ class TransactionCreate(TransactionBase):
         elif self.type == TransactionType.TRANSFER_OUT:
             if self.quantity >= 0:
                 raise ValueError("이체 출금(TRANSFER_OUT) 거래의 수량은 음수여야 합니다.")
-        elif self.type == TransactionType.DIVIDEND:
-            if self.quantity <= 0:
-                raise ValueError("배당(DIVIDEND) 거래의 수량은 양수여야 합니다.")
+        # 배당(DIVIDEND)은 수량 제약 없음 (현금배당은 0, 주식배당은 양수)
         elif self.type == TransactionType.INTEREST:
             if self.quantity <= 0:
                 raise ValueError("이자(INTEREST) 거래의 수량은 양수여야 합니다.")
