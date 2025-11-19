@@ -2,7 +2,7 @@
 Transaction API endpoints
 """
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status, UploadFile, File, Form
 from sqlalchemy.orm import Session, joinedload
@@ -1316,6 +1316,27 @@ async def upload_transactions_file(
         preview_data = []
         created_transactions = []
         
+        # 중복 검사용: 기존 거래 목록 조회 (asset_id 기준)
+        existing_transactions = {}
+        if not dry_run:
+            # 최근 1년 거래만 조회 (성능 최적화)
+            one_year_ago = datetime.now() - timedelta(days=365)
+            existing_txs = db.query(AssetTransaction).filter(
+                AssetTransaction.asset_id == asset_id,
+                AssetTransaction.transaction_date >= one_year_ago
+            ).all()
+            
+            # (transaction_date, type, description) 튜플을 키로 사용
+            for tx in existing_txs:
+                # type은 문자열 또는 Enum일 수 있음
+                type_value = tx.type.value if hasattr(tx.type, 'value') else str(tx.type)
+                key = (
+                    tx.transaction_date.replace(tzinfo=None) if tx.transaction_date else None,
+                    type_value,
+                    (tx.description or "").strip()
+                )
+                existing_transactions[key] = tx
+        
         for idx, row in df.iterrows():
             row_num = idx + 2  # 헤더 포함하여 실제 행 번호
             
@@ -1329,6 +1350,21 @@ async def upload_transactions_file(
                 
                 if trans_type not in valid_types:
                     raise ValueError(f"잘못된 거래 유형: {trans_type}. 지원하는 유형: {', '.join(valid_types)}")
+                
+                # 설명 필드 추출 (중복 검사용)
+                description_text = str(row.get('description', '')) if pd.notna(row.get('description')) else ""
+                description_text = description_text.strip()
+                
+                # 중복 검사: (transaction_date, type, description) 조합으로 판단
+                duplicate_key = (
+                    transaction_date.replace(tzinfo=None),
+                    trans_type,
+                    description_text
+                )
+                
+                if not dry_run and duplicate_key in existing_transactions:
+                    skipped += 1
+                    continue  # 중복 거래는 건너뛰기
                 
                 # 수량, 단가 검증
                 quantity = float(row['quantity'])

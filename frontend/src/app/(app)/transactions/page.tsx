@@ -92,6 +92,7 @@ export default function TransactionsPage() {
   const [page, setPage] = useState(1);
   const [size, setSize] = useState(20);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
 
   // Assets, Accounts, Categories for filters/create
   const assetsQuery = useQuery<AssetsListResponse>({
@@ -204,6 +205,37 @@ export default function TransactionsPage() {
     },
   });
 
+  const uploadMut = useMutation({
+    mutationFn: async (formData: FormData) => {
+      const response = await api.post("/transactions/upload", formData, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+      return response.data;
+    },
+    onSuccess: (data: any) => {
+      qc.invalidateQueries({ queryKey: ["transactions"] });
+      qc.invalidateQueries({ queryKey: ["assets"] });
+      
+      const successCount = data.created?.length || 0;
+      const errorCount = data.errors?.length || 0;
+      
+      if (errorCount > 0) {
+        const errorMsg = data.errors.slice(0, 3).map((e: any) => 
+          `행 ${e.row}: ${e.error}`
+        ).join('\n');
+        alert(`${successCount}개 생성, ${errorCount}개 오류:\n${errorMsg}${errorCount > 3 ? '\n...' : ''}`);
+      } else {
+        alert(`${successCount}개의 거래가 성공적으로 생성되었습니다.`);
+      }
+      
+      setIsUploadModalOpen(false);
+    },
+    onError: (err: any) => {
+      const msg = err?.response?.data?.detail || "파일 업로드 중 오류가 발생했습니다.";
+      alert(msg);
+    },
+  });
+
   function startCreate() {
     const initialType = (typeFilter || "deposit") as TransactionType;
     const initialAssetId = assetFilter || assetsQuery.data?.items?.[0]?.id || "";
@@ -265,10 +297,22 @@ export default function TransactionsPage() {
       const type = fd.get("type")?.toString() as TransactionType;
       if (!asset_id) return alert("자산을 선택하세요.");
 
+      let quantity = parseFloat(fd.get("quantity")?.toString() || "0");
+      
+      // 매도/출금은 음수로 변환
+      if (type === "sell" || type === "withdraw" || type === "transfer_out") {
+        quantity = -Math.abs(quantity);
+      } else {
+        // 매수/입금은 양수로 보장
+        if (type === "buy" || type === "deposit" || type === "transfer_in") {
+          quantity = Math.abs(quantity);
+        }
+      }
+      
       const payload: any = {
         asset_id,
         type,
-        quantity: parseFloat(fd.get("quantity")?.toString() || "0"),
+        quantity,
         price: parseFloat(fd.get("price")?.toString() || "1"),
         fee: parseFloat(fd.get("fee")?.toString() || "0"),
         tax: parseFloat(fd.get("tax")?.toString() || "0"),
@@ -422,7 +466,10 @@ export default function TransactionsPage() {
           <input type="checkbox" checked={confirmedOnly === true} onChange={(e) => { setConfirmedOnly(e.target.checked ? true : ""); setPage(1); }} />
         </div>
         <div className="flex-1" />
-        <button onClick={startCreate} className="px-3 py-2 rounded bg-emerald-600 text-white">새 거래</button>
+        <button onClick={() => setIsUploadModalOpen(true)} className="px-3 py-2 rounded bg-blue-600 text-white hover:bg-blue-700">
+          파일 업로드
+        </button>
+        <button onClick={startCreate} className="px-3 py-2 rounded bg-emerald-600 text-white hover:bg-emerald-700">새 거래</button>
       </div>
 
       {/* Modal Form */}
@@ -465,14 +512,21 @@ export default function TransactionsPage() {
                 </div>
                 {selectedType !== "exchange" && (
                   <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">수량 *</label>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">
+                      수량 * 
+                      {(selectedType === "sell" || selectedType === "withdraw" || selectedType === "transfer_out") && 
+                        <span className="text-xs text-amber-600 ml-1">(양수 입력, 자동으로 차감 처리됩니다)</span>
+                      }
+                    </label>
                     <input 
                       type="number" 
                       step="any" 
                       name="quantity" 
-                      defaultValue={editing?.quantity ?? 0} 
+                      defaultValue={editing?.quantity ? Math.abs(editing.quantity) : 0} 
                       className="w-full border rounded px-3 py-2" 
                       required 
+                      min="0"
+                      placeholder={(selectedType === "sell" || selectedType === "withdraw" || selectedType === "transfer_out") ? "양수 입력 (예: 1.036021)" : ""}
                     />
                   </div>
                 )}
@@ -651,6 +705,131 @@ export default function TransactionsPage() {
             <button type="submit" className="px-4 py-2 rounded bg-emerald-600 text-white hover:bg-emerald-700">{editing?.id ? "수정" : "생성"}</button>
           </div>
         </form>
+      </Modal>
+
+      {/* File Upload Modal */}
+      <Modal
+        isOpen={isUploadModalOpen}
+        onClose={() => setIsUploadModalOpen(false)}
+        title="거래 내역 파일 업로드"
+        size="lg"
+      >
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            const formData = new FormData(e.currentTarget);
+            uploadMut.mutate(formData);
+          }}
+          className="space-y-4"
+        >
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
+            <h3 className="text-sm font-semibold text-blue-900 mb-2">지원 형식</h3>
+            <ul className="text-xs text-blue-800 space-y-1">
+              <li>• <strong>토스뱅크</strong>: 암호화된 Excel 파일 (.xlsx) - 비밀번호 입력 필요</li>
+              <li>• <strong>KB은행</strong>: HTML 형식 Excel 파일 (.xls)</li>
+              <li>• <strong>KB증권</strong>: 거래내역 CSV/Excel</li>
+              <li>• <strong>미래에셋증권</strong>: 거래내역 CSV/Excel</li>
+              <li>• <strong>CSV 파일</strong>: UTF-8 또는 CP949 인코딩</li>
+            </ul>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-2">
+              자산 선택 *
+            </label>
+            <select name="asset_id" required className="w-full border rounded px-3 py-2">
+              <option value="">자산을 선택하세요</option>
+              {(assetsQuery.data?.items || []).map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.name} ({a.asset_type})
+                </option>
+              ))}
+            </select>
+            <p className="text-xs text-slate-500 mt-1">
+              파일의 거래 내역이 이 자산에 연결됩니다
+            </p>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-2">
+              파일 선택 *
+            </label>
+            <input
+              type="file"
+              name="file"
+              accept=".csv,.xlsx,.xls"
+              required
+              className="w-full border rounded px-3 py-2 file:mr-4 file:py-2 file:px-4 file:rounded file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+            />
+            <p className="text-xs text-slate-500 mt-1">
+              CSV, XLSX, XLS 파일 지원
+            </p>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-2">
+              파일 비밀번호 (선택사항)
+            </label>
+            <input
+              type="password"
+              name="password"
+              placeholder="암호화된 Excel 파일인 경우 입력"
+              className="w-full border rounded px-3 py-2"
+            />
+            <p className="text-xs text-slate-500 mt-1">
+              토스뱅크 등 암호화된 파일의 경우 비밀번호를 입력하세요
+            </p>
+          </div>
+
+          <div className="flex items-center gap-2 bg-amber-50 border border-amber-200 rounded p-3">
+            <input
+              type="checkbox"
+              name="dry_run"
+              id="dry_run"
+              value="true"
+              className="w-4 h-4"
+            />
+            <label htmlFor="dry_run" className="text-sm text-amber-900">
+              <strong>미리보기 모드</strong> (실제로 저장하지 않고 확인만)
+            </label>
+          </div>
+
+          <div className="flex justify-end gap-3 pt-4 border-t">
+            <button
+              type="button"
+              onClick={() => setIsUploadModalOpen(false)}
+              className="px-4 py-2 rounded bg-slate-200 hover:bg-slate-300"
+            >
+              취소
+            </button>
+            <button
+              type="submit"
+              disabled={uploadMut.isPending}
+              className="px-4 py-2 rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {uploadMut.isPending ? "업로드 중..." : "업로드"}
+            </button>
+          </div>
+        </form>
+
+        {uploadMut.isSuccess && uploadMut.data && (
+          <div className="mt-4 p-4 bg-green-50 border border-green-200 rounded">
+            <h4 className="font-semibold text-green-900 mb-2">업로드 완료</h4>
+            <div className="text-sm text-green-800 space-y-1">
+              <p>• 생성된 거래: {uploadMut.data.created?.length || 0}개</p>
+              {uploadMut.data.errors && uploadMut.data.errors.length > 0 && (
+                <div className="mt-2">
+                  <p className="text-red-700 font-medium">오류 발생: {uploadMut.data.errors.length}개</p>
+                  <ul className="mt-1 text-xs text-red-600 max-h-40 overflow-y-auto">
+                    {uploadMut.data.errors.map((err: any, idx: number) => (
+                      <li key={idx}>행 {err.row}: {err.error}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </Modal>
 
       {/* Table */}

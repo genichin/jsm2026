@@ -554,3 +554,182 @@ class TestDataValidation:
         # API는 200을 반환하지만 실패한 거래가 있을 수 있음
         # 또는 모두 성공할 수도 있음 (API 구현에 따라)
         assert data["total"] == 2
+
+
+class TestDuplicateDetection:
+    """중복 거래 검출 테스트"""
+    
+    def test_upload_duplicate_transactions(
+        self,
+        client: TestClient,
+        auth_header: dict,
+        test_cash_asset: Asset,
+        db_session: Session
+    ):
+        """동일한 파일을 두 번 업로드하면 중복 거래는 스킵됨"""
+        csv_content = """transaction_date,type,quantity,price,description
+2025-11-01 10:00:00,deposit,10000,1.0,급여
+2025-11-02 11:00:00,withdraw,-5000,1.0,카드결제
+2025-11-03 12:00:00,deposit,20000,1.0,보너스
+""".encode('utf-8')
+        
+        # 첫 번째 업로드 (실제 저장)
+        response1 = client.post(
+            "/api/v1/transactions/upload",
+            headers=auth_header,
+            files={"file": ("test.csv", io.BytesIO(csv_content), "text/csv")},
+            data={
+                "asset_id": test_cash_asset.id,
+                "dry_run": "false"
+            }
+        )
+        
+        assert response1.status_code == 200
+        data1 = response1.json()
+        
+        assert data1["success"] == True
+        assert data1["total"] == 3
+        assert data1["created"] == 3
+        assert data1["skipped"] == 0
+        assert data1["failed"] == 0
+        
+        # 두 번째 업로드 (동일한 파일)
+        response2 = client.post(
+            "/api/v1/transactions/upload",
+            headers=auth_header,
+            files={"file": ("test.csv", io.BytesIO(csv_content), "text/csv")},
+            data={
+                "asset_id": test_cash_asset.id,
+                "dry_run": "false"
+            }
+        )
+        
+        assert response2.status_code == 200
+        data2 = response2.json()
+        
+        # 두 번째 업로드는 모두 중복으로 스킵되어야 함
+        assert data2["total"] == 3
+        assert data2["created"] == 0
+        assert data2["skipped"] == 3  # 모든 거래가 중복으로 스킵
+        assert data2["failed"] == 0
+        
+        # DB에는 여전히 3개만 있어야 함
+        transaction_count = db_session.query(AssetTransaction).filter(
+            AssetTransaction.asset_id == test_cash_asset.id
+        ).count()
+        assert transaction_count == 3
+    
+    def test_upload_partial_duplicate_transactions(
+        self,
+        client: TestClient,
+        auth_header: dict,
+        test_cash_asset: Asset,
+        db_session: Session
+    ):
+        """일부 중복, 일부 새로운 거래가 섞여 있는 경우"""
+        # 첫 번째 파일: 2개 거래
+        csv_content1 = """transaction_date,type,quantity,price,description
+2025-11-01 10:00:00,deposit,10000,1.0,급여
+2025-11-02 11:00:00,withdraw,-5000,1.0,카드결제
+""".encode('utf-8')
+        
+        response1 = client.post(
+            "/api/v1/transactions/upload",
+            headers=auth_header,
+            files={"file": ("test1.csv", io.BytesIO(csv_content1), "text/csv")},
+            data={
+                "asset_id": test_cash_asset.id,
+                "dry_run": "false"
+            }
+        )
+        
+        assert response1.status_code == 200
+        data1 = response1.json()
+        assert data1["created"] == 2
+        
+        # 두 번째 파일: 1개 중복 + 2개 새로운 거래
+        csv_content2 = """transaction_date,type,quantity,price,description
+2025-11-02 11:00:00,withdraw,-5000,1.0,카드결제
+2025-11-03 12:00:00,deposit,20000,1.0,보너스
+2025-11-04 13:00:00,withdraw,-3000,1.0,식비
+""".encode('utf-8')
+        
+        response2 = client.post(
+            "/api/v1/transactions/upload",
+            headers=auth_header,
+            files={"file": ("test2.csv", io.BytesIO(csv_content2), "text/csv")},
+            data={
+                "asset_id": test_cash_asset.id,
+                "dry_run": "false"
+            }
+        )
+        
+        assert response2.status_code == 200
+        data2 = response2.json()
+        
+        assert data2["total"] == 3
+        assert data2["created"] == 2  # 새로운 거래 2개만 생성
+        assert data2["skipped"] == 1  # 중복 1개 스킵
+        assert data2["failed"] == 0
+        
+        # DB에는 총 4개 거래가 있어야 함
+        transaction_count = db_session.query(AssetTransaction).filter(
+            AssetTransaction.asset_id == test_cash_asset.id
+        ).count()
+        assert transaction_count == 4
+    
+    def test_duplicate_detection_ignores_different_description(
+        self,
+        client: TestClient,
+        auth_header: dict,
+        test_cash_asset: Asset,
+        db_session: Session
+    ):
+        """설명이 다르면 중복이 아니라고 판단"""
+        # 첫 번째 거래
+        csv_content1 = """transaction_date,type,quantity,price,description
+2025-11-01 10:00:00,deposit,10000,1.0,급여
+""".encode('utf-8')
+        
+        response1 = client.post(
+            "/api/v1/transactions/upload",
+            headers=auth_header,
+            files={"file": ("test1.csv", io.BytesIO(csv_content1), "text/csv")},
+            data={
+                "asset_id": test_cash_asset.id,
+                "dry_run": "false"
+            }
+        )
+        
+        assert response1.status_code == 200
+        data1 = response1.json()
+        assert data1["created"] == 1
+        
+        # 같은 날짜, 타입이지만 설명이 다른 거래
+        csv_content2 = """transaction_date,type,quantity,price,description
+2025-11-01 10:00:00,deposit,10000,1.0,보너스
+""".encode('utf-8')
+        
+        response2 = client.post(
+            "/api/v1/transactions/upload",
+            headers=auth_header,
+            files={"file": ("test2.csv", io.BytesIO(csv_content2), "text/csv")},
+            data={
+                "asset_id": test_cash_asset.id,
+                "dry_run": "false"
+            }
+        )
+        
+        assert response2.status_code == 200
+        data2 = response2.json()
+        
+        # 설명이 다르므로 새로운 거래로 생성되어야 함
+        assert data2["created"] == 1
+        assert data2["skipped"] == 0
+        
+        # DB에는 총 2개 거래가 있어야 함
+        transaction_count = db_session.query(AssetTransaction).filter(
+            AssetTransaction.asset_id == test_cash_asset.id
+        ).count()
+        assert transaction_count == 2
+

@@ -13,7 +13,8 @@ from app.services.file_parser import (
     detect_toss_bank_format,
     transform_toss_bank_to_standard,
     transform_mirae_to_standard,
-    transform_kb_to_standard,
+    transform_kb_securities_to_standard,
+    transform_kb_bank_to_standard,
     transform_to_standard,
     parse_transaction_file,
 )
@@ -89,7 +90,7 @@ class TestDetectFileFormat:
         df = pd.read_csv(io.StringIO(csv_data))
         file_format = detect_file_format(df)
         
-        assert file_format == 'kb'
+        assert file_format == 'kb_securities'
     
     def test_detect_standard_format(self):
         """표준 형식 감지 테스트"""
@@ -239,10 +240,10 @@ class TestTransformMiraeToStandard:
         assert standard_df.iloc[1]['quantity'] == 50
 
 
-class TestTransformKbToStandard:
-    """transform_kb_to_standard 함수 테스트"""
+class TestTransformKbSecuritiesToStandard:
+    """transform_kb_securities_to_standard 함수 테스트"""
     
-    def test_transform_kb(self):
+    def test_transform_kb_securities(self):
         """KB증권 형식 변환 테스트"""
         kb_data = {
             '거래일자': [20251107, 20251107],
@@ -254,7 +255,7 @@ class TestTransformKbToStandard:
         }
         
         df = pd.DataFrame(kb_data)
-        standard_df = transform_kb_to_standard(df)
+        standard_df = transform_kb_securities_to_standard(df)
         
         # 필수 컬럼 확인
         assert 'transaction_date' in standard_df.columns

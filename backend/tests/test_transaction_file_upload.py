@@ -14,7 +14,8 @@ import msoffcrypto
 
 # 테스트 파일 경로
 TEST_DIR = Path(__file__).parent
-TOSS_BANK_FILE = TEST_DIR / "토스뱅크_거래내역.xlsx"
+TOSS_BANK_FILE = TEST_DIR / "testdata/toss_sample.xlsx"
+KB_SECURITIES_FILE = TEST_DIR / "testdata/KB_sample.xls"
 
 # 파일 암호 (환경변수 또는 직접 입력)
 FILE_PASSWORD = os.getenv('TOSS_FILE_PASSWORD', '770819')  # 환경변수로 설정하거나 직접 입력
@@ -343,6 +344,103 @@ def test_detect_kb_format():
     
     assert is_kb_format
     assert len(df) == 2
+
+
+
+
+def test_parse_kb_securities_file():
+    """KB증권 거래내역 파일 파싱 테스트 (HTML 형식)"""
+    assert KB_SECURITIES_FILE.exists(), f"테스트 파일이 없습니다: {KB_SECURITIES_FILE}"
+    
+    # HTML 테이블 읽기 (KB는 .xls 확장자지만 실제로는 HTML)
+    # encoding='utf-8' 명시 (파일에 meta charset=UTF-8 지정됨)
+    tables = pd.read_html(KB_SECURITIES_FILE, encoding='utf-8')
+    
+    print(f"\n파일 경로: {KB_SECURITIES_FILE}")
+    print(f"테이블 개수: {len(tables)}")
+    
+    # 각 테이블 크기 확인
+    for i, table in enumerate(tables):
+        print(f"테이블 {i}: {table.shape}")
+    
+    # 가장 큰 테이블이 거래내역 (첫 번째는 계좌정보)
+    assert len(tables) >= 2, "거래내역 테이블이 없습니다"
+    
+    # 행이 가장 많은 테이블 찾기 (거래내역)
+    transaction_table_idx = max(range(len(tables)), key=lambda i: len(tables[i]))
+    df = tables[transaction_table_idx]
+    
+    print(f"\n거래내역 테이블 인덱스: {transaction_table_idx}")
+    print(f"거래내역 데이터 형태: {df.shape}")
+    print(f"컬럼: {list(df.columns)}")
+    print(f"\n상위 5개 행:")
+    print(df.head())
+    
+    # 데이터가 있는지 확인
+    assert not df.empty, "거래내역이 비어있습니다"
+    assert len(df.columns) >= 7, "컬럼이 부족합니다"
+
+
+
+
+def test_transform_kb_to_standard():
+    """KB 거래내역을 표준 포맷으로 변환하는 테스트"""
+    assert KB_SECURITIES_FILE.exists(), f"테스트 파일이 없습니다: {KB_SECURITIES_FILE}"
+    
+    # HTML 테이블 읽기
+    tables = pd.read_html(KB_SECURITIES_FILE, encoding='utf-8')
+    # 행이 가장 많은 테이블이 거래내역
+    transaction_table_idx = max(range(len(tables)), key=lambda i: len(tables[i]))
+    df = tables[transaction_table_idx]
+    
+    print(f"\n원본 컬럼: {list(df.columns)}")
+    print(f"원본 데이터 개수: {len(df)}")
+    
+    # 첫 행이 헤더 (거래일시, 적요, 보낸분/받는분, 송금메모, 출금액, 입금액, 잔액, 거래점, 구분)
+    # 헤더를 컬럼명으로 설정
+    df.columns = df.iloc[0]
+    df = df[1:]  # 헤더 행 제외
+    
+    # 마지막 합계 행 제거 (출금액/입금액에 =sum(...) 수식 포함)
+    df = df[df['거래일시'].notna() & (df['거래일시'] != '')]
+    # 빈 행이나 합계 행 필터링
+    df = df[~df['송금메모'].astype(str).str.contains('합계', na=False)]
+    
+    print(f"\n정리된 컬럼: {list(df.columns)}")
+    print(f"정리된 데이터 개수: {len(df)}")
+    print(f"\n샘플 데이터 (첫 3개):")
+    print(df[['거래일시', '적요', '출금액', '입금액', '잔액']].head(3))
+    
+    # KB 컬럼 구조:
+    # 거래일시, 적요, 보낸분/받는분, 송금메모, 출금액, 입금액, 잔액, 거래점, 구분
+    
+    # 거래 타입 매핑 (적요 기반)
+    type_mapping = {
+        '체크카드': 'CARD_PAYMENT',
+        '국민카드': 'CARD_PAYMENT',
+        '전자금융': 'TRANSFER',
+        '스마트출금': 'TRANSFER_OUT',
+        '오픈뱅킹출금': 'TRANSFER_OUT',
+        '급여입금': 'SALARY',
+        'ATM입금': 'DEPOSIT',
+        '지로출금': 'AUTO_TRANSFER',
+        'CMS 공동': 'AUTO_TRANSFER',
+        'FBS출금': 'AUTO_TRANSFER',
+        '현금IC': 'CASH_PAYMENT',
+        '기일출금': 'LOAN_PAYMENT',
+    }
+    
+    # 거래 타입 추출
+    df['transaction_type'] = df['적요'].map(type_mapping).fillna('OTHER')
+    
+    print(f"\n거래 타입 분포:")
+    print(df['transaction_type'].value_counts())
+    
+    assert len(df) > 0, "변환할 데이터가 없습니다"
+    assert len(df.columns) >= 7, "필수 컬럼이 부족합니다"
+    print(f"\n✅ KB 데이터 변환 완료: {len(df)}개 거래")
+
+
 
 
 def test_utf8_encoding():
