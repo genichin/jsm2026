@@ -1,18 +1,13 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
+import TransactionCards from "@/components/TransactionCards";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { DataTable } from "@/components/DataTable";
 import { Modal } from "@/components/Modal";
 import { ColumnDef } from "@tanstack/react-table";
-
-// Backend enums
-export type TransactionType =
-  | "buy" | "sell" | "deposit" | "withdraw" | "dividend" | "interest"
-  | "fee" | "transfer_in" | "transfer_out" | "adjustment" | "invest"
-  | "redeem" | "internal_transfer" | "card_payment" | "promotion_deposit"
-  | "auto_transfer" | "remittance" | "exchange";
+import { TransactionType, transactionTypeOptions, transactionTypeLabels } from "@/lib/transactionTypes";
 
 // Backend responses
 type AssetBrief = {
@@ -64,22 +59,6 @@ type AssetsListResponse = { items: { id: string; name: string; asset_type: strin
 type AccountsListResponse = { total: number; accounts: { id: string; name: string }[] };
 type CategoriesTreeResponse = { id: string; name: string; flow_type: string }[];
 
-const txTypeOptions: { value: TransactionType; label: string }[] = [
-  { value: "buy", label: "매수" },
-  { value: "sell", label: "매도" },
-  { value: "deposit", label: "입금" },
-  { value: "withdraw", label: "출금" },
-  { value: "dividend", label: "배당" },
-  { value: "interest", label: "이자" },
-  { value: "fee", label: "수수료" },
-  { value: "transfer_in", label: "이체입금" },
-  { value: "transfer_out", label: "이체출금" },
-  { value: "adjustment", label: "수량조정" },
-  { value: "invest", label: "투자" },
-  { value: "redeem", label: "해지" },
-  { value: "exchange", label: "환전" },
-];
-
 export default function TransactionsPage() {
   const qc = useQueryClient();
 
@@ -93,6 +72,14 @@ export default function TransactionsPage() {
   const [size, setSize] = useState(20);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
+  const [suggestedCategoryId, setSuggestedCategoryId] = useState<string | null>(null);
+  const [isSuggesting, setIsSuggesting] = useState(false);
+  const [viewMode, setViewMode] = useState<"table" | "card">(() => {
+    if (typeof window === "undefined") return "card";
+    const saved = window.localStorage.getItem("txViewMode");
+    if (saved === "card" || saved === "table") return saved as any;
+    return "card";
+  });
 
   // Assets, Accounts, Categories for filters/create
   const assetsQuery = useQuery<AssetsListResponse>({
@@ -109,6 +96,23 @@ export default function TransactionsPage() {
     queryKey: ["categories-tree"],
     queryFn: async () => (await api.get("/categories/tree")).data,
   });
+
+  // Flatten categories tree for select options
+  const categoriesFlat = useMemo(() => {
+    const flat: Array<{ id: string; name: string; depth: number }> = [];
+    const traverse = (nodes: any[], depth = 0) => {
+      for (const node of nodes) {
+        flat.push({ id: node.id, name: node.name, depth });
+        if (node.children?.length) {
+          traverse(node.children, depth + 1);
+        }
+      }
+    };
+    if (categoriesQuery.data) {
+      traverse(categoriesQuery.data);
+    }
+    return flat;
+  }, [categoriesQuery.data]);
 
   // List transactions
   const listQuery = useQuery<TransactionListResponse>({
@@ -184,12 +188,16 @@ export default function TransactionsPage() {
 
   const updateMut = useMutation({
     mutationFn: async ({ id, payload }: { id: string; payload: any }) =>
-      (await api.patch(`/transactions/${id}`, payload)).data as Transaction,
+      (await api.put(`/transactions/${id}`, payload)).data as Transaction,
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["transactions"] });
       qc.invalidateQueries({ queryKey: ["assets"] });
       setEditing(null);
       setIsModalOpen(false);
+    },
+    onError: (err: any) => {
+      const msg = err?.response?.data?.detail || "거래 수정 중 오류가 발생했습니다.";
+      alert(msg);
     },
   });
 
@@ -216,14 +224,17 @@ export default function TransactionsPage() {
       qc.invalidateQueries({ queryKey: ["transactions"] });
       qc.invalidateQueries({ queryKey: ["assets"] });
       
-      const successCount = data.created?.length || 0;
-      const errorCount = data.errors?.length || 0;
+      const successCount = data.created || 0;
+      const skippedCount = data.skipped || 0;
+      const errorCount = data.failed || 0;
       
       if (errorCount > 0) {
         const errorMsg = data.errors.slice(0, 3).map((e: any) => 
           `행 ${e.row}: ${e.error}`
         ).join('\n');
-        alert(`${successCount}개 생성, ${errorCount}개 오류:\n${errorMsg}${errorCount > 3 ? '\n...' : ''}`);
+        alert(`${successCount}개 생성, ${skippedCount}개 중복 스킵, ${errorCount}개 오류:\n${errorMsg}${errorCount > 3 ? '\n...' : ''}`);
+      } else if (skippedCount > 0) {
+        alert(`${successCount}개 생성, ${skippedCount}개 중복으로 스킵되었습니다.`);
       } else {
         alert(`${successCount}개의 거래가 성공적으로 생성되었습니다.`);
       }
@@ -274,6 +285,38 @@ export default function TransactionsPage() {
     setExchangeTargetAmount(0);
     setExchangeRate(null);
     setIsModalOpen(false);
+    setSuggestedCategoryId(null);
+  }
+
+  async function suggestCategory() {
+    const form = document.querySelector("form") as HTMLFormElement;
+    if (!form) return;
+    const description = (form.querySelector("[name='description']") as HTMLInputElement)?.value?.trim();
+    if (!description) {
+      alert("설명을 입력하세요.");
+      return;
+    }
+    setIsSuggesting(true);
+    try {
+      const res = await api.post("/auto-rules/simulate", { description });
+      const data = res.data;
+      if (data.matched && data.category_id) {
+        setSuggestedCategoryId(data.category_id);
+        // 카테고리 select에 자동 선택
+        const categorySelect = form.querySelector("[name='category_id']") as HTMLSelectElement;
+        if (categorySelect) {
+          categorySelect.value = data.category_id;
+        }
+      } else {
+        setSuggestedCategoryId(null);
+        alert("매칭되는 자동 규칙이 없습니다.");
+      }
+    } catch (e) {
+      console.error(e);
+      alert("자동 추천 실패");
+    } finally {
+      setIsSuggesting(false);
+    }
   }
 
   async function submitForm(e: React.FormEvent<HTMLFormElement>) {
@@ -283,13 +326,27 @@ export default function TransactionsPage() {
     const fd = new FormData(form);
 
     if (editing.id) {
-      // Update: only description, memo, is_confirmed, category_id
+      // Update: type, description, memo, is_confirmed, category_id
       const payload: any = {
         description: fd.get("description")?.toString().trim() || null,
         memo: fd.get("memo")?.toString().trim() || null,
         is_confirmed: fd.get("is_confirmed") === "on",
-        category_id: fd.get("category_id")?.toString() || null,
       };
+      
+      // type 처리
+      const typeValue = fd.get("type")?.toString();
+      if (typeValue) {
+        payload.type = typeValue;
+      }
+      
+      // category_id 처리: 빈 문자열은 null로, 값이 있으면 그대로
+      const categoryIdValue = fd.get("category_id")?.toString();
+      if (categoryIdValue) {
+        payload.category_id = categoryIdValue;
+      } else {
+        payload.category_id = null;
+      }
+      
       await updateMut.mutateAsync({ id: editing.id as string, payload });
     } else {
       // Create
@@ -360,7 +417,23 @@ export default function TransactionsPage() {
     }
   }
 
-  const columns: ColumnDef<Transaction>[] = [
+  // Column visibility state (persisted)
+  const [hiddenCols, setHiddenCols] = useState<Record<string, boolean>>(() => {
+    if (typeof window === "undefined") return {};
+    try {
+      const raw = window.localStorage.getItem("txHiddenCols");
+      return raw ? JSON.parse(raw) : {};
+    } catch {
+      return {};
+    }
+  });
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem("txHiddenCols", JSON.stringify(hiddenCols));
+    }
+  }, [hiddenCols]);
+
+  const baseColumns: ColumnDef<Transaction>[] = [
     {
       accessorKey: "transaction_date",
       header: "일시",
@@ -374,10 +447,18 @@ export default function TransactionsPage() {
     {
       accessorKey: "type",
       header: "유형",
-      cell: ({ getValue }) => txTypeOptions.find((t) => t.value === getValue())?.label ?? String(getValue()),
+      cell: ({ getValue }) => transactionTypeOptions.find((t) => t.value === getValue())?.label ?? String(getValue()),
     },
     { accessorKey: "quantity", header: "수량", cell: ({ getValue }) => <span className="font-mono">{(getValue() as number).toLocaleString()}</span> },
     { accessorKey: "price", header: "가격", cell: ({ getValue }) => <span className="font-mono">{(getValue() as number).toLocaleString()}</span> },
+    {
+      id: "amount",
+      header: "금액",
+      cell: ({ row }) => {
+        const amt = Math.abs(row.original.quantity) * row.original.price;
+        return <span className="font-mono text-slate-800">{amt.toLocaleString()}</span>;
+      },
+    },
     { accessorKey: "fee", header: "수수료", cell: ({ getValue }) => <span className="font-mono text-xs text-slate-600">{(getValue() as number).toLocaleString()}</span> },
     { accessorKey: "tax", header: "세금", cell: ({ getValue }) => <span className="font-mono text-xs text-slate-600">{(getValue() as number).toLocaleString()}</span> },
     {
@@ -389,6 +470,15 @@ export default function TransactionsPage() {
       accessorKey: "description",
       header: "설명",
       cell: ({ getValue }) => <span className="text-sm text-slate-700 max-w-xs truncate">{(getValue() as string) || "-"}</span>,
+    },
+    {
+      id: "realized_profit",
+      header: "실현손익",
+      cell: ({ row }) => {
+        const v = row.original.realized_profit;
+        if (v === null || v === undefined) return <span className="text-xs text-slate-400">-</span>;
+        return <span className={`font-mono text-xs ${v > 0 ? "text-emerald-600" : v < 0 ? "text-rose-600" : "text-slate-400"}`}>{v.toLocaleString()}</span>;
+      },
     },
     {
       accessorKey: "is_confirmed",
@@ -420,10 +510,17 @@ export default function TransactionsPage() {
       ),
     },
   ];
+  const columns: ColumnDef<Transaction>[] = useMemo(() => {
+    return baseColumns.filter(c => {
+      const key = (c as any).accessorKey || c.id;
+      if (!key) return true;
+      return !hiddenCols[key];
+    });
+  }, [baseColumns, hiddenCols]);
 
   return (
     <div className="space-y-4">
-      {/* Filters */}
+      {/* Filters & Column Settings */}
       <div className="flex flex-wrap gap-2 items-end">
         <div>
           <label className="block text-xs text-slate-600 mb-1">자산</label>
@@ -447,7 +544,7 @@ export default function TransactionsPage() {
           <label className="block text-xs text-slate-600 mb-1">유형</label>
           <select value={typeFilter} onChange={(e) => { setTypeFilter(e.target.value as TransactionType | ""); setPage(1); }} className="border rounded px-2 py-1">
             <option value="">전체</option>
-            {txTypeOptions.map((o) => (
+            {transactionTypeOptions.map((o) => (
               <option key={o.value} value={o.value}>{o.label}</option>
             ))}
           </select>
@@ -481,7 +578,33 @@ export default function TransactionsPage() {
       >
         <form onSubmit={submitForm} className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
-            {editing?.id ? null : (
+            {editing?.id ? (
+              <>
+                {/* 편집 모드: 유형 변경 가능 */}
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">유형 *</label>
+                  <select 
+                    name="type" 
+                    value={selectedType} 
+                    onChange={(e) => setSelectedType(e.target.value as TransactionType)}
+                    className="w-full border rounded px-3 py-2"
+                  >
+                    {transactionTypeOptions.map((o) => (
+                      <option key={o.value} value={o.value}>{o.label}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">자산</label>
+                  <input 
+                    type="text" 
+                    value={assetsQuery.data?.items.find(a => a.id === editing.asset_id)?.name || ''} 
+                    disabled 
+                    className="w-full border rounded px-3 py-2 bg-gray-50 text-gray-600" 
+                  />
+                </div>
+              </>
+            ) : (
               <>
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">자산 *</label>
@@ -505,7 +628,7 @@ export default function TransactionsPage() {
                     onChange={(e) => setSelectedType(e.target.value as TransactionType)}
                     className="w-full border rounded px-3 py-2"
                   >
-                    {txTypeOptions.map((o) => (
+                    {transactionTypeOptions.map((o) => (
                       <option key={o.value} value={o.value}>{o.label}</option>
                     ))}
                   </select>
@@ -676,20 +799,42 @@ export default function TransactionsPage() {
                 )}
               </>
             )}
+            {/* 카테고리: dividend와 exchange를 제외하고 표시 (편집 모드 포함) */}
             {selectedType !== "dividend" && selectedType !== "exchange" && (
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">카테고리</label>
+              <div className={editing?.id ? "col-span-2" : ""}>
+                <label className="block text-sm font-medium text-slate-700 mb-1">
+                  카테고리
+                  {suggestedCategoryId && (
+                    <span className="ml-2 text-xs text-emerald-600">✓ 자동 추천됨</span>
+                  )}
+                </label>
                 <select name="category_id" defaultValue={editing?.category_id || ""} className="w-full border rounded px-3 py-2">
                   <option value="">없음</option>
-                  {(categoriesQuery.data || []).map((c) => (
-                    <option key={c.id} value={c.id}>{c.name}</option>
+                  {categoriesFlat.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {"\u00A0".repeat(c.depth * 2)}{c.name}
+                    </option>
                   ))}
                 </select>
               </div>
             )}
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">설명</label>
-              <input name="description" defaultValue={editing?.description || ""} className="w-full border rounded px-3 py-2" />
+            <div className={editing?.id ? "col-span-2" : ""}>
+              <div className="flex items-end gap-2">
+                <div className="flex-1">
+                  <label className="block text-sm font-medium text-slate-700 mb-1">설명</label>
+                  <input name="description" defaultValue={editing?.description || ""} className="w-full border rounded px-3 py-2" />
+                </div>
+                {selectedType !== "dividend" && selectedType !== "exchange" && (
+                  <button
+                    type="button"
+                    onClick={suggestCategory}
+                    disabled={isSuggesting}
+                    className="px-3 py-2 rounded bg-blue-100 text-blue-700 text-sm whitespace-nowrap hover:bg-blue-200 disabled:opacity-50"
+                  >
+                    {isSuggesting ? "추천 중..." : "자동 추천"}
+                  </button>
+                )}
+              </div>
             </div>
             <div className="col-span-2">
               <label className="block text-sm font-medium text-slate-700 mb-1">메모</label>
@@ -816,7 +961,13 @@ export default function TransactionsPage() {
           <div className="mt-4 p-4 bg-green-50 border border-green-200 rounded">
             <h4 className="font-semibold text-green-900 mb-2">업로드 완료</h4>
             <div className="text-sm text-green-800 space-y-1">
-              <p>• 생성된 거래: {uploadMut.data.created?.length || 0}개</p>
+              <p>• 생성된 거래: {uploadMut.data.created || 0}개</p>
+              {uploadMut.data.skipped > 0 && (
+                <p>• 중복 스킵: {uploadMut.data.skipped}개</p>
+              )}
+              {uploadMut.data.failed > 0 && (
+                <p className="text-red-700">• 실패: {uploadMut.data.failed}개</p>
+              )}
               {uploadMut.data.errors && uploadMut.data.errors.length > 0 && (
                 <div className="mt-2">
                   <p className="text-red-700 font-medium">오류 발생: {uploadMut.data.errors.length}개</p>
@@ -832,11 +983,79 @@ export default function TransactionsPage() {
         )}
       </Modal>
 
-      {/* Table */}
+      {/* View Mode Toggle */}
+      <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center gap-2 text-xs text-slate-600">
+          <span>보기:</span>
+          <button
+            onClick={() => { setViewMode("card"); if (typeof window !== "undefined") window.localStorage.setItem("txViewMode", "card"); }}
+            className={`px-2 py-1 rounded ${viewMode === "card" ? "bg-slate-800 text-white" : "bg-slate-100 text-slate-700"}`}
+          >카드</button>
+          <button
+            onClick={() => { setViewMode("table"); if (typeof window !== "undefined") window.localStorage.setItem("txViewMode", "table"); }}
+            className={`px-2 py-1 rounded ${viewMode === "table" ? "bg-slate-800 text-white" : "bg-slate-100 text-slate-700"}`}
+          >테이블</button>
+        </div>
+        <div className="flex items-center gap-2 ml-auto">
+          <details className="relative">
+            <summary className="cursor-pointer px-3 py-2 rounded bg-slate-100 text-xs">컬럼 설정</summary>
+            <div className="absolute z-10 mt-2 w-52 p-3 rounded border bg-white shadow space-y-2">
+              {[
+                { key: "fee", label: "수수료" },
+                { key: "tax", label: "세금" },
+                { key: "description", label: "설명" },
+                { key: "realized_profit", label: "실현손익" },
+                { key: "amount", label: "금액" },
+              ].map(opt => (
+                <label key={opt.key} className="flex items-center gap-2 text-xs">
+                  <input
+                    type="checkbox"
+                    checked={!hiddenCols[opt.key]}
+                    onChange={(e) => setHiddenCols(h => ({ ...h, [opt.key]: !e.target.checked }))}
+                  />
+                  <span>{opt.label}</span>
+                </label>
+              ))}
+              <button
+                type="button"
+                onClick={() => setHiddenCols({})}
+                className="w-full mt-1 text-xs px-2 py-1 rounded bg-slate-200"
+              >초기화</button>
+            </div>
+          </details>
+        </div>
+      </div>
+
+      {/* Data View */}
       {listQuery.isLoading ? (
         <div>로딩 중...</div>
-      ) : (
+      ) : viewMode === "table" ? (
         <DataTable columns={columns} data={transactions} />
+      ) : (
+        <TransactionCards
+          items={transactions.map(t => ({
+            id: t.id,
+            asset_id: t.asset_id,
+            asset_name: t.asset?.name,
+            type: t.type,
+            quantity: t.quantity,
+            price: t.price,
+            fee: t.fee,
+            tax: t.tax,
+            realized_profit: t.realized_profit,
+            transaction_date: t.transaction_date,
+            category_name: t.category?.name,
+            description: t.description,
+            memo: t.memo,
+            is_confirmed: t.is_confirmed,
+            external_id: t.external_id,
+            related_transaction_id: t.related_transaction_id,
+          }))}
+          onEdit={(id) => {
+            const tx = transactions.find(x => x.id === id);
+            if (tx) startEdit(tx);
+          }}
+        />
       )}
 
       {/* Pagination */}

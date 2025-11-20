@@ -855,7 +855,10 @@ async def get_recent_transactions(
         # 거래 내역 쿼리 (자산 정보와 조인)
         query = (
             db.query(AssetTransaction)
-            .options(joinedload(AssetTransaction.asset))
+            .options(
+                joinedload(AssetTransaction.asset),
+                joinedload(AssetTransaction.category)
+            )
             .filter(AssetTransaction.asset_id.in_(user_asset_ids))
         )
         
@@ -904,7 +907,12 @@ async def get_recent_transactions(
                     "symbol": tx.asset.symbol,
                     "currency": tx.asset.currency,
                     "is_active": tx.asset.is_active,
-                } if tx.asset else None
+                } if tx.asset else None,
+                "category": {
+                    "id": tx.category.id,
+                    "name": tx.category.name,
+                    "flow_type": tx.category.flow_type,
+                } if tx.category else None
             }
             items.append(item)
         
@@ -1004,6 +1012,21 @@ async def update_transaction(
     
     # 업데이트할 필드만 적용 (카테고리 변경 포함)
     update_data = transaction_update.model_dump(exclude_unset=True)
+
+    # 거래 타입 변경 시 처리
+    new_type = update_data.get('type')
+    if new_type and new_type != transaction.type:
+        # 타입이 변경되면 기존 카테고리와 호환성 재검증
+        if transaction.category_id:
+            cat = db.query(Category).filter(Category.id == transaction.category_id).first()
+            if cat:
+                try:
+                    validate_category_flow_type_compatibility(new_type, cat)
+                except HTTPException:
+                    # 호환되지 않으면 카테고리 자동 해제
+                    transaction.category_id = None
+        transaction.type = new_type
+        update_data.pop('type', None)
 
     # 카테고리 변경 검증 로직
     if 'category_id' in update_data:

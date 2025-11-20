@@ -433,6 +433,28 @@ class TestUpdateTransaction:
         )
         
         assert response.status_code == 401
+    
+    def test_update_transaction_type(
+        self, 
+        client: TestClient, 
+        auth_header: dict, 
+        test_transaction: AssetTransaction
+    ):
+        """거래 유형 변경"""
+        # deposit에서 withdraw로 변경
+        response = client.put(
+            f"/api/v1/transactions/{test_transaction.id}",
+            headers=auth_header,
+            json={
+                "type": "withdraw",
+                "description": "유형 변경 테스트"
+            }
+        )
+        
+        assert response.status_code == 200
+        data = response.json()
+        assert data["type"] == "withdraw"
+        assert data["description"] == "유형 변경 테스트"
 
 
 class TestDeleteTransaction:

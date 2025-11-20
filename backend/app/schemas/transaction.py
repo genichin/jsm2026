@@ -187,6 +187,7 @@ class TransactionCreate(TransactionBase):
 
 class TransactionUpdate(BaseModel):
     """거래 업데이트 요청"""
+    type: Optional[TransactionType] = Field(None, description="거래 유형 (수정 가능)")
     description: Optional[str] = None
     memo: Optional[str] = None
     is_confirmed: Optional[bool] = None

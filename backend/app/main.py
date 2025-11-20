@@ -194,7 +194,7 @@ app.include_router(
 
 app.include_router(
     auto_rules.router,
-    prefix=f"{settings.API_V1_PREFIX}/category-auto-rules",
+    prefix=f"{settings.API_V1_PREFIX}/auto-rules",
     tags=["categories"]
 )
 

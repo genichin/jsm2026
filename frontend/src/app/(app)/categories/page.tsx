@@ -1,5 +1,5 @@
 "use client";
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState, useEffect } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { DataTable } from "@/components/DataTable";
@@ -12,12 +12,29 @@ type Category = { id: string; name: string; flow_type: FlowType; is_active: bool
 type ListResponse = { items: Category[]; total: number; page: number; size: number; pages: number };
 type FlowType = "expense" | "income" | "transfer" | "investment" | "neutral";
 
+type AutoRule = {
+  id: string;
+  category_id: string;
+  pattern_type: "exact" | "contains" | "regex";
+  pattern_text: string;
+  priority: number;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
 const flowOptions: { value: FlowType; label: string }[] = [
   { value: "expense", label: "지출" },
   { value: "income", label: "수입" },
   { value: "transfer", label: "이동" },
   { value: "investment", label: "투자" },
   { value: "neutral", label: "중립" },
+];
+
+const patternTypeOptions = [
+  { value: "exact", label: "정확히 일치" },
+  { value: "contains", label: "포함" },
+  { value: "regex", label: "정규표현식" },
 ];
 
 const formSchema = z.object({
@@ -29,8 +46,20 @@ const formSchema = z.object({
 });
 type FormValues = z.infer<typeof formSchema>;
 
+const ruleFormSchema = z.object({
+  id: z.string().optional(),
+  category_id: z.string().min(1, "카테고리를 선택하세요"),
+  pattern_type: z.enum(["exact", "contains", "regex"]).default("contains"),
+  pattern_text: z.string().min(1, "패턴을 입력하세요"),
+  priority: z.number().min(0).max(100000).default(100),
+  is_active: z.boolean().default(true),
+});
+type RuleFormValues = z.infer<typeof ruleFormSchema>;
+
 export default function CategoriesPage() {
   const qc = useQueryClient();
+  const [activeTab, setActiveTab] = useState<"categories" | "rules">("categories");
+  
   // Filters and pagination
   const [page, setPage] = useState(1);
   const [size, setSize] = useState(20);
@@ -38,6 +67,10 @@ export default function CategoriesPage() {
   const [flow, setFlow] = useState<FlowType | "">("");
   const [activeOnly, setActiveOnly] = useState(true);
   const [order, setOrder] = useState<"asc" | "desc">("asc");
+
+  // Auto Rules state
+  const [showRuleForm, setShowRuleForm] = useState(false);
+  const [testDescription, setTestDescription] = useState("");
 
   const listQuery = useQuery<ListResponse>({
     queryKey: ["categories", { page, size, qText, flow, activeOnly, order }],
@@ -134,6 +167,83 @@ export default function CategoriesPage() {
     if (vals.id) updateMut.mutate(vals); else createMut.mutate(vals);
   };
 
+  // Auto Rules State
+  const [editingRule, setEditingRule] = useState<RuleFormValues | null>(null);
+
+  // Rule form hook
+  const ruleForm = useForm<RuleFormValues>({
+    resolver: zodResolver(ruleFormSchema),
+    defaultValues: { pattern_type: "contains", pattern_text: "", priority: 100, is_active: true },
+  });
+  const { register: registerRule, handleSubmit: handleRuleSubmit, reset: resetRuleForm, formState: { errors: ruleFormErrors } } = ruleForm;
+
+  // Sync editingRule to form
+  useEffect(() => {
+    if (editingRule) {
+      resetRuleForm(editingRule);
+    } else {
+      resetRuleForm({ pattern_type: "contains", pattern_text: "", priority: 100, is_active: true });
+    }
+  }, [editingRule, resetRuleForm]);
+
+  const rulesQuery = useQuery<AutoRule[]>({
+    queryKey: ["auto-rules"],
+    queryFn: async () => (await api.get("/auto-rules")).data,
+    enabled: activeTab === "rules",
+  });
+
+  const createRuleMut = useMutation({
+    mutationFn: async (values: RuleFormValues) => (await api.post("/auto-rules", values)).data,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["auto-rules"] });
+      ruleForm.reset();
+      setEditingRule(null);
+    },
+  });
+
+  const updateRuleMut = useMutation({
+    mutationFn: async (values: RuleFormValues) => {
+      if (!values.id) throw new Error("id 없음");
+      const { id, ...payload } = values;
+      return (await api.put(`/auto-rules/${id}`, payload)).data;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["auto-rules"] });
+      setEditingRule(null);
+    },
+  });
+
+  const deleteRuleMut = useMutation({
+    mutationFn: async (id: string) => (await api.delete(`/auto-rules/${id}`)).data,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["auto-rules"] }),
+  });
+
+  const testRuleMut = useMutation({
+    mutationFn: async (payload: { description: string }) => (await api.post("/auto-rules/simulate", payload)).data,
+  });
+
+  const startEditRule = (rule: AutoRule) => {
+    setEditingRule({
+      id: rule.id,
+      category_id: rule.category_id,
+      pattern_type: rule.pattern_type,
+      pattern_text: rule.pattern_text,
+      priority: rule.priority,
+      is_active: rule.is_active,
+    });
+  };
+
+  const cancelRuleEdit = () => {
+    setEditingRule(null);
+    resetRuleForm();
+    setShowRuleForm(false);
+  };
+
+  const onRuleSubmit = (vals: RuleFormValues) => {
+    if (vals.id) updateRuleMut.mutate(vals);
+    else createRuleMut.mutate(vals);
+  };
+
   // Export / Import
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [importing, setImporting] = useState(false);
@@ -158,12 +268,14 @@ export default function CategoriesPage() {
   async function onExportJSON() {
     try {
       const all = await fetchAllCategories();
+      const allRules = (await api.get("/auto-rules")).data as AutoRule[];
       const payload = {
         type: "jsmoney.categories",
-        version: 1,
+        version: 2,
         exported_at: new Date().toISOString(),
         count: all.length,
         categories: all,
+        auto_rules: allRules,
       };
       const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
       const url = URL.createObjectURL(blob);
@@ -190,11 +302,15 @@ export default function CategoriesPage() {
         : Array.isArray(data?.categories)
         ? data.categories
         : [];
+      const rules: AutoRule[] = Array.isArray(data?.auto_rules) ? data.auto_rules : [];
       if (!list.length) {
         alert("유효한 카테고리 목록이 아닙니다.");
         return;
       }
-      if (!confirm(`총 ${list.length}개 카테고리를 생성합니다. 중복이 발생할 수 있습니다. 진행할까요?`)) return;
+      const msg = rules.length > 0
+        ? `총 ${list.length}개 카테고리와 ${rules.length}개 자동 규칙을 생성합니다. 중복이 발생할 수 있습니다. 진행할까요?`
+        : `총 ${list.length}개 카테고리를 생성합니다. 중복이 발생할 수 있습니다. 진행할까요?`;
+      if (!confirm(msg)) return;
 
       // Build quick children map by parent_id
       const byId = new Map<string, Category>();
@@ -248,9 +364,35 @@ export default function CategoriesPage() {
         enqueueChildren(c.id as any);
       }
 
+      // Import auto rules
+      let rulesCreated = 0;
+      if (rules.length > 0) {
+        for (const r of rules) {
+          const oldCatId = r.category_id;
+          const newCatId = idMap.get(oldCatId);
+          if (!newCatId) continue; // 카테고리가 import되지 않았으면 스킵
+          try {
+            await api.post("/auto-rules", {
+              category_id: newCatId,
+              pattern_type: r.pattern_type,
+              pattern_text: r.pattern_text,
+              priority: r.priority,
+              is_active: r.is_active ?? true,
+            });
+            rulesCreated++;
+          } catch (e) {
+            console.error("규칙 생성 실패:", e);
+          }
+        }
+      }
+
       qc.invalidateQueries({ queryKey: ["categories"] });
       qc.invalidateQueries({ queryKey: ["categories-tree"] });
-      alert("Import 완료");
+      qc.invalidateQueries({ queryKey: ["auto-rules"] });
+      const resultMsg = rulesCreated > 0
+        ? `Import 완료 (카테고리: ${idMap.size}개, 자동 규칙: ${rulesCreated}개)`
+        : `Import 완료 (카테고리: ${idMap.size}개)`;
+      alert(resultMsg);
     } catch (e) {
       alert("Import 실패: " + (e instanceof Error ? e.message : String(e)));
     } finally {
@@ -293,10 +435,108 @@ export default function CategoriesPage() {
     ) },
   ];
 
+  // Auto Rules Columns
+  const ruleColumns: ColumnDef<AutoRule>[] = [
+    { accessorKey: "priority", header: "우선순위", cell: ({ getValue }) => <span className="font-mono text-sm">{getValue() as number}</span> },
+    {
+      accessorKey: "pattern_type",
+      header: "타입",
+      cell: ({ getValue }) => patternTypeOptions.find((o) => o.value === getValue())?.label ?? String(getValue()),
+    },
+    { accessorKey: "pattern_text", header: "패턴", cell: ({ getValue }) => <span className="font-mono text-sm">{getValue() as string}</span> },
+    {
+      accessorKey: "category_id",
+      header: "카테고리",
+      cell: ({ row }) => <span className="text-slate-700">{nameById[row.original.category_id] || "-"}</span>,
+    },
+    {
+      accessorKey: "is_active",
+      header: "활성",
+      cell: ({ row }) => (
+        <span className={`px-2 py-1 rounded text-xs ${row.original.is_active ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-600"}`}>
+          {row.original.is_active ? "활성" : "비활성"}
+        </span>
+      ),
+    },
+    {
+      id: "actions",
+      header: "",
+      cell: ({ row }) => (
+        <div className="space-x-2">
+          <button className="px-2 py-1 text-xs rounded bg-slate-100" onClick={() => startEditRule(row.original)}>
+            편집
+          </button>
+          <button
+            className="px-2 py-1 text-xs rounded bg-rose-100 text-rose-700"
+            onClick={() => {
+              if (confirm("이 규칙을 삭제하시겠습니까?")) deleteRuleMut.mutate(row.original.id);
+            }}
+          >
+            삭제
+          </button>
+        </div>
+      ),
+    },
+  ];
+
   return (
     <div className="space-y-4">
-      {/* Filters */}
-      <div className="flex flex-wrap gap-2 items-end">
+      {/* Header with Export/Import */}
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-bold">카테고리 관리</h1>
+        <div className="flex gap-2">
+          <button onClick={onExportJSON} className="px-3 py-2 rounded bg-slate-200 text-sm">
+            Export JSON
+          </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="application/json"
+            className="hidden"
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f) onImportJSON(f);
+            }}
+          />
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            disabled={importing}
+            className="px-3 py-2 rounded bg-slate-200 text-sm disabled:opacity-50"
+          >
+            {importing ? "Import 중..." : "Import JSON"}
+          </button>
+        </div>
+      </div>
+
+      {/* Tabs */}
+      <div className="flex gap-2 border-b">
+        <button
+          onClick={() => setActiveTab("categories")}
+          className={`px-4 py-2 font-medium ${
+            activeTab === "categories"
+              ? "border-b-2 border-emerald-600 text-emerald-600"
+              : "text-slate-600 hover:text-slate-900"
+          }`}
+        >
+          카테고리
+        </button>
+        <button
+          onClick={() => setActiveTab("rules")}
+          className={`px-4 py-2 font-medium ${
+            activeTab === "rules"
+              ? "border-b-2 border-emerald-600 text-emerald-600"
+              : "text-slate-600 hover:text-slate-900"
+          }`}
+        >
+          자동 규칙
+        </button>
+      </div>
+
+      {/* Categories Tab */}
+      {activeTab === "categories" && (
+        <>
+          {/* Filters */}
+          <div className="flex flex-wrap gap-2 items-end">
         <div>
           <label className="block text-xs text-slate-600 mb-1">검색</label>
           <input value={qText} onChange={(e) => setQText(e.target.value)} className="border rounded px-2 py-1" placeholder="이름 검색" />
@@ -327,12 +567,6 @@ export default function CategoriesPage() {
         </div>
         <button onClick={() => listQuery.refetch()} className="px-3 py-2 rounded bg-slate-800 text-white">검색</button>
         <div className="flex-1" />
-        <button onClick={onExportJSON} className="px-3 py-2 rounded bg-slate-200">Export JSON</button>
-        <input ref={fileInputRef} type="file" accept="application/json" className="hidden" onChange={(e) => {
-          const f = e.target.files?.[0];
-          if (f) onImportJSON(f);
-        }} />
-        <button onClick={() => fileInputRef.current?.click()} disabled={importing} className="px-3 py-2 rounded bg-slate-200 disabled:opacity-50">{importing ? "Import 중..." : "Import JSON"}</button>
         <button onClick={startCreate} className="px-3 py-2 rounded bg-emerald-600 text-white">새 카테고리</button>
       </div>
 
@@ -383,6 +617,109 @@ export default function CategoriesPage() {
         <span className="text-sm text-slate-600">{listQuery.data?.page ?? page} / {listQuery.data?.pages ?? 1} (총 {listQuery.data?.total ?? 0})</span>
         <button disabled={(listQuery.data?.page ?? 1) >= (listQuery.data?.pages ?? 1)} onClick={() => setPage((p) => p + 1)} className="px-3 py-1 rounded bg-slate-100">다음</button>
       </div>
+        </>
+      )}
+
+      {/* Auto Rules Tab */}
+      {activeTab === "rules" && (
+        <>
+          {/* Rule Form */}
+          {(editingRule || showRuleForm) && (
+            <form onSubmit={handleRuleSubmit(onRuleSubmit)} className="p-4 border rounded space-y-3 bg-slate-50">
+              <h3 className="font-semibold">{editingRule ? "규칙 수정" : "규칙 추가"}</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm font-medium mb-1">카테고리</label>
+                  <select {...registerRule("category_id")} className="w-full px-3 py-2 border rounded">
+                    <option value="">선택</option>
+                    {parentOptionsFlat.map((c) => (
+                      <option key={c.id} value={c.id}>{c.name}</option>
+                    ))}
+                  </select>
+                  {ruleFormErrors.category_id && <span className="text-xs text-rose-600">{ruleFormErrors.category_id.message}</span>}
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">패턴 타입</label>
+                  <select {...registerRule("pattern_type")} className="w-full px-3 py-2 border rounded">
+                    {patternTypeOptions.map((opt) => (
+                      <option key={opt.value} value={opt.value}>{opt.label}</option>
+                    ))}
+                  </select>
+                  {ruleFormErrors.pattern_type && <span className="text-xs text-rose-600">{ruleFormErrors.pattern_type.message}</span>}
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">패턴 텍스트</label>
+                  <input {...registerRule("pattern_text")} className="w-full px-3 py-2 border rounded" placeholder="예: 스타벅스" />
+                  {ruleFormErrors.pattern_text && <span className="text-xs text-rose-600">{ruleFormErrors.pattern_text.message}</span>}
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">우선순위 (0-100000)</label>
+                  <input type="number" {...registerRule("priority", { valueAsNumber: true })} className="w-full px-3 py-2 border rounded" />
+                  {ruleFormErrors.priority && <span className="text-xs text-rose-600">{ruleFormErrors.priority.message}</span>}
+                </div>
+                <div className="flex items-center gap-2">
+                  <input type="checkbox" {...registerRule("is_active")} />
+                  <span className="text-sm">활성</span>
+                </div>
+              </div>
+              <div className="flex gap-2">
+                <button type="submit" disabled={createRuleMut.isPending || updateRuleMut.isPending} className="px-3 py-2 rounded bg-slate-800 text-white">
+                  {editingRule ? "수정" : "생성"}
+                </button>
+                <button type="button" onClick={cancelRuleEdit} className="px-3 py-2 rounded bg-slate-200">취소</button>
+              </div>
+            </form>
+          )}
+
+          {/* Add Rule Button */}
+          {!editingRule && !showRuleForm && (
+            <button onClick={() => setShowRuleForm(true)} className="px-4 py-2 rounded bg-emerald-600 text-white">
+              + 규칙 추가
+            </button>
+          )}
+
+          {/* Rules Table */}
+          {rulesQuery.isLoading ? (
+            <div>로딩 중...</div>
+          ) : (
+            <DataTable columns={ruleColumns} data={rulesQuery.data ?? []} />
+          )}
+
+          {/* Test Simulation */}
+          <div className="p-4 border rounded space-y-3 bg-blue-50">
+            <h3 className="font-semibold">테스트 시뮬레이션</h3>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={testDescription}
+                onChange={(e) => setTestDescription(e.target.value)}
+                placeholder="거래 설명을 입력하세요 (예: 스타벅스 강남점)"
+                className="flex-1 px-3 py-2 border rounded"
+              />
+              <button
+                onClick={() => testRuleMut.mutate({ description: testDescription })}
+                disabled={testRuleMut.isPending || !testDescription.trim()}
+                className="px-4 py-2 rounded bg-blue-600 text-white"
+              >
+                테스트
+              </button>
+            </div>
+            {testRuleMut.data && (
+              <div className="p-3 bg-white rounded">
+                {testRuleMut.data.matched ? (
+                  <div className="text-sm">
+                    <span className="font-medium text-emerald-600">✓ 매칭됨</span>
+                    <div className="mt-1">카테고리: <span className="font-mono">{nameById[testRuleMut.data.category_id!] || testRuleMut.data.category_id}</span></div>
+                    <div className="text-xs text-slate-600 mt-1">규칙 ID: {testRuleMut.data.rule_id}</div>
+                  </div>
+                ) : (
+                  <span className="text-sm text-slate-600">매칭되는 규칙이 없습니다.</span>
+                )}
+              </div>
+            )}
+          </div>
+        </>
+      )}
     </div>
   );
 }
