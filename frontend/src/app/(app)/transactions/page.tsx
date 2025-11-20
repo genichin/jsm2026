@@ -433,7 +433,7 @@ export default function TransactionsPage() {
     }
   }, [hiddenCols]);
 
-  const baseColumns: ColumnDef<Transaction>[] = [
+  const baseColumns: ColumnDef<Transaction>[] = useMemo(() => [
     {
       accessorKey: "transaction_date",
       header: "일시",
@@ -509,7 +509,7 @@ export default function TransactionsPage() {
         </div>
       ),
     },
-  ];
+  ], [updateMut, deleteMut]);
   const columns: ColumnDef<Transaction>[] = useMemo(() => {
     return baseColumns.filter(c => {
       const key = (c as any).accessorKey || c.id;

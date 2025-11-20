@@ -62,8 +62,6 @@ export const TransactionCards: React.FC<Props> = ({ items, onEdit, virtualizeThr
   const [expandedMap, setExpandedMap] = useState<Record<string, boolean>>({});
   const toggle = (id: string) => setExpandedMap(m => ({ ...m, [id]: !m[id] }));
 
-  if (!items.length) return <div className="text-sm text-slate-500">표시할 거래가 없습니다.</div>;
-
   const shouldVirtualize = items.length >= virtualizeThreshold;
   const parentRef = useRef<HTMLDivElement | null>(null);
 
@@ -76,6 +74,8 @@ export const TransactionCards: React.FC<Props> = ({ items, onEdit, virtualizeThr
   });
 
   const virtualItems = virtualizer.getVirtualItems();
+
+  if (!items.length) return <div className="text-sm text-slate-500">표시할 거래가 없습니다.</div>;
 
   if (shouldVirtualize) {
     return (
