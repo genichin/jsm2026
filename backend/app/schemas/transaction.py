@@ -191,6 +191,7 @@ class TransactionUpdate(BaseModel):
     description: Optional[str] = None
     memo: Optional[str] = None
     is_confirmed: Optional[bool] = None
+    transaction_date: Optional[datetime] = Field(None, description="거래 일시 (수정 가능)")
     transaction_metadata: Optional[dict] = Field(None, description="추가 정보 (예: 환율, 외부 시스템 데이터 등)")
     category_id: Optional[str] = Field(None, description="카테고리 ID (변경/해제)")
 
