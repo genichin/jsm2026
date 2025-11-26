@@ -273,7 +273,12 @@ export default function TransactionsPage() {
   function startEdit(row: Transaction) {
     setSelectedType(row.type);
     setSelectedAssetId(row.asset_id);
-    setEditing(row);
+    // datetime-local input을 위해 ISO 문자열을 YYYY-MM-DDTHH:mm:ss 형식으로 변환
+    const editingData = {
+      ...row,
+      transaction_date: row.transaction_date.slice(0, 19)
+    };
+    setEditing(editingData);
     setIsModalOpen(true);
   }
 
@@ -366,6 +371,13 @@ export default function TransactionsPage() {
         }
       }
       
+      // 거래일시 처리: datetime-local 형식(YYYY-MM-DDTHH:mm:ss)을 ISO 문자열로 변환
+      let transactionDate = fd.get("transaction_date")?.toString() || new Date().toISOString();
+      if (transactionDate && !transactionDate.endsWith('Z') && transactionDate.length === 19) {
+        // datetime-local 형식이면 ISO 형식으로 변환
+        transactionDate = transactionDate + '.000Z';
+      }
+
       const payload: any = {
         asset_id,
         type,
@@ -373,7 +385,7 @@ export default function TransactionsPage() {
         price: parseFloat(fd.get("price")?.toString() || "1"),
         fee: parseFloat(fd.get("fee")?.toString() || "0"),
         tax: parseFloat(fd.get("tax")?.toString() || "0"),
-        transaction_date: fd.get("transaction_date")?.toString() || new Date().toISOString(),
+        transaction_date: transactionDate,
         description: fd.get("description")?.toString().trim() || null,
         memo: fd.get("memo")?.toString().trim() || null,
         is_confirmed: fd.get("is_confirmed") === "on",
@@ -680,7 +692,14 @@ export default function TransactionsPage() {
                 )}
                 <div className="col-span-2">
                   <label className="block text-sm font-medium text-slate-700 mb-1">거래일시 *</label>
-                  <input type="datetime-local" name="transaction_date" defaultValue={editing?.transaction_date?.slice(0, 19) || ""} className="w-full border rounded px-3 py-2" step="1" required />
+                  <input 
+                    type="datetime-local" 
+                    name="transaction_date" 
+                    defaultValue={editing?.transaction_date || new Date().toISOString().slice(0, 19)} 
+                    className="w-full border rounded px-3 py-2" 
+                    step="1" 
+                    required 
+                  />
                 </div>
                 {(selectedType === "buy" || selectedType === "sell") && (
                   <div className="col-span-2">
@@ -799,6 +818,18 @@ export default function TransactionsPage() {
                 )}
               </>
             )}
+            {/* 거래일시: 생성/편집 모드 모두 표시 */}
+            <div className="col-span-2">
+              <label className="block text-sm font-medium text-slate-700 mb-1">거래일시 *</label>
+              <input 
+                type="datetime-local" 
+                name="transaction_date" 
+                defaultValue={editing?.transaction_date || new Date().toISOString().slice(0, 19)} 
+                className="w-full border rounded px-3 py-2" 
+                step="1" 
+                required 
+              />
+            </div>
             {/* 카테고리: dividend와 exchange를 제외하고 표시 (편집 모드 포함) */}
             {selectedType !== "dividend" && selectedType !== "exchange" && (
               <div className={editing?.id ? "col-span-2" : ""}>
