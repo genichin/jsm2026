@@ -331,11 +331,19 @@ export default function TransactionsPage() {
     const fd = new FormData(form);
 
     if (editing.id) {
-      // Update: type, description, memo, is_confirmed, category_id
+      // Update: type, description, memo, is_confirmed, category_id, transaction_date
+      // 거래일시 처리: datetime-local 형식(YYYY-MM-DDTHH:mm:ss)을 ISO 문자열로 변환
+      let transactionDate = fd.get("transaction_date")?.toString();
+      if (transactionDate && !transactionDate.endsWith('Z') && transactionDate.length === 19) {
+        // datetime-local 형식이면 ISO 형식으로 변환
+        transactionDate = transactionDate + '.000Z';
+      }
+      
       const payload: any = {
         description: fd.get("description")?.toString().trim() || null,
         memo: fd.get("memo")?.toString().trim() || null,
         is_confirmed: fd.get("is_confirmed") === "on",
+        transaction_date: transactionDate,
       };
       
       // type 처리
