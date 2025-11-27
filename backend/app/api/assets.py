@@ -211,28 +211,17 @@ async def get_portfolio_summary(
         for asset in assets:
             # 거래 집계
             summary_query = db.query(
-                func.sum(Transaction.quantity).label('total_quantity'),
-                func.sum(Transaction.realized_profit).label('total_realized_profit')
+                func.sum(Transaction.quantity).label('total_quantity')
             ).filter(
-                Transaction.asset_id == asset.id,
-                Transaction.is_confirmed == True
+                Transaction.asset_id == asset.id
             ).first()
             
             current_quantity = summary_query.total_quantity or 0
-            realized_profit = summary_query.total_realized_profit or 0
+            # TODO: Calculate realized_profit from transaction extras if needed
+            realized_profit = 0
             
-            # 취득원가 계산 (매수 거래만)
-            cost_query = db.query(
-                func.sum(Transaction.quantity * Transaction.price + 
-                        Transaction.fee + Transaction.tax)
-            ).filter(
-                Transaction.asset_id == asset.id,
-                Transaction.type == 'exchange',
-                Transaction.quantity > 0,
-                Transaction.is_confirmed == True
-            ).scalar()
-            
-            asset_cost = cost_query or 0
+            # TODO: Calculate cost from transaction extras (price, fee, tax)
+            asset_cost = 0
             
             # 현재가는 외부 API에서 가져와야 하므로 임시로 0 설정
             current_value = 0
@@ -430,27 +419,17 @@ async def get_asset_summary(
     # 거래 집계
     from sqlalchemy import func
     summary_query = db.query(
-        func.sum(Transaction.quantity).label('total_quantity'),
-        func.sum(Transaction.realized_profit).label('total_realized_profit')
+        func.sum(Transaction.quantity).label('total_quantity')
     ).filter(
-        Transaction.asset_id == asset_id,
-        Transaction.is_confirmed == True
+        Transaction.asset_id == asset_id
     ).first()
     
     current_quantity = summary_query.total_quantity or 0
-    realized_profit = summary_query.total_realized_profit or 0
+    # TODO: Calculate realized_profit from transaction extras if needed
+    realized_profit = 0
     
-    # 취득원가 계산 (매수 거래만)
-    cost_query = db.query(
-        func.sum(Transaction.quantity * Transaction.price + Transaction.fee + Transaction.tax)
-    ).filter(
-        Transaction.asset_id == asset_id,
-        Transaction.type == 'exchange',
-        Transaction.quantity > 0,
-        Transaction.is_confirmed == True
-    ).scalar()
-    
-    total_cost = cost_query or 0
+    # TODO: Calculate cost from transaction extras (price, fee, tax)
+    total_cost = 0
     
     # 현재가는 외부 API에서 가져와야 하므로 임시로 0 설정
     current_value = 0

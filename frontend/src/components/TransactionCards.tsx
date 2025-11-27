@@ -9,17 +9,12 @@ export interface TransactionCardItem {
   asset_name?: string;
   type: TransactionType;
   quantity: number;
-  price: number;
-  fee: number;
-  tax: number;
-  realized_profit?: number | null;
   transaction_date: string; // ISO
   category_name?: string | null;
   description?: string | null;
   memo?: string | null;
-  is_confirmed: boolean;
-  external_id?: string | null;
   related_transaction_id?: string | null;
+  extras?: Record<string, any> | null;
 }
 
 interface Props {

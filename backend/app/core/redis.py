@@ -111,11 +111,8 @@ def calculate_and_update_balance(db, asset_id: str) -> float:
     from sqlalchemy import func
     
     # 모든 확정된 거래의 수량 합계
-    total_quantity = db.query(
-        func.sum(Transaction.quantity)
-    ).filter(
-        Transaction.asset_id == asset_id,
-        Transaction.is_confirmed == True
+    total_quantity = db.query(func.sum(Transaction.quantity)).filter(
+        Transaction.asset_id == asset_id
     ).scalar() or 0.0
     
     # Redis에 업데이트

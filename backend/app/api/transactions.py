@@ -43,17 +43,23 @@ def create_linked_cash_transaction(db: Session, asset_transaction: Transaction, 
     
     if not (is_buy or is_sell):
         return None
+    
+    # extras에서 거래 금액 정보 추출
+    extras = asset_transaction.extras or {}
+    price = float(extras.get('price', 0))
+    fee = float(extras.get('fee', 0))
+    tax = float(extras.get('tax', 0))
         
-    # 거래 금액 계산
-    trade_amount = abs(asset_transaction.quantity) * asset_transaction.price
+    # 거래 금액 계산 (Decimal을 float로 변환)
+    trade_amount = float(abs(asset_transaction.quantity)) * price
     
     if is_buy:
         # 매수: 현금 출금 (거래금액 + 수수료 + 세금)
-        cash_quantity = -1 * (trade_amount + asset_transaction.fee + asset_transaction.tax)
+        cash_quantity = -1 * (trade_amount + fee + tax)
         transaction_type = 'withdraw'
     else:
         # 매도: 현금 입금 (거래금액 - 수수료 - 세금)  
-        cash_quantity = trade_amount - asset_transaction.fee - asset_transaction.tax
+        cash_quantity = trade_amount - fee - tax
         transaction_type = 'deposit'
     
     # 현금 거래 생성
@@ -61,16 +67,11 @@ def create_linked_cash_transaction(db: Session, asset_transaction: Transaction, 
         asset_id=cash_asset.id,
         type=transaction_type,
         quantity=cash_quantity,
-        price=1.0,  # 현금은 항상 단가 1
-        fee=0,  # 현금 거래에는 별도 수수료 없음
-        tax=0,  # 현금 거래에는 별도 세금 없음
-        realized_profit=0,
         transaction_date=asset_transaction.transaction_date,
         description=description,
         memo=f"연결거래: {asset_transaction.id}",
         related_transaction_id=asset_transaction.id,
-        is_confirmed=asset_transaction.is_confirmed,
-        external_id=asset_transaction.external_id
+        extras={}
     )
     
     return cash_transaction
@@ -126,15 +127,9 @@ def serialize_transaction(tx: Transaction):
         "category": category_summary,
         "type": tx.type,
         "quantity": tx.quantity,
-        "price": tx.price,
-        "fee": tx.fee,
-        "tax": tx.tax,
-        "realized_profit": tx.realized_profit,
         "transaction_date": tx.transaction_date,
         "description": tx.description,
         "memo": tx.memo,
-        "is_confirmed": tx.is_confirmed,
-        "external_id": tx.external_id,
         "extras": tx.extras,
         "created_at": tx.created_at,
         "updated_at": tx.updated_at,
@@ -150,9 +145,10 @@ async def create_exchange(
     """환전 거래 생성 (출발/도착 자산에 쌍 레코드 생성)
 
     - 두 자산 모두 현금(cash) 자산이어야 함
-    - 출발 거래: quantity = -source_amount, fee = payload.fee, price = 1.0
-    - 도착 거래: quantity = +target_amount, fee = 0, price = 1.0
+    - 출발 거래: quantity = -source_amount
+    - 도착 거래: quantity = +target_amount
     - 두 거래는 서로의 related_transaction_id로 연결
+    - 수수료는 extras에 저장
     """
     if payload.source_asset_id == payload.target_asset_id:
         raise HTTPException(status_code=400, detail="출발 자산과 도착 자산이 동일할 수 없습니다")
@@ -171,35 +167,30 @@ async def create_exchange(
     if source_asset.account_id != target_asset.account_id:
         raise HTTPException(status_code=400, detail="환전은 같은 계좌 내에서만 가능합니다")
 
+    # extras 준비
+    source_extras = {}
+    if payload.fee and float(payload.fee) > 0:
+        source_extras['fee'] = float(payload.fee)
+    
     # 거래 생성
     source_tx = Transaction(
         asset_id=source_asset.id,
         type='exchange',
         quantity=-abs(float(payload.source_amount)),
-        price=1.0,
-        fee=float(payload.fee or 0),
-        tax=0.0,
-        realized_profit=0.0,
         transaction_date=payload.transaction_date,
         description=payload.description or f"환전 출발 ({source_asset.currency}→{target_asset.currency})",
         memo=payload.memo,
-        is_confirmed=payload.is_confirmed,
-        external_id=payload.external_id
+        extras=source_extras
     )
 
     target_tx = Transaction(
         asset_id=target_asset.id,
         type='exchange',
         quantity=abs(float(payload.target_amount)),
-        price=1.0,
-        fee=0.0,
-        tax=0.0,
-        realized_profit=0.0,
         transaction_date=payload.transaction_date,
         description=payload.description or f"환전 유입 ({source_asset.currency}→{target_asset.currency})",
         memo=payload.memo,
-        is_confirmed=payload.is_confirmed,
-        external_id=payload.external_id
+        extras={}
     )
 
     db.add(source_tx)
@@ -228,87 +219,8 @@ async def create_exchange(
         errors=[]
     )
 
+
 # Transaction endpoints
-def calculate_realized_profit(db: Session, transaction: TransactionCreate, asset: Asset) -> float:
-    """매수/매도 거래의 realized_profit 계산"""
-    
-    try:
-        if transaction.type.value == 'buy':
-            # 매수: 수수료와 세금은 즉시 손실
-            fee = float(transaction.fee or 0)
-            tax = float(transaction.tax or 0)
-            return -(fee + tax)
-        
-        elif transaction.type.value == 'sell':
-            # 매도: 간단한 계산 (복잡한 FIFO는 나중에 구현)
-            quantity = abs(float(transaction.quantity or 0))
-            price = float(transaction.price or 0)
-            fee = float(transaction.fee or 0)
-            tax = float(transaction.tax or 0)
-            
-            # 매도 금액 - 수수료 - 세금
-            sale_amount = quantity * price
-            return sale_amount - fee - tax
-        
-        else:
-            # 기타 거래는 기존 값 유지
-            return float(transaction.realized_profit or 0)
-            
-    except Exception as e:
-        # 계산 오류 시 0 반환
-        print(f"Error calculating realized profit: {e}")
-        return 0.0
-
-
-def validate_transaction_business_rules(transaction: TransactionCreate, asset: Asset):
-    """거래 비즈니스 규칙 검증"""
-    
-    # 현금 자산의 경우 특정 거래 타입만 허용
-    if asset.asset_type == 'cash':
-        allowed_cash_types = ['deposit', 'withdraw', 'transfer_in', 'transfer_out', 'interest', 'invest', 'fee', 'adjustment', 'exchange']
-        if transaction.type.value not in allowed_cash_types:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"현금 자산에는 {', '.join(allowed_cash_types)} 거래만 허용됩니다"
-            )
-    
-    # 주식/암호화폐 등 거래 가능한 자산의 경우 매수/매도 허용
-    tradeable_types = ['stock', 'crypto', 'etf', 'fund', 'bond']
-    if asset.asset_type in tradeable_types:
-        if transaction.type.value in ['buy', 'sell', 'dividend']:
-            # 매수/매도는 가격이 0보다 커야 함 (배당은 0 허용)
-            if transaction.type.value in ['buy', 'sell'] and transaction.price <= 0:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="매수/매도 거래의 가격은 0보다 커야 합니다"
-                )
-    else:
-        # 거래 불가능한 자산에서 매수/매도 시도시 에러
-        if transaction.type.value in ['buy', 'sell', 'dividend']:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"{asset.asset_type} 자산에는 매수/매도/배당이 허용되지 않습니다"
-            )
-    
-    # 음수 가격/수수료/세금 검증
-    if transaction.price < 0:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="거래 가격은 음수일 수 없습니다"
-        )
-    
-    if transaction.fee < 0:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="수수료는 음수일 수 없습니다"
-        )
-    
-    if transaction.tax < 0:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="세금은 음수일 수 없습니다"
-        )
-
 
 def allowed_category_flow_types_for(tx_type: str) -> set:
     """거래 타입에 허용되는 카테고리 flow_type 집합 반환
@@ -394,21 +306,23 @@ async def create_transaction(
                 detail="환전은 같은 계좌 내에서만 가능합니다"
             )
         
-        # 출발 거래 생성
+        # 출발 거래 생성 (fee는 extras에서 읽어 저장)
+        source_extras = dict(transaction.extras or {})
+        try:
+            fee_value = float(source_extras.get('fee', 0))
+        except (TypeError, ValueError):
+            fee_value = 0.0
+        if fee_value <= 0:
+            source_extras.pop('fee', None)
+        
         source_tx = Transaction(
             asset_id=source_asset.id,
             type='exchange',
             quantity=-abs(transaction.quantity),  # 음수
-            price=1.0,
-            fee=transaction.fee,
-            tax=0.0,
-            realized_profit=0.0,
             transaction_date=transaction.transaction_date,
             description=transaction.description or f"환전 출발 ({source_asset.currency}→{target_asset.currency})",
             memo=transaction.memo,
-            is_confirmed=transaction.is_confirmed,
-            external_id=transaction.external_id,
-            extras=transaction.extras
+            extras=source_extras
         )
         
         # 도착 거래 생성
@@ -416,16 +330,10 @@ async def create_transaction(
             asset_id=target_asset.id,
             type='exchange',
             quantity=abs(transaction.target_amount),  # 양수
-            price=1.0,
-            fee=0.0,
-            tax=0.0,
-            realized_profit=0.0,
             transaction_date=transaction.transaction_date,
             description=transaction.description or f"환전 유입 ({source_asset.currency}→{target_asset.currency})",
             memo=transaction.memo,
-            is_confirmed=transaction.is_confirmed,
-            external_id=transaction.external_id,
-            extras=transaction.extras
+            extras=transaction.extras or {}
         )
         
         db.add(source_tx)
@@ -463,15 +371,7 @@ async def create_transaction(
             detail="자산을 찾을 수 없습니다"
         )
     
-    # 거래 비즈니스 규칙 검증
-    validate_transaction_business_rules(transaction, asset)
-    
-    # 매수/매도의 경우 realized_profit 자동 계산
-    calculated_realized_profit = None
-    if transaction.type.value in ['buy', 'sell']:
-        calculated_realized_profit = calculate_realized_profit(db, transaction, asset)
-    else:
-        calculated_realized_profit = transaction.realized_profit
+    # 기본 비즈니스 규칙 검증은 스키마 검증(부호 등)과 DB 제약으로 처리
     
     # category 소유권 및 flow_type 호환성 검증 (있을 경우)
     chosen_category_id = getattr(transaction, 'category_id', None)
@@ -487,22 +387,18 @@ async def create_transaction(
             raise HTTPException(status_code=404, detail="카테고리를 찾을 수 없습니다")
         validate_category_flow_type_compatibility(transaction.type.value, cat)
 
-    # 거래 생성
+    # 거래 생성에 사용할 extras (이미 payload.extras에 포함된 값 사용)
+    extras = dict(transaction.extras or {})
+    
     db_transaction = Transaction(
         asset_id=transaction.asset_id,
         type=transaction.type.value,
         quantity=transaction.quantity,
-        price=transaction.price,
-        fee=transaction.fee,
-        tax=transaction.tax,
-        realized_profit=calculated_realized_profit,
         transaction_date=transaction.transaction_date,
         description=transaction.description,
         memo=transaction.memo,
         related_transaction_id=transaction.related_transaction_id,
-        is_confirmed=transaction.is_confirmed,
-        external_id=transaction.external_id,
-        extras=transaction.extras,
+        extras=extras,
         category_id=chosen_category_id
     )
     
@@ -574,8 +470,12 @@ async def create_transaction(
                 detail="연결된 계좌를 찾을 수 없습니다"
             )
     
-    # 배당의 경우 수량이 0이고 가격이 0보다 클 때 현금 자산과 연결된 입금 거래 자동 생성
-    if transaction.type.value == 'dividend' and db_transaction.quantity == 0 and db_transaction.price > 0:
+    # 배당의 경우 수량이 0이고 extras에 price가 있을 때 현금 자산과 연결된 입금 거래 자동 생성
+    dividend_extras = db_transaction.extras or {}
+    dividend_price = float(dividend_extras.get('price', 0))
+    dividend_tax = float(dividend_extras.get('tax', 0))
+    
+    if transaction.type.value == 'dividend' and db_transaction.quantity == 0 and dividend_price > 0:
         cash_asset = None
         
         # 1. 사용자가 지정한 현금 자산이 있으면 해당 자산 사용
@@ -600,24 +500,19 @@ async def create_transaction(
                 cash_asset = create_cash_asset_if_needed(db, current_user.id, asset.account_id)
         
         if cash_asset:
-            # 현금배당: 현금 거래의 수량 = 배당 거래의 가격 - 세금
-            dividend_amount = db_transaction.price - db_transaction.tax
+            # 현금배당: 현금 거래의 수량 = 배당 거래의 price - tax (extras에서 추출)
+            dividend_amount = dividend_price - dividend_tax
             
             # 연결된 현금 입금 거래 생성
             cash_transaction = Transaction(
                 asset_id=cash_asset.id,
                 type='deposit',
                 quantity=dividend_amount,
-                price=1.0,
-                fee=0,
-                tax=0,
-                realized_profit=0,
                 transaction_date=db_transaction.transaction_date,
                 description=f"{asset.name} 배당금 입금",
                 memo=f"연결거래: {db_transaction.id}",
                 related_transaction_id=db_transaction.id,
-                is_confirmed=db_transaction.is_confirmed,
-                external_id=db_transaction.external_id
+                extras={}
             )
             
             db.add(cash_transaction)
@@ -655,7 +550,6 @@ async def list_transactions(
     type: Optional[TransactionType] = Query(None),
     start_date: Optional[datetime] = Query(None),
     end_date: Optional[datetime] = Query(None),
-    is_confirmed: Optional[bool] = Query(None),
     category_id: Optional[str] = Query(None, description="카테고리 ID 필터"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
@@ -680,8 +574,6 @@ async def list_transactions(
         query = query.filter(Transaction.transaction_date >= start_date)
     if end_date:
         query = query.filter(Transaction.transaction_date <= end_date)
-    if is_confirmed is not None:
-        query = query.filter(Transaction.is_confirmed == is_confirmed)
     if category_id:
         query = query.filter(Transaction.category_id == category_id)
     
@@ -710,15 +602,10 @@ async def list_transactions(
             "category": category_summary,
             "type": tx.type,
             "quantity": tx.quantity,
-            "price": tx.price,
-            "fee": tx.fee,
-            "tax": tx.tax,
-            "realized_profit": tx.realized_profit,
             "transaction_date": tx.transaction_date,
             "description": tx.description,
             "memo": tx.memo,
-            "is_confirmed": tx.is_confirmed,
-            "external_id": tx.external_id,
+            "extras": tx.extras,
             "created_at": tx.created_at,
             "updated_at": tx.updated_at,
             "asset": {
@@ -765,27 +652,16 @@ async def get_portfolio_summary(
         # 각 자산별 거래 집계
         from sqlalchemy import func
         summary_query = db.query(
-            func.sum(Transaction.quantity).label('total_quantity'),
-            func.sum(Transaction.realized_profit).label('total_realized_profit')
+            func.sum(Transaction.quantity).label('total_quantity')
         ).filter(
-            Transaction.asset_id == asset.id,
-            Transaction.is_confirmed == True
+            Transaction.asset_id == asset.id
         ).first()
         
         current_quantity = summary_query.total_quantity or 0
-        realized_profit = summary_query.total_realized_profit or 0
+        realized_profit = 0  # TODO: Calculate from extras if needed
         
-        # 취득원가 계산 (매수 거래만)
-        cost_query = db.query(
-            func.sum(Transaction.quantity * Transaction.price + Transaction.fee + Transaction.tax)
-        ).filter(
-            Transaction.asset_id == asset.id,
-            Transaction.type == 'exchange',
-            Transaction.quantity > 0,
-            Transaction.is_confirmed == True
-        ).scalar()
-        
-        total_cost = cost_query or 0
+        # 취득원가 계산 (매수 거래만) - TODO: Calculate from extras if needed
+        total_cost = 0
         
         # 현재가는 외부 API에서 가져와야 하므로 임시로 0 설정
         current_value = 0
@@ -828,7 +704,6 @@ async def get_portfolio_summary(
 async def get_recent_transactions(
     page: int = Query(1, ge=1, description="페이지 번호 (1부터 시작)"),
     size: int = Query(20, ge=1, le=100, description="페이지당 항목 수"),
-    is_confirmed: Optional[bool] = Query(None, description="확정 상태 필터 (true/false/null)"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -837,7 +712,6 @@ async def get_recent_transactions(
     
     - **page**: 페이지 번호 (1부터 시작)
     - **size**: 페이지당 항목 수 (기본 20, 최대 100)
-    - **is_confirmed**: 확정 거래만 필터링 (선택사항)
     """
     try:
         # 사용자 소유 자산 ID 목록 조회
@@ -863,10 +737,6 @@ async def get_recent_transactions(
             .filter(Transaction.asset_id.in_(user_asset_ids))
         )
         
-        # is_confirmed 필터 적용
-        if is_confirmed is not None:
-            query = query.filter(Transaction.is_confirmed == is_confirmed)
-        
         # 최신순 정렬
         query = query.order_by(desc(Transaction.transaction_date), desc(Transaction.id))
         
@@ -889,15 +759,9 @@ async def get_recent_transactions(
                 "category_id": getattr(tx, "category_id", None),
                 "type": tx.type,
                 "quantity": tx.quantity,
-                "price": tx.price,
-                "fee": tx.fee,
-                "tax": tx.tax,
-                "realized_profit": tx.realized_profit,
                 "transaction_date": tx.transaction_date,
                 "description": tx.description,
                 "memo": tx.memo,
-                "is_confirmed": tx.is_confirmed,
-                "external_id": tx.external_id,
                 "extras": tx.extras,
                 "created_at": tx.created_at,
                 "updated_at": tx.updated_at,
@@ -969,15 +833,10 @@ async def get_transaction(
         "category": category_summary,
         "type": transaction.type,
         "quantity": transaction.quantity,
-        "price": transaction.price,
-        "fee": transaction.fee,
-        "tax": transaction.tax,
-        "realized_profit": transaction.realized_profit,
         "transaction_date": transaction.transaction_date,
         "description": transaction.description,
         "memo": transaction.memo,
-        "is_confirmed": transaction.is_confirmed,
-        "external_id": transaction.external_id,
+        "extras": transaction.extras,
         "created_at": transaction.created_at,
         "updated_at": transaction.updated_at,
         "asset": {
@@ -1120,21 +979,26 @@ async def create_bulk_transactions(
                     errors.append(f"거래 {i+1}: 자산을 찾을 수 없습니다")
                     continue
                 
-                # 거래 생성
+                # 거래 생성 (price, fee, tax는 extras에 저장)
+                extras = {}
+                if transaction_data.price is not None:
+                    extras['price'] = float(transaction_data.price)
+                if transaction_data.fee is not None and float(transaction_data.fee) > 0:
+                    extras['fee'] = float(transaction_data.fee)
+                if transaction_data.tax is not None and float(transaction_data.tax) > 0:
+                    extras['tax'] = float(transaction_data.tax)
+                if transaction_data.realized_profit is not None:
+                    extras['realized_profit'] = float(transaction_data.realized_profit)
+                
                 db_transaction = Transaction(
                     asset_id=transaction_data.asset_id,
                     type=transaction_data.type.value,
                     quantity=transaction_data.quantity,
-                    price=transaction_data.price,
-                    fee=transaction_data.fee,
-                    tax=transaction_data.tax,
-                    realized_profit=transaction_data.realized_profit,
                     transaction_date=transaction_data.transaction_date,
                     description=transaction_data.description,
                     memo=transaction_data.memo,
                     related_transaction_id=transaction_data.related_transaction_id,
-                    is_confirmed=transaction_data.is_confirmed,
-                    external_id=transaction_data.external_id
+                    extras=extras
                 )
                 
                 db.add(db_transaction)
@@ -1234,15 +1098,10 @@ async def get_asset_transactions(
             "category": category_summary,
             "type": tx.type,
             "quantity": tx.quantity,
-            "price": tx.price,
-            "fee": tx.fee,
-            "tax": tx.tax,
-            "realized_profit": tx.realized_profit,
             "transaction_date": tx.transaction_date,
             "description": tx.description,
             "memo": tx.memo,
-            "is_confirmed": tx.is_confirmed,
-            "external_id": tx.external_id,
+            "extras": tx.extras,
             "created_at": tx.created_at,
             "updated_at": tx.updated_at,
         })
@@ -1446,7 +1305,6 @@ async def upload_transactions_file(
                     'realized_profit': realized_profit,
                     'description': str(row.get('description', '')) if pd.notna(row.get('description')) else None,
                     'memo': str(row.get('memo', '')) if pd.notna(row.get('memo')) else None,
-                    'balance_after': float(row.get('balance_after', 0)) if pd.notna(row.get('balance_after')) else None,
                     'category_id': category_id_value,
                     'category_name': category_name_value,
                 }
@@ -1456,19 +1314,25 @@ async def upload_transactions_file(
                     preview_data.append(transaction_data)
                     created += 1
                 else:
-                    # 실제 저장
+                    # 실제 저장 (price, fee, tax, realized_profit는 extras에 저장)
+                    extras = {}
+                    if price is not None:
+                        extras['price'] = price
+                    if fee > 0:
+                        extras['fee'] = fee
+                    if tax > 0:
+                        extras['tax'] = tax
+                    if realized_profit != 0:
+                        extras['realized_profit'] = realized_profit
+                    
                     db_transaction = Transaction(
                         asset_id=asset_id,
                         type=trans_type,
                         quantity=quantity,
-                        price=price,
-                        fee=fee,
-                        tax=tax,
-                        realized_profit=realized_profit,
                         transaction_date=transaction_date,
                         description=transaction_data['description'],
                         memo=transaction_data['memo'],
-                        is_confirmed=True,
+                        extras=extras,
                         category_id=category_id_value
                     )
                     

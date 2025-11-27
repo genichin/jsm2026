@@ -109,19 +109,12 @@ class AssetResponse(AssetBase):
 class TransactionBase(BaseModel):
     """거래 기본 스키마"""
     type: TransactionType = Field(..., description="거래 유형")
+    category_id: Optional[str] = Field(None, description="카테고리 ID")
     quantity: float = Field(..., description="수량 변화 (양수=증가, 음수=감소)")
-    price: float = Field(..., ge=0, description="거래 단가")
-    fee: float = Field(default=0.0, ge=0, description="수수료")
-    tax: float = Field(default=0.0, ge=0, description="세금")
-    realized_profit: Optional[float] = Field(None, description="실현 손익")
-    balance_after: Optional[float] = Field(None, description="거래 후 잔액 (은행 거래)")
+    extras: Optional[dict] = Field(None, description="추가 정보 (price, fee, tax, rate, balance_after 등)")
     transaction_date: datetime = Field(..., description="거래 일시")
     description: Optional[str] = Field(None, description="거래 설명")
     memo: Optional[str] = Field(None, description="사용자 메모")
-    is_confirmed: bool = Field(default=True, description="거래 확정 여부")
-    external_id: Optional[str] = Field(None, max_length=100, description="외부 시스템 거래 ID")
-    extras: Optional[dict] = Field(None, description="추가 정보 (예: 환율, 외부 시스템 데이터 등)")
-    category_id: Optional[str] = Field(None, description="카테고리 ID (사용자 정의 의미 분류)")
 
 
 class TransactionCreate(TransactionBase):
