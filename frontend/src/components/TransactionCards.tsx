@@ -9,12 +9,18 @@ export interface TransactionCardItem {
   asset_name?: string;
   type: TransactionType;
   quantity: number;
+  price?: number | null;
+  fee?: number | null;
+  tax?: number | null;
   transaction_date: string; // ISO
   category_name?: string | null;
   description?: string | null;
   memo?: string | null;
   related_transaction_id?: string | null;
   extras?: Record<string, any> | null;
+  realized_profit?: number | null;
+  is_confirmed?: boolean;
+  external_id?: string | null;
 }
 
 interface Props {
@@ -95,7 +101,7 @@ interface TransactionCardProps {
 
 const TransactionCard: React.FC<TransactionCardProps> = ({ tx, expanded, onToggle, onEdit }) => {
   // 현금성 거래는 금액 계산 불필요 (성능 최적화)
-  const amount = !isCashTransaction(tx.type) ? money(Math.abs(tx.quantity), tx.price) : 0;
+  const amount = !isCashTransaction(tx.type) && typeof tx.price === 'number' ? money(Math.abs(tx.quantity), tx.price) : 0;
   const qtyDisplay = (tx.quantity < 0 ? "-" : "") + formatNumber(Math.abs(tx.quantity));
   const profit = tx.realized_profit;
   const panelId = `tx-panel-${tx.id}`;
