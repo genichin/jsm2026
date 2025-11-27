@@ -337,7 +337,7 @@ export default function TransactionsPage() {
       await updateMut.mutateAsync({ id: editing.id as string, payload });
     } else {
       // Create
-      const asset_id = fd.get("asset_id")?.toString();
+      const asset_id = selectedAssetId; // state에서 직접 가져오기 (자산 선택 후 필드가 사라지므로)
       const type = fd.get("type")?.toString() as TransactionType;
       if (!asset_id) return alert("자산을 선택하세요.");
 

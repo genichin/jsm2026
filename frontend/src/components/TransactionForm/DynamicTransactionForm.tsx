@@ -148,8 +148,8 @@ export function DynamicTransactionForm({
           </>
         )}
 
-        {/* 공통 필드 영역 (유형이 선택된 경우만 표시) */}
-        {transactionType && (isEditMode || isAssetLocked) && (
+        {/* 공통 필드 영역 (편집 모드이거나 자산이 선택된 경우 표시) */}
+        {(isEditMode || isAssetLocked) && (
           <>
            {/* 유형 필드 표시 */}
             
