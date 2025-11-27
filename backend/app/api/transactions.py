@@ -1,3 +1,4 @@
+from app.models import User, Asset, Transaction, Account, Category
 """
 Transaction API endpoints
 """
@@ -14,7 +15,7 @@ from pathlib import Path
 from app.core.database import get_db
 from app.api.auth import get_current_user
 from app.core.redis import calculate_and_update_balance, invalidate_user_cache
-from app.models import User, Asset, AssetTransaction, Account, Category
+from app.models import User, Asset, Transaction, Account, Category
 from app.services.auto_category import auto_assign_category
 from app.schemas.transaction import (
     TransactionCreate, TransactionUpdate, TransactionResponse, TransactionWithAsset,
@@ -33,7 +34,7 @@ def find_cash_asset_in_account(db: Session, user_id: str, account_id: str):
         Asset.asset_type == 'cash'
     ).first()
 
-def create_linked_cash_transaction(db: Session, asset_transaction: AssetTransaction, cash_asset: Asset, description: str):
+def create_linked_cash_transaction(db: Session, asset_transaction: Transaction, cash_asset: Asset, description: str):
     """매수/매도와 연결된 현금 거래 생성"""
     
     # 매수: 현금 감소, 매도: 현금 증가
@@ -56,7 +57,7 @@ def create_linked_cash_transaction(db: Session, asset_transaction: AssetTransact
         transaction_type = 'deposit'
     
     # 현금 거래 생성
-    cash_transaction = AssetTransaction(
+    cash_transaction = Transaction(
         asset_id=cash_asset.id,
         type=transaction_type,
         quantity=cash_quantity,
@@ -107,7 +108,7 @@ def create_cash_asset_if_needed(db: Session, user_id: str, account_id: str):
 router = APIRouter()
 
 
-def serialize_transaction(tx: AssetTransaction):
+def serialize_transaction(tx: Transaction):
     """단일 거래 직렬화 (카테고리 dict 포함)"""
     category_summary = None
     if getattr(tx, 'category_id', None) and getattr(tx, 'category', None):
@@ -134,7 +135,7 @@ def serialize_transaction(tx: AssetTransaction):
         "memo": tx.memo,
         "is_confirmed": tx.is_confirmed,
         "external_id": tx.external_id,
-        "transaction_metadata": tx.transaction_metadata,
+        "extras": tx.extras,
         "created_at": tx.created_at,
         "updated_at": tx.updated_at,
     }
@@ -171,7 +172,7 @@ async def create_exchange(
         raise HTTPException(status_code=400, detail="환전은 같은 계좌 내에서만 가능합니다")
 
     # 거래 생성
-    source_tx = AssetTransaction(
+    source_tx = Transaction(
         asset_id=source_asset.id,
         type='exchange',
         quantity=-abs(float(payload.source_amount)),
@@ -186,7 +187,7 @@ async def create_exchange(
         external_id=payload.external_id
     )
 
-    target_tx = AssetTransaction(
+    target_tx = Transaction(
         asset_id=target_asset.id,
         type='exchange',
         quantity=abs(float(payload.target_amount)),
@@ -394,7 +395,7 @@ async def create_transaction(
             )
         
         # 출발 거래 생성
-        source_tx = AssetTransaction(
+        source_tx = Transaction(
             asset_id=source_asset.id,
             type='exchange',
             quantity=-abs(transaction.quantity),  # 음수
@@ -407,11 +408,11 @@ async def create_transaction(
             memo=transaction.memo,
             is_confirmed=transaction.is_confirmed,
             external_id=transaction.external_id,
-            transaction_metadata=transaction.transaction_metadata
+            extras=transaction.extras
         )
         
         # 도착 거래 생성
-        target_tx = AssetTransaction(
+        target_tx = Transaction(
             asset_id=target_asset.id,
             type='exchange',
             quantity=abs(transaction.target_amount),  # 양수
@@ -424,7 +425,7 @@ async def create_transaction(
             memo=transaction.memo,
             is_confirmed=transaction.is_confirmed,
             external_id=transaction.external_id,
-            transaction_metadata=transaction.transaction_metadata
+            extras=transaction.extras
         )
         
         db.add(source_tx)
@@ -442,7 +443,7 @@ async def create_transaction(
         invalidate_user_cache(current_user.id)
         
         # 최종 조회하여 모든 필드 갱신
-        source_tx_final = db.query(AssetTransaction).filter(AssetTransaction.id == source_tx.id).first()
+        source_tx_final = db.query(Transaction).filter(Transaction.id == source_tx.id).first()
         
         # 출발 거래 응답
         db.refresh(source_tx_final)
@@ -487,7 +488,7 @@ async def create_transaction(
         validate_category_flow_type_compatibility(transaction.type.value, cat)
 
     # 거래 생성
-    db_transaction = AssetTransaction(
+    db_transaction = Transaction(
         asset_id=transaction.asset_id,
         type=transaction.type.value,
         quantity=transaction.quantity,
@@ -501,7 +502,7 @@ async def create_transaction(
         related_transaction_id=transaction.related_transaction_id,
         is_confirmed=transaction.is_confirmed,
         external_id=transaction.external_id,
-        transaction_metadata=transaction.transaction_metadata,
+        extras=transaction.extras,
         category_id=chosen_category_id
     )
     
@@ -603,7 +604,7 @@ async def create_transaction(
             dividend_amount = db_transaction.price - db_transaction.tax
             
             # 연결된 현금 입금 거래 생성
-            cash_transaction = AssetTransaction(
+            cash_transaction = Transaction(
                 asset_id=cash_asset.id,
                 type='deposit',
                 quantity=dividend_amount,
@@ -639,7 +640,7 @@ async def create_transaction(
     # 직렬화하여 일관된 응답 스키마 보장 (category dict 포함)
     try:
         # 카테고리 관계 로딩 보장
-        db_transaction = db.query(AssetTransaction).options(joinedload(AssetTransaction.category)).get(db_transaction.id)
+        db_transaction = db.query(Transaction).options(joinedload(Transaction.category)).get(db_transaction.id)
     except Exception:
         pass
     return TransactionResponse.model_validate(serialize_transaction(db_transaction))
@@ -661,31 +662,31 @@ async def list_transactions(
 ):
     """거래 목록 조회"""
     
-    query = db.query(AssetTransaction).join(Asset).filter(
+    query = db.query(Transaction).join(Asset).filter(
         Asset.user_id == current_user.id
     ).options(
-        joinedload(AssetTransaction.asset),
-        joinedload(AssetTransaction.category)
+        joinedload(Transaction.asset),
+        joinedload(Transaction.category)
     )
     
     # 필터 적용
     if asset_id:
-        query = query.filter(AssetTransaction.asset_id == asset_id)
+        query = query.filter(Transaction.asset_id == asset_id)
     if account_id:
         query = query.filter(Asset.account_id == account_id)
     if type:
-        query = query.filter(AssetTransaction.type == type.value)
+        query = query.filter(Transaction.type == type.value)
     if start_date:
-        query = query.filter(AssetTransaction.transaction_date >= start_date)
+        query = query.filter(Transaction.transaction_date >= start_date)
     if end_date:
-        query = query.filter(AssetTransaction.transaction_date <= end_date)
+        query = query.filter(Transaction.transaction_date <= end_date)
     if is_confirmed is not None:
-        query = query.filter(AssetTransaction.is_confirmed == is_confirmed)
+        query = query.filter(Transaction.is_confirmed == is_confirmed)
     if category_id:
-        query = query.filter(AssetTransaction.category_id == category_id)
+        query = query.filter(Transaction.category_id == category_id)
     
     # 최신 거래 먼저 정렬
-    query = query.order_by(desc(AssetTransaction.transaction_date), desc(AssetTransaction.created_at))
+    query = query.order_by(desc(Transaction.transaction_date), desc(Transaction.created_at))
     
     # 페이지네이션
     total = query.count()
@@ -693,7 +694,7 @@ async def list_transactions(
     transactions = query.offset(offset).limit(size).all()
     
     # Asset 객체를 dict로 변환
-    def serialize_tx(tx: AssetTransaction):
+    def serialize_tx(tx: Transaction):
         category_summary = None
         if getattr(tx, 'category_id', None) and getattr(tx, 'category', None):
             category_summary = {
@@ -764,11 +765,11 @@ async def get_portfolio_summary(
         # 각 자산별 거래 집계
         from sqlalchemy import func
         summary_query = db.query(
-            func.sum(AssetTransaction.quantity).label('total_quantity'),
-            func.sum(AssetTransaction.realized_profit).label('total_realized_profit')
+            func.sum(Transaction.quantity).label('total_quantity'),
+            func.sum(Transaction.realized_profit).label('total_realized_profit')
         ).filter(
-            AssetTransaction.asset_id == asset.id,
-            AssetTransaction.is_confirmed == True
+            Transaction.asset_id == asset.id,
+            Transaction.is_confirmed == True
         ).first()
         
         current_quantity = summary_query.total_quantity or 0
@@ -776,12 +777,12 @@ async def get_portfolio_summary(
         
         # 취득원가 계산 (매수 거래만)
         cost_query = db.query(
-            func.sum(AssetTransaction.quantity * AssetTransaction.price + AssetTransaction.fee + AssetTransaction.tax)
+            func.sum(Transaction.quantity * Transaction.price + Transaction.fee + Transaction.tax)
         ).filter(
-            AssetTransaction.asset_id == asset.id,
-            AssetTransaction.type == 'exchange',
-            AssetTransaction.quantity > 0,
-            AssetTransaction.is_confirmed == True
+            Transaction.asset_id == asset.id,
+            Transaction.type == 'exchange',
+            Transaction.quantity > 0,
+            Transaction.is_confirmed == True
         ).scalar()
         
         total_cost = cost_query or 0
@@ -854,20 +855,20 @@ async def get_recent_transactions(
         
         # 거래 내역 쿼리 (자산 정보와 조인)
         query = (
-            db.query(AssetTransaction)
+            db.query(Transaction)
             .options(
-                joinedload(AssetTransaction.asset),
-                joinedload(AssetTransaction.category)
+                joinedload(Transaction.asset),
+                joinedload(Transaction.category)
             )
-            .filter(AssetTransaction.asset_id.in_(user_asset_ids))
+            .filter(Transaction.asset_id.in_(user_asset_ids))
         )
         
         # is_confirmed 필터 적용
         if is_confirmed is not None:
-            query = query.filter(AssetTransaction.is_confirmed == is_confirmed)
+            query = query.filter(Transaction.is_confirmed == is_confirmed)
         
         # 최신순 정렬
-        query = query.order_by(desc(AssetTransaction.transaction_date), desc(AssetTransaction.id))
+        query = query.order_by(desc(Transaction.transaction_date), desc(Transaction.id))
         
         # 전체 개수 조회
         total = query.count()
@@ -897,7 +898,7 @@ async def get_recent_transactions(
                 "memo": tx.memo,
                 "is_confirmed": tx.is_confirmed,
                 "external_id": tx.external_id,
-                "transaction_metadata": tx.transaction_metadata,
+                "extras": tx.extras,
                 "created_at": tx.created_at,
                 "updated_at": tx.updated_at,
                 "asset": {
@@ -939,12 +940,12 @@ async def get_transaction(
 ):
     """거래 상세 조회"""
     
-    transaction = db.query(AssetTransaction).join(Asset).filter(
-        AssetTransaction.id == transaction_id,
+    transaction = db.query(Transaction).join(Asset).filter(
+        Transaction.id == transaction_id,
         Asset.user_id == current_user.id
     ).options(
-        joinedload(AssetTransaction.asset),
-        joinedload(AssetTransaction.category)
+        joinedload(Transaction.asset),
+        joinedload(Transaction.category)
     ).first()
     
     if not transaction:
@@ -999,8 +1000,8 @@ async def update_transaction(
 ):
     """거래 정보 수정"""
     
-    transaction = db.query(AssetTransaction).join(Asset).filter(
-        AssetTransaction.id == transaction_id,
+    transaction = db.query(Transaction).join(Asset).filter(
+        Transaction.id == transaction_id,
         Asset.user_id == current_user.id
     ).first()
     
@@ -1050,7 +1051,7 @@ async def update_transaction(
     
     db.commit()
     # 카테고리 관계를 로드하여 직렬화 시 사용
-    transaction = db.query(AssetTransaction).options(joinedload(AssetTransaction.category)).get(transaction.id)
+    transaction = db.query(Transaction).options(joinedload(Transaction.category)).get(transaction.id)
     
     # Redis에 자산 잔고 업데이트
     calculate_and_update_balance(db, transaction.asset_id)
@@ -1070,8 +1071,8 @@ async def delete_transaction(
 ):
     """거래 삭제"""
     
-    transaction = db.query(AssetTransaction).join(Asset).filter(
-        AssetTransaction.id == transaction_id,
+    transaction = db.query(Transaction).join(Asset).filter(
+        Transaction.id == transaction_id,
         Asset.user_id == current_user.id
     ).first()
     
@@ -1120,7 +1121,7 @@ async def create_bulk_transactions(
                     continue
                 
                 # 거래 생성
-                db_transaction = AssetTransaction(
+                db_transaction = Transaction(
                     asset_id=transaction_data.asset_id,
                     type=transaction_data.type.value,
                     quantity=transaction_data.quantity,
@@ -1197,25 +1198,25 @@ async def get_asset_transactions(
         )
     
     # 거래 내역 쿼리
-    query = db.query(AssetTransaction).filter(AssetTransaction.asset_id == asset_id).options(
-        joinedload(AssetTransaction.category)
+    query = db.query(Transaction).filter(Transaction.asset_id == asset_id).options(
+        joinedload(Transaction.category)
     )
     
     # 필터 적용
     if type:
-        query = query.filter(AssetTransaction.type == type.value)
+        query = query.filter(Transaction.type == type.value)
     if start_date:
-        query = query.filter(AssetTransaction.transaction_date >= start_date)
+        query = query.filter(Transaction.transaction_date >= start_date)
     if end_date:
-        query = query.filter(AssetTransaction.transaction_date <= end_date)
+        query = query.filter(Transaction.transaction_date <= end_date)
     if category_id:
-        query = query.filter(AssetTransaction.category_id == category_id)
+        query = query.filter(Transaction.category_id == category_id)
     
     # 전체 개수 계산
     total = query.count()
     
     # 정렬 및 페이징
-    transactions = query.order_by(desc(AssetTransaction.transaction_date))\
+    transactions = query.order_by(desc(Transaction.transaction_date))\
                       .offset((page - 1) * size)\
                       .limit(size).all()
     
@@ -1344,9 +1345,9 @@ async def upload_transactions_file(
         if not dry_run:
             # 최근 1년 거래만 조회 (성능 최적화)
             one_year_ago = datetime.now() - timedelta(days=365)
-            existing_txs = db.query(AssetTransaction).filter(
-                AssetTransaction.asset_id == asset_id,
-                AssetTransaction.transaction_date >= one_year_ago
+            existing_txs = db.query(Transaction).filter(
+                Transaction.asset_id == asset_id,
+                Transaction.transaction_date >= one_year_ago
             ).all()
             
             # (transaction_date, type, description) 튜플을 키로 사용
@@ -1456,7 +1457,7 @@ async def upload_transactions_file(
                     created += 1
                 else:
                     # 실제 저장
-                    db_transaction = AssetTransaction(
+                    db_transaction = Transaction(
                         asset_id=asset_id,
                         type=trans_type,
                         quantity=quantity,
@@ -1495,11 +1496,11 @@ async def upload_transactions_file(
                 db.commit()
                 
                 # 생성된 거래 조회 (카테고리 관계 포함)
-                transactions = db.query(AssetTransaction).filter(
-                    AssetTransaction.asset_id == asset_id
+                transactions = db.query(Transaction).filter(
+                    Transaction.asset_id == asset_id
                 ).options(
-                    joinedload(AssetTransaction.category)
-                ).order_by(desc(AssetTransaction.created_at)).limit(created).all()
+                    joinedload(Transaction.category)
+                ).order_by(desc(Transaction.created_at)).limit(created).all()
                 
                 created_transactions = [
                     TransactionResponse.model_validate(serialize_transaction(t)) for t in transactions

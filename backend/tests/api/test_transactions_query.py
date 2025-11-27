@@ -10,7 +10,7 @@ import pytest
 from datetime import datetime, timedelta
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
-from app.models import User, Account, Asset, AssetTransaction
+from app.models import User, Account, Asset, Transaction
 
 
 @pytest.fixture
@@ -69,7 +69,7 @@ def sample_transactions(
     db_session: Session,
     test_cash_asset: Asset,
     test_stock_asset: Asset
-) -> list[AssetTransaction]:
+) -> list[Transaction]:
     """테스트용 샘플 거래 데이터 (30건)"""
     transactions = []
     
@@ -82,7 +82,7 @@ def sample_transactions(
         tx_type = "deposit" if i % 2 == 0 else "withdraw"
         quantity = 10000 * (i + 1) if i % 2 == 0 else -5000 * (i + 1)
         
-        tx = AssetTransaction(
+        tx = Transaction(
             asset_id=test_cash_asset.id,
             type=tx_type,
             quantity=quantity,
@@ -102,7 +102,7 @@ def sample_transactions(
         tx_type = "buy" if i % 3 == 0 else "sell"
         quantity = 10 * (i + 1) if tx_type == "buy" else -5 * (i + 1)
         
-        tx = AssetTransaction(
+        tx = Transaction(
             asset_id=test_stock_asset.id,
             type=tx_type,
             quantity=quantity,
@@ -441,10 +441,10 @@ class TestSingleTransaction:
         assert response.status_code == 401
 
 
-class TestAssetTransactionsList:
+class TestTransactionsList:
     """자산별 거래 조회 테스트 (GET /api/v1/transactions/assets/{asset_id}/transactions)"""
     
-    def test_get_asset_transactions_success(
+    def test_get_transactions_success(
         self,
         client: TestClient,
         auth_header: dict,
@@ -466,7 +466,7 @@ class TestAssetTransactionsList:
         for item in data["items"]:
             assert item["asset_id"] == test_stock_asset.id
     
-    def test_get_asset_transactions_with_type_filter(
+    def test_get_transactions_with_type_filter(
         self,
         client: TestClient,
         auth_header: dict,
@@ -487,7 +487,7 @@ class TestAssetTransactionsList:
         for item in data["items"]:
             assert item["type"] == "buy"
     
-    def test_get_asset_transactions_with_date_filter(
+    def test_get_transactions_with_date_filter(
         self,
         client: TestClient,
         auth_header: dict,
@@ -508,7 +508,7 @@ class TestAssetTransactionsList:
         # 11/8 이후 거래 (11/8 ~ 11/15, 8일 = 8건)
         assert data["total"] == 8
     
-    def test_get_asset_transactions_pagination(
+    def test_get_transactions_pagination(
         self,
         client: TestClient,
         auth_header: dict,
@@ -530,7 +530,7 @@ class TestAssetTransactionsList:
         assert data["pages"] == 3
         assert len(data["items"]) == 5
     
-    def test_get_asset_transactions_invalid_asset(
+    def test_get_transactions_invalid_asset(
         self,
         client: TestClient,
         auth_header: dict

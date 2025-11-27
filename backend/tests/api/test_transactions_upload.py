@@ -8,7 +8,7 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
-from app.models import User, Asset, Account, AssetTransaction
+from app.models import User, Asset, Account, Transaction
 
 
 # 테스트 파일 경로
@@ -115,8 +115,8 @@ class TestFileUpload:
         csv_file = TESTDATA_DIR / "sample_transactions_utf8.csv"
         
         # 업로드 전 거래 수 확인
-        before_count = db_session.query(AssetTransaction).filter(
-            AssetTransaction.asset_id == test_cash_asset.id
+        before_count = db_session.query(Transaction).filter(
+            Transaction.asset_id == test_cash_asset.id
         ).count()
         
         with open(csv_file, 'rb') as f:
@@ -139,8 +139,8 @@ class TestFileUpload:
         assert len(data["transactions"]) == 3
         
         # DB에 실제로 저장되었는지 확인
-        after_count = db_session.query(AssetTransaction).filter(
-            AssetTransaction.asset_id == test_cash_asset.id
+        after_count = db_session.query(Transaction).filter(
+            Transaction.asset_id == test_cash_asset.id
         ).count()
         
         assert after_count == before_count + 3
@@ -614,8 +614,8 @@ class TestDuplicateDetection:
         assert data2["failed"] == 0
         
         # DB에는 여전히 3개만 있어야 함
-        transaction_count = db_session.query(AssetTransaction).filter(
-            AssetTransaction.asset_id == test_cash_asset.id
+        transaction_count = db_session.query(Transaction).filter(
+            Transaction.asset_id == test_cash_asset.id
         ).count()
         assert transaction_count == 3
     
@@ -673,8 +673,8 @@ class TestDuplicateDetection:
         assert data2["failed"] == 0
         
         # DB에는 총 4개 거래가 있어야 함
-        transaction_count = db_session.query(AssetTransaction).filter(
-            AssetTransaction.asset_id == test_cash_asset.id
+        transaction_count = db_session.query(Transaction).filter(
+            Transaction.asset_id == test_cash_asset.id
         ).count()
         assert transaction_count == 4
     
@@ -728,8 +728,8 @@ class TestDuplicateDetection:
         assert data2["skipped"] == 0
         
         # DB에는 총 2개 거래가 있어야 함
-        transaction_count = db_session.query(AssetTransaction).filter(
-            AssetTransaction.asset_id == test_cash_asset.id
+        transaction_count = db_session.query(Transaction).filter(
+            Transaction.asset_id == test_cash_asset.id
         ).count()
         assert transaction_count == 2
 

@@ -10,7 +10,7 @@ from datetime import datetime
 from decimal import Decimal
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
-from app.models import User, Account, Asset, AssetTransaction
+from app.models import User, Account, Asset, Transaction
 
 
 @pytest.fixture
@@ -653,7 +653,7 @@ class TestConcurrencyAndRaceConditions:
     ):
         """삭제된 거래 수정 시도"""
         # 거래 생성
-        tx = AssetTransaction(
+        tx = Transaction(
             asset_id=test_asset.id,
             type="deposit",
             quantity=1000,
@@ -689,7 +689,7 @@ class TestConcurrencyAndRaceConditions:
     ):
         """이미 삭제된 거래 재삭제"""
         # 거래 생성
-        tx = AssetTransaction(
+        tx = Transaction(
             asset_id=test_asset.id,
             type="deposit",
             quantity=1000,
@@ -785,7 +785,7 @@ class TestSpecialCharacters:
                 "quantity": 1000,
                 "price": 1.0,
                 "transaction_date": "2025-11-13T10:00:00",
-                "description": "'; DROP TABLE asset_transactions; --"
+                "description": "'; DROP TABLE transactions; --"
             }
         )
         

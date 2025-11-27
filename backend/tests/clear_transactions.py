@@ -14,7 +14,7 @@ sys.path.insert(0, str(project_root))
 
 from sqlalchemy.orm import Session
 from app.core.database import SessionLocal, engine
-from app.models import AssetTransaction
+from app.models import Transaction
 
 
 def clear_all_transactions():
@@ -23,7 +23,7 @@ def clear_all_transactions():
     
     try:
         # 거래 개수 확인
-        count = db.query(AssetTransaction).count()
+        count = db.query(Transaction).count()
         print(f"현재 거래 레코드 수: {count}")
         
         if count == 0:
@@ -38,7 +38,7 @@ def clear_all_transactions():
             return
         
         # 모든 거래 삭제
-        deleted = db.query(AssetTransaction).delete()
+        deleted = db.query(Transaction).delete()
         db.commit()
         
         print(f"\n✓ {deleted}개의 거래가 삭제되었습니다.")
@@ -68,7 +68,7 @@ def clear_transactions_by_user(user_id: str = None, username: str = None):
             print(f"사용자 '{username}' (ID: {user_id}) 발견")
         
         # 사용자의 거래 개수 확인
-        count = db.query(AssetTransaction).join(Asset).filter(
+        count = db.query(Transaction).join(Asset).filter(
             Asset.user_id == user_id
         ).count()
         
@@ -90,8 +90,8 @@ def clear_transactions_by_user(user_id: str = None, username: str = None):
         asset_ids = [a.id for a in db.query(Asset).filter(Asset.user_id == user_id).all()]
         
         # 해당 자산들의 거래 삭제
-        deleted = db.query(AssetTransaction).filter(
-            AssetTransaction.asset_id.in_(asset_ids)
+        deleted = db.query(Transaction).filter(
+            Transaction.asset_id.in_(asset_ids)
         ).delete(synchronize_session=False)
         
         db.commit()
@@ -112,8 +112,8 @@ def clear_transactions_by_asset(asset_id: str):
     
     try:
         # 자산의 거래 개수 확인
-        count = db.query(AssetTransaction).filter(
-            AssetTransaction.asset_id == asset_id
+        count = db.query(Transaction).filter(
+            Transaction.asset_id == asset_id
         ).count()
         
         print(f"자산 {asset_id}의 거래 레코드 수: {count}")
@@ -130,8 +130,8 @@ def clear_transactions_by_asset(asset_id: str):
             return
         
         # 자산의 거래 삭제
-        deleted = db.query(AssetTransaction).filter(
-            AssetTransaction.asset_id == asset_id
+        deleted = db.query(Transaction).filter(
+            Transaction.asset_id == asset_id
         ).delete()
         
         db.commit()

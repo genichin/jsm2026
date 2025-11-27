@@ -13,7 +13,7 @@ from app.models import (
     Asset,
     Account,
     AccountShare,
-    AssetTransaction,
+    Transaction,
 )
 
 
@@ -31,11 +31,11 @@ def validate_target(db: Session, user_id: str, target_type: TargetType, target_i
         )
     else:  # TRANSACTION
         entity = (
-            db.query(AssetTransaction)
-            .join(Asset, Asset.id == AssetTransaction.asset_id)
+            db.query(Transaction)
+            .join(Asset, Asset.id == Transaction.asset_id)
             .outerjoin(Account, Account.id == Asset.account_id)
             .outerjoin(AccountShare, AccountShare.account_id == Account.id)
-            .filter(AssetTransaction.id == target_id)
+            .filter(Transaction.id == target_id)
             .filter((Asset.user_id == user_id) | (Account.owner_id == user_id) | (AccountShare.user_id == user_id))
             .first()
         )

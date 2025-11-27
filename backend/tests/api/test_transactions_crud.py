@@ -7,7 +7,7 @@ from datetime import datetime
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
-from app.models import User, Asset, Account, AssetTransaction
+from app.models import User, Asset, Account, Transaction
 
 
 @pytest.fixture
@@ -61,9 +61,9 @@ def test_stock_asset(db_session: Session, test_user: User, test_account: Account
 
 
 @pytest.fixture
-def test_transaction(db_session: Session, test_cash_asset: Asset) -> AssetTransaction:
+def test_transaction(db_session: Session, test_cash_asset: Asset) -> Transaction:
     """테스트용 거래 생성"""
-    transaction = AssetTransaction(
+    transaction = Transaction(
         asset_id=test_cash_asset.id,
         type="deposit",
         quantity=10000,
@@ -229,7 +229,7 @@ class TestCreateTransaction:
 class TestListTransactions:
     """거래 목록 조회 테스트"""
     
-    def test_list_transactions_success(self, client: TestClient, auth_header: dict, test_transaction: AssetTransaction):
+    def test_list_transactions_success(self, client: TestClient, auth_header: dict, test_transaction: Transaction):
         """거래 목록 조회 성공"""
         response = client.get(
             "/api/v1/transactions",
@@ -248,7 +248,7 @@ class TestListTransactions:
         transaction_ids = [item["id"] for item in data["items"]]
         assert test_transaction.id in transaction_ids
     
-    def test_list_transactions_pagination(self, client: TestClient, auth_header: dict, test_transaction: AssetTransaction):
+    def test_list_transactions_pagination(self, client: TestClient, auth_header: dict, test_transaction: Transaction):
         """페이지네이션 테스트"""
         response = client.get(
             "/api/v1/transactions?page=1&size=5",
@@ -260,7 +260,7 @@ class TestListTransactions:
         assert data["page"] == 1
         assert data["size"] == 5
     
-    def test_list_transactions_filter_by_type(self, client: TestClient, auth_header: dict, test_transaction: AssetTransaction):
+    def test_list_transactions_filter_by_type(self, client: TestClient, auth_header: dict, test_transaction: Transaction):
         """거래 유형별 필터링"""
         response = client.get(
             "/api/v1/transactions?type=deposit",
@@ -272,7 +272,7 @@ class TestListTransactions:
         for item in data["items"]:
             assert item["type"] == "deposit"
     
-    def test_list_transactions_filter_by_asset(self, client: TestClient, auth_header: dict, test_transaction: AssetTransaction, test_cash_asset: Asset):
+    def test_list_transactions_filter_by_asset(self, client: TestClient, auth_header: dict, test_transaction: Transaction, test_cash_asset: Asset):
         """자산별 필터링"""
         response = client.get(
             f"/api/v1/transactions?asset_id={test_cash_asset.id}",
@@ -284,7 +284,7 @@ class TestListTransactions:
         for item in data["items"]:
             assert item["asset_id"] == test_cash_asset.id
     
-    def test_list_transactions_filter_by_date_range(self, client: TestClient, auth_header: dict, test_transaction: AssetTransaction):
+    def test_list_transactions_filter_by_date_range(self, client: TestClient, auth_header: dict, test_transaction: Transaction):
         """날짜 범위 필터링"""
         response = client.get(
             "/api/v1/transactions?start_date=2025-11-01&end_date=2025-11-30",
@@ -305,7 +305,7 @@ class TestListTransactions:
 class TestGetTransaction:
     """거래 상세 조회 테스트"""
     
-    def test_get_transaction_success(self, client: TestClient, auth_header: dict, test_transaction: AssetTransaction):
+    def test_get_transaction_success(self, client: TestClient, auth_header: dict, test_transaction: Transaction):
         """거래 상세 조회 성공"""
         response = client.get(
             f"/api/v1/transactions/{test_transaction.id}",
@@ -329,7 +329,7 @@ class TestGetTransaction:
         assert response.status_code == 404
         assert "거래를 찾을 수 없습니다" in response.json()["detail"]
     
-    def test_get_transaction_no_auth(self, client: TestClient, test_transaction: AssetTransaction):
+    def test_get_transaction_no_auth(self, client: TestClient, test_transaction: Transaction):
         """인증 없이 거래 조회 시도"""
         response = client.get(f"/api/v1/transactions/{test_transaction.id}")
         
@@ -340,7 +340,7 @@ class TestGetTransaction:
         client: TestClient,
         db_session: Session,
         test_password: str,
-        test_transaction: AssetTransaction
+        test_transaction: Transaction
     ):
         """다른 사용자의 거래 조회 시도"""
         from app.core.security import get_password_hash
@@ -379,7 +379,7 @@ class TestGetTransaction:
 class TestUpdateTransaction:
     """거래 수정 테스트"""
     
-    def test_update_transaction_success(self, client: TestClient, auth_header: dict, test_transaction: AssetTransaction):
+    def test_update_transaction_success(self, client: TestClient, auth_header: dict, test_transaction: Transaction):
         """거래 정보 수정 성공"""
         response = client.put(
             f"/api/v1/transactions/{test_transaction.id}",
@@ -395,7 +395,7 @@ class TestUpdateTransaction:
         assert data["description"] == "Updated Description"
         assert data["memo"] == "Updated Memo"
     
-    def test_update_transaction_quantity(self, client: TestClient, auth_header: dict, test_transaction: AssetTransaction):
+    def test_update_transaction_quantity(self, client: TestClient, auth_header: dict, test_transaction: Transaction):
         """거래 수량 수정 (수량은 변경 불가 - description/memo만 가능)"""
         # TransactionUpdate 스키마는 quantity를 지원하지 않음
         # description, memo, is_confirmed, category_id만 변경 가능
@@ -425,7 +425,7 @@ class TestUpdateTransaction:
         
         assert response.status_code == 404
     
-    def test_update_transaction_no_auth(self, client: TestClient, test_transaction: AssetTransaction):
+    def test_update_transaction_no_auth(self, client: TestClient, test_transaction: Transaction):
         """인증 없이 거래 수정 시도"""
         response = client.put(
             f"/api/v1/transactions/{test_transaction.id}",
@@ -438,7 +438,7 @@ class TestUpdateTransaction:
         self, 
         client: TestClient, 
         auth_header: dict, 
-        test_transaction: AssetTransaction
+        test_transaction: Transaction
     ):
         """거래 유형 변경"""
         # deposit에서 withdraw로 변경
@@ -460,7 +460,7 @@ class TestUpdateTransaction:
 class TestDeleteTransaction:
     """거래 삭제 테스트"""
     
-    def test_delete_transaction_success(self, client: TestClient, auth_header: dict, test_transaction: AssetTransaction):
+    def test_delete_transaction_success(self, client: TestClient, auth_header: dict, test_transaction: Transaction):
         """거래 삭제 성공"""
         response = client.delete(
             f"/api/v1/transactions/{test_transaction.id}",
@@ -485,7 +485,7 @@ class TestDeleteTransaction:
         
         assert response.status_code == 404
     
-    def test_delete_transaction_no_auth(self, client: TestClient, test_transaction: AssetTransaction):
+    def test_delete_transaction_no_auth(self, client: TestClient, test_transaction: Transaction):
         """인증 없이 거래 삭제 시도"""
         response = client.delete(f"/api/v1/transactions/{test_transaction.id}")
         
@@ -524,9 +524,9 @@ class TestTransactionBusinessRules:
         buy_transaction_id = response.json()["id"]
         
         # DB에서 연결된 현금 거래 확인
-        cash_transactions = db_session.query(AssetTransaction).filter(
-            AssetTransaction.asset_id == test_cash_asset.id,
-            AssetTransaction.related_transaction_id == buy_transaction_id
+        cash_transactions = db_session.query(Transaction).filter(
+            Transaction.asset_id == test_cash_asset.id,
+            Transaction.related_transaction_id == buy_transaction_id
         ).all()
         
         # 연결 거래가 생성되었는지 확인
@@ -566,9 +566,9 @@ class TestTransactionBusinessRules:
         sell_transaction_id = response.json()["id"]
         
         # DB에서 연결된 현금 거래 확인
-        cash_transactions = db_session.query(AssetTransaction).filter(
-            AssetTransaction.asset_id == test_cash_asset.id,
-            AssetTransaction.related_transaction_id == sell_transaction_id
+        cash_transactions = db_session.query(Transaction).filter(
+            Transaction.asset_id == test_cash_asset.id,
+            Transaction.related_transaction_id == sell_transaction_id
         ).all()
         
         # 연결 거래가 생성되었는지 확인
@@ -666,8 +666,8 @@ class TestExchangeTransaction:
         assert data["related_transaction_id"] is not None
         
         # DB에서 대응 거래 확인
-        related_tx = db_session.query(AssetTransaction).filter(
-            AssetTransaction.id == data["related_transaction_id"]
+        related_tx = db_session.query(Transaction).filter(
+            Transaction.id == data["related_transaction_id"]
         ).first()
         
         assert related_tx is not None

@@ -9,7 +9,7 @@ from decimal import Decimal
 from datetime import datetime
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
-from app.models import User, Account, Asset, AssetTransaction
+from app.models import User, Account, Asset, Transaction
 
 
 @pytest.fixture
@@ -92,7 +92,7 @@ def portfolio_transactions(
     
     # 현금 자산 거래
     cash_transactions = [
-        AssetTransaction(
+        Transaction(
             asset_id=test_cash_asset.id,
             type="deposit",
             quantity=10000000,  # 1000만원 입금
@@ -104,7 +104,7 @@ def portfolio_transactions(
             description="초기 입금",
             is_confirmed=True
         ),
-        AssetTransaction(
+        Transaction(
             asset_id=test_cash_asset.id,
             type="withdraw",
             quantity=-3000000,  # 300만원 출금 (주식 매수용)
@@ -120,7 +120,7 @@ def portfolio_transactions(
     
     # 삼성전자 거래
     samsung_transactions = [
-        AssetTransaction(
+        Transaction(
             asset_id=test_stock_asset_samsung.id,
             type="buy",
             quantity=50,  # 50주 매수
@@ -132,7 +132,7 @@ def portfolio_transactions(
             description="삼성전자 매수",
             is_confirmed=True
         ),
-        AssetTransaction(
+        Transaction(
             asset_id=test_stock_asset_samsung.id,
             type="sell",
             quantity=-20,  # 20주 매도
@@ -148,7 +148,7 @@ def portfolio_transactions(
     
     # 카카오 거래
     kakao_transactions = [
-        AssetTransaction(
+        Transaction(
             asset_id=test_stock_asset_kakao.id,
             type="buy",
             quantity=30,  # 30주 매수
@@ -212,7 +212,7 @@ class TestPortfolioBasic:
     ):
         """현금 자산만 있는 경우"""
         # 현금 입금
-        from app.models import AssetTransaction
+        from app.models import Transaction
         from sqlalchemy.orm import Session
         
         response = client.post(
@@ -386,7 +386,7 @@ class TestPortfolioFiltering:
     ):
         """확정된 거래만 포함"""
         # 확정된 거래
-        confirmed_tx = AssetTransaction(
+        confirmed_tx = Transaction(
             asset_id=test_cash_asset.id,
             type="deposit",
             quantity=1000000,
@@ -400,7 +400,7 @@ class TestPortfolioFiltering:
         )
         
         # 미확정 거래
-        unconfirmed_tx = AssetTransaction(
+        unconfirmed_tx = Transaction(
             asset_id=test_cash_asset.id,
             type="deposit",
             quantity=500000,
@@ -438,7 +438,7 @@ class TestPortfolioFiltering:
     ):
         """활성 자산만 포함"""
         # 거래 추가
-        tx = AssetTransaction(
+        tx = Transaction(
             asset_id=test_cash_asset.id,
             type="deposit",
             quantity=1000000,
@@ -491,7 +491,7 @@ class TestPortfolioEdgeCases:
     ):
         """수량이 0인 자산 (전량 매도)"""
         # 매수
-        buy_tx = AssetTransaction(
+        buy_tx = Transaction(
             asset_id=test_stock_asset_samsung.id,
             type="buy",
             quantity=10,
@@ -505,7 +505,7 @@ class TestPortfolioEdgeCases:
         )
         
         # 전량 매도
-        sell_tx = AssetTransaction(
+        sell_tx = Transaction(
             asset_id=test_stock_asset_samsung.id,
             type="sell",
             quantity=-10,
@@ -549,7 +549,7 @@ class TestPortfolioEdgeCases:
     ):
         """마이너스 현금 (출금이 입금보다 많은 경우)"""
         transactions = [
-            AssetTransaction(
+            Transaction(
                 asset_id=test_cash_asset.id,
                 type="deposit",
                 quantity=100000,
@@ -561,7 +561,7 @@ class TestPortfolioEdgeCases:
                 description="입금",
                 is_confirmed=True
             ),
-            AssetTransaction(
+            Transaction(
                 asset_id=test_cash_asset.id,
                 type="withdraw",
                 quantity=-150000,  # 입금보다 많은 출금
@@ -598,7 +598,7 @@ class TestPortfolioEdgeCases:
     ):
         """큰 금액 처리"""
         # 10억원 입금
-        tx = AssetTransaction(
+        tx = Transaction(
             asset_id=test_cash_asset.id,
             type="deposit",
             quantity=1000000000,  # 10억
@@ -683,7 +683,7 @@ class TestPortfolioResponseStructure:
     ):
         """소수점 정밀도 테스트"""
         # 소수점이 있는 금액
-        tx = AssetTransaction(
+        tx = Transaction(
             asset_id=test_cash_asset.id,
             type="deposit",
             quantity=1234.56,

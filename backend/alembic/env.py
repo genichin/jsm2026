@@ -13,7 +13,7 @@ from app.core.config import settings
 # Import all models for autogenerate to detect them
 from app.models import (
     User, Account,
-    AssetType, TransactionType, Asset, AssetTransaction, Category
+    AssetType, TransactionType, Asset, Transaction, Category
 )
 
 # this is the Alembic Config object, which provides

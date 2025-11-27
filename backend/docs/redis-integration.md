@@ -2,7 +2,7 @@
 
 ## 개요
 
-거래(`asset_transactions`) 추가/수정/삭제 시 자동으로 Redis에 자산 잔고가 업데이트됩니다.
+거래(`transactions`) 추가/수정/삭제 시 자동으로 Redis에 자산 잔고가 업데이트됩니다.
 
 ## Redis 키 구조
 

@@ -3,7 +3,7 @@
 ## 개요
 `upload_transactions_file` API 엔드포인트에 `file_parser.py` 서비스를 통합하여 다양한 금융기관의 거래 내역 파일을 자동으로 파싱하고 표준 형식으로 변환합니다.
 
-**테이블**: `asset_transactions`
+**테이블**: `transactions`
 
 ## 기능
 

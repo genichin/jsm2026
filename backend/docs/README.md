@@ -23,7 +23,7 @@
   - 인덱스 및 제약조건
   - 비즈니스 규칙
   - 쿼리 패턴 및 최적화
-- **테이블**: users, accounts, account_shares, assets, asset_transactions, tags, taggables, reminders, activities, categories, category_auto_rules
+- **테이블**: users, accounts, account_shares, assets, transactions, tags, taggables, reminders, activities, categories, category_auto_rules
 
 #### 3. [Redis Schema](./redis-schema.md)
 - **설명**: Redis 데이터 구조 및 캐싱 전략
@@ -128,7 +128,7 @@ accounts (계좌) ← account_shares (공유)
   ↓ 1:N
 assets (자산) ← tags, reminders, activities
   ↓ 1:N
-asset_transactions (거래) ← categories
+transactions (거래) ← categories
 ```
 
 ## 🔧 기술 스택
@@ -141,12 +141,8 @@ asset_transactions (거래) ← categories
 
 ## 📌 주의사항
 
-### 테이블 이름
-- **거래 테이블**: `asset_transactions` (~~transactions~~ 아님)
-- 모든 문서에서 일관되게 `asset_transactions` 사용
-
 ### 외래키 규칙
-- `CASCADE`: 부모 삭제 시 자식도 삭제 (users → accounts → assets → asset_transactions)
+- `CASCADE`: 부모 삭제 시 자식도 삭제 (users → accounts → assets → transactions)
 - `SET NULL`: 선택적 참조 (category_id, related_transaction_id)
 
 ### Polymorphic 테이블

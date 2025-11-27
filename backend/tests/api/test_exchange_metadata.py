@@ -58,7 +58,7 @@ def test_create_exchange_transaction_with_metadata(
         "is_confirmed": True,
         "target_asset_id": usd_asset_id,
         "target_amount": 1000,  # 달러 입금
-        "transaction_metadata": {
+        "extras": {
             "exchange_rate": 0.000769230769  # 1000 / 1300000
         }
     }
@@ -72,9 +72,9 @@ def test_create_exchange_transaction_with_metadata(
     assert exchange_response.status_code == 201
     exchange_data = exchange_response.json()
     assert exchange_data["type"] == "exchange"
-    assert exchange_data["transaction_metadata"] is not None
-    assert "exchange_rate" in exchange_data["transaction_metadata"]
-    assert exchange_data["transaction_metadata"]["exchange_rate"] == pytest.approx(0.000769230769, rel=1e-6)
+    assert exchange_data["extras"] is not None
+    assert "exchange_rate" in exchange_data["extras"]
+    assert exchange_data["extras"]["exchange_rate"] == pytest.approx(0.000769230769, rel=1e-6)
     
     # 4. 연결된 거래 확인
     assert exchange_data["related_transaction_id"] is not None
@@ -91,8 +91,8 @@ def test_create_exchange_transaction_with_metadata(
     assert related_data["asset_id"] == usd_asset_id
     assert related_data["quantity"] == 1000
     # 연결 거래도 같은 메타데이터를 공유해야 함
-    if related_data["transaction_metadata"]:
-        assert "exchange_rate" in related_data["transaction_metadata"]
+    if related_data["extras"]:
+        assert "exchange_rate" in related_data["extras"]
 
 
 def test_exchange_rate_calculation(
@@ -148,7 +148,7 @@ def test_exchange_rate_calculation(
         "is_confirmed": True,
         "target_asset_id": jpy_asset_id,
         "target_amount": 16000,
-        "transaction_metadata": {
+        "extras": {
             "exchange_rate": 160.0
         }
     }
@@ -161,4 +161,4 @@ def test_exchange_rate_calculation(
     
     assert exchange_response.status_code == 201
     exchange_data = exchange_response.json()
-    assert exchange_data["transaction_metadata"]["exchange_rate"] == 160.0
+    assert exchange_data["extras"]["exchange_rate"] == 160.0

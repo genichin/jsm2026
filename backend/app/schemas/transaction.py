@@ -120,7 +120,7 @@ class TransactionBase(BaseModel):
     memo: Optional[str] = Field(None, description="사용자 메모")
     is_confirmed: bool = Field(default=True, description="거래 확정 여부")
     external_id: Optional[str] = Field(None, max_length=100, description="외부 시스템 거래 ID")
-    transaction_metadata: Optional[dict] = Field(None, description="추가 정보 (예: 환율, 외부 시스템 데이터 등)")
+    extras: Optional[dict] = Field(None, description="추가 정보 (예: 환율, 외부 시스템 데이터 등)")
     category_id: Optional[str] = Field(None, description="카테고리 ID (사용자 정의 의미 분류)")
 
 
@@ -162,7 +162,6 @@ class TransactionCreate(TransactionBase):
             if self.quantity >= 0:
                 raise ValueError("수수료(FEE) 거래의 수량은 음수여야 합니다.")
         # ADJUSTMENT는 양수/음수 모두 허용 (수량 조정)
-        
         return self
 
     model_config = {
@@ -192,7 +191,7 @@ class TransactionUpdate(BaseModel):
     memo: Optional[str] = None
     is_confirmed: Optional[bool] = None
     transaction_date: Optional[datetime] = Field(None, description="거래 일시 (수정 가능)")
-    transaction_metadata: Optional[dict] = Field(None, description="추가 정보 (예: 환율, 외부 시스템 데이터 등)")
+    extras: Optional[dict] = Field(None, description="추가 정보 (예: 환율, 외부 시스템 데이터 등)")
     category_id: Optional[str] = Field(None, description="카테고리 ID (변경/해제)")
 
 

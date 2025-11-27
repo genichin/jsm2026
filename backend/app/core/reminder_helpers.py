@@ -10,7 +10,7 @@ from dateutil.relativedelta import relativedelta
 
 from app.models import (
     Reminder, RemindableType, RepeatInterval,
-    Asset, Account, AssetTransaction, AccountShare
+    Asset, Account, Transaction, AccountShare
 )
 
 
@@ -63,8 +63,8 @@ def validate_remindable(
     
     elif remindable_type == RemindableType.TRANSACTION:
         # 거래의 자산 소유자 확인
-        entity = db.query(AssetTransaction).join(Asset).filter(
-            AssetTransaction.id == remindable_id,
+        entity = db.query(Transaction).join(Asset).filter(
+            Transaction.id == remindable_id,
             Asset.user_id == user_id
         ).first()
         
@@ -134,8 +134,8 @@ def get_entity_name(
             return entity.name if entity else None
         
         elif remindable_type == RemindableType.TRANSACTION:
-            entity = db.query(AssetTransaction).filter(
-                AssetTransaction.id == remindable_id
+            entity = db.query(Transaction).filter(
+                Transaction.id == remindable_id
             ).first()
             return entity.description if entity else None
         

@@ -1,5 +1,5 @@
 """
-거래 메타데이터(transaction_metadata) 테스트
+거래 메타데이터(extras) 테스트
 """
 
 import pytest
@@ -7,7 +7,7 @@ from datetime import datetime
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
-from app.models import User, Asset, Account, AssetTransaction
+from app.models import User, Asset, Account, Transaction
 
 
 @pytest.fixture
@@ -87,16 +87,16 @@ class TestTransactionMetadata:
                 "tax": 0,
                 "transaction_date": "2025-11-18T10:00:00",
                 "description": "환전 입금",
-                "transaction_metadata": metadata
+                "extras": metadata
             }
         )
         
         assert response.status_code == 201
         data = response.json()
         assert data["type"] == "deposit"
-        assert data["transaction_metadata"] == metadata
-        assert data["transaction_metadata"]["exchange_rate"] == 1400.0
-        assert data["transaction_metadata"]["external_system_id"] == "EXT-12345"
+        assert data["extras"] == metadata
+        assert data["extras"]["exchange_rate"] == 1400.0
+        assert data["extras"]["external_system_id"] == "EXT-12345"
     
     def test_create_transaction_without_metadata(
         self,
@@ -120,7 +120,7 @@ class TestTransactionMetadata:
         
         assert response.status_code == 201
         data = response.json()
-        assert data["transaction_metadata"] is None
+        assert data["extras"] is None
     
     def test_exchange_transaction_with_metadata(
         self,
@@ -149,14 +149,14 @@ class TestTransactionMetadata:
                 "description": "KRW → USD 환전",
                 "target_asset_id": test_usd_asset.id,
                 "target_amount": 1000,
-                "transaction_metadata": metadata
+                "extras": metadata
             }
         )
         
         assert response.status_code == 201
         data = response.json()
         assert data["type"] == "exchange"
-        assert data["transaction_metadata"]["exchange_rate"] == exchange_rate
+        assert data["extras"]["exchange_rate"] == exchange_rate
     
     def test_update_transaction_metadata(
         self,
@@ -177,7 +177,7 @@ class TestTransactionMetadata:
                 "price": 1.0,
                 "transaction_date": "2025-11-18T13:00:00",
                 "description": "초기 입금",
-                "transaction_metadata": {"initial": "data"}
+                "extras": {"initial": "data"}
             }
         )
         
@@ -195,14 +195,14 @@ class TestTransactionMetadata:
             f"/api/v1/transactions/{transaction_id}",
             headers=auth_header,
             json={
-                "transaction_metadata": updated_metadata
+                "extras": updated_metadata
             }
         )
         
         assert update_response.status_code == 200
         data = update_response.json()
-        assert data["transaction_metadata"]["updated_field"] == "new_value"
-        assert data["transaction_metadata"]["timestamp"] == "2025-11-18T14:00:00"
+        assert data["extras"]["updated_field"] == "new_value"
+        assert data["extras"]["timestamp"] == "2025-11-18T14:00:00"
     
     def test_list_transactions_includes_metadata(
         self,
@@ -222,7 +222,7 @@ class TestTransactionMetadata:
                 "quantity": 100000,
                 "price": 1.0,
                 "transaction_date": "2025-11-18T15:00:00",
-                "transaction_metadata": metadata
+                "extras": metadata
             }
         )
         
@@ -238,11 +238,11 @@ class TestTransactionMetadata:
         
         # 메타데이터가 있는 거래 찾기
         transaction_with_metadata = next(
-            (item for item in items if item.get("transaction_metadata") == metadata),
+            (item for item in items if item.get("extras") == metadata),
             None
         )
         assert transaction_with_metadata is not None
-        assert transaction_with_metadata["transaction_metadata"]["list_test"] == "value"
+        assert transaction_with_metadata["extras"]["list_test"] == "value"
     
     def test_metadata_with_nested_structure(
         self,
@@ -274,16 +274,16 @@ class TestTransactionMetadata:
                 "price": 1.0,
                 "transaction_date": "2025-11-18T16:00:00",
                 "description": "복잡한 메타데이터 테스트",
-                "transaction_metadata": complex_metadata
+                "extras": complex_metadata
             }
         )
         
         assert response.status_code == 201
         data = response.json()
-        assert data["transaction_metadata"]["exchange"]["rate"] == 1400.5
-        assert data["transaction_metadata"]["exchange"]["fees"]["commission"] == 1000
-        assert "important" in data["transaction_metadata"]["tags"]
-        assert len(data["transaction_metadata"]["external_refs"]) == 2
+        assert data["extras"]["exchange"]["rate"] == 1400.5
+        assert data["extras"]["exchange"]["fees"]["commission"] == 1000
+        assert "important" in data["extras"]["tags"]
+        assert len(data["extras"]["external_refs"]) == 2
     
     def test_clear_metadata(
         self,
@@ -302,7 +302,7 @@ class TestTransactionMetadata:
                 "quantity": 100000,
                 "price": 1.0,
                 "transaction_date": "2025-11-18T17:00:00",
-                "transaction_metadata": {"to_be_deleted": "yes"}
+                "extras": {"to_be_deleted": "yes"}
             }
         )
         
@@ -313,10 +313,10 @@ class TestTransactionMetadata:
             f"/api/v1/transactions/{transaction_id}",
             headers=auth_header,
             json={
-                "transaction_metadata": None
+                "extras": None
             }
         )
         
         assert update_response.status_code == 200
         data = update_response.json()
-        assert data["transaction_metadata"] is None
+        assert data["extras"] is None

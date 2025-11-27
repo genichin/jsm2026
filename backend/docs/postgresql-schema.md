@@ -14,7 +14,7 @@
 5. [알림 시스템](#4-알림-시스템)
 6. [활동 시스템](#5-활동-시스템-댓글로그)
 7. [자산 관리](#6-assets-자산)
-8. [거래 관리](#7-asset_transactions-자산-거래)
+8. [거래 관리](#7-transactions-자산-거래)
 9. [카테고리 시스템](#8-카테고리-시스템)
 10. [Enum 정의](#enum-타입-정의)
 11. [성능 최적화](#성능-최적화)
@@ -1045,12 +1045,12 @@ CREATE INDEX idx_assets_is_active ON assets(is_active);
 
 ---
 
-### 7. asset_transactions (자산 거래)
+### 7. transactions (자산 거래)
 
 모든 자산 거래 내역을 관리합니다.
 
 ```sql
-CREATE TABLE asset_transactions (
+CREATE TABLE transactions (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     asset_id UUID NOT NULL REFERENCES assets(id) ON DELETE CASCADE,
     
@@ -1060,28 +1060,18 @@ CREATE TABLE asset_transactions (
     
     -- 자산 수량 변화 (핵심)
     quantity NUMERIC(20, 8) NOT NULL,   -- 양수=증가, 음수=감소
-    price NUMERIC(15, 2) NOT NULL,      -- 거래 단가 (현금은 1)
-    fee NUMERIC(15, 2) DEFAULT 0,       -- 수수료
-    tax NUMERIC(15, 2) DEFAULT 0,       -- 세금
+    extras JSONB,                       -- 거래 추가 정보 저장
+                                        -- 환전(exchange) : 'rate'(환율), 'fee'(수수료), 'tax'(세금)
+                                        -- 매수/매도 : 'price'(가격)
+                                        -- 기타 : 'balance_after'(거래 후 잔액)
 
-    -- 실현 손익 (매수/매도 시 계산)
-    realized_profit NUMERIC(15, 2),     -- 수수료/세금 포함한 순손익
-    
-    -- 거래 후 잔액 (참고용)
-    balance_after NUMERIC(20, 8),       -- 거래 후 잔액
-    
     -- 거래 정보
     transaction_date TIMESTAMP WITH TIME ZONE NOT NULL,
     description TEXT,                   -- 거래 설명
     memo TEXT,                          -- 사용자 메모
     
     -- 연결
-    related_transaction_id UUID REFERENCES asset_transactions(id) ON DELETE SET NULL,  -- 쌍 거래 ID
-    
-    -- 메타데이터
-    is_confirmed BOOLEAN DEFAULT TRUE,  -- 미확정 거래 (예: 카드 승인 대기)
-    external_id VARCHAR(100),           -- 외부 시스템 거래 ID (API 연동용)
-    transaction_metadata JSONB,         -- 추가 정보 저장 (예: {"exchange_rate": 1400.0})
+    related_transaction_id UUID REFERENCES transactions(id) ON DELETE SET NULL,  -- 쌍 거래 ID
     
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
@@ -1090,49 +1080,59 @@ CREATE TABLE asset_transactions (
        type IN ('buy', 'sell', 'deposit', 'withdraw', 'dividend', 'interest', 'fee', 
                 'transfer_in', 'transfer_out', 'adjustment', 'invest', 'redeem', 
                 'internal_transfer', 'card_payment', 'promotion_deposit', 'auto_transfer', 'remittance', 'exchange')
-    ),
-    CONSTRAINT non_negative_fees CHECK (fee >= 0 AND tax >= 0)
+    )
 );
 
-CREATE INDEX idx_asset_transactions_asset ON asset_transactions(asset_id);
-CREATE INDEX idx_asset_transactions_date ON asset_transactions(transaction_date DESC);
-CREATE INDEX idx_asset_transactions_type ON asset_transactions(type);
-CREATE INDEX idx_asset_transactions_external ON asset_transactions(external_id);
-CREATE INDEX idx_asset_transactions_profit ON asset_transactions(realized_profit) WHERE realized_profit IS NOT NULL;
-CREATE INDEX idx_asset_transactions_category ON asset_transactions(category_id);
-CREATE INDEX idx_asset_transactions_confirmed ON asset_transactions(is_confirmed);
+CREATE INDEX idx_transactions_asset ON transactions(asset_id);
+CREATE INDEX idx_transactions_date ON transactions(transaction_date DESC);
+CREATE INDEX idx_transactions_type ON transactions(type);
+CREATE INDEX idx_transactions_category ON transactions(category_id);
+
 ```
 
 **필드 설명**:
 - `type`: 거래 유형 (TransactionType Enum 값, 아래 표 참고)
 - `quantity`: 자산 수량 변화 (양수=증가, 음수=감소, 0=마커)
-- `price`: 거래 단가 (현금은 1)
-- `realized_profit`: 실현 손익 (사용자 설정 방식에 따라 계산)
+- `extras`: 거래 추가 정보를 담는 JSONB 필드
+  - `price`: 거래 단가 (매수/매도 시)
+  - `rate`: 환율 (환전 시)
+  - `fee`: 수수료
+  - `tax`: 세금
+  - `balance_after`: 거래 후 잔액
 - `related_transaction_id`: 복식부기 연결 (교환 거래 시 쌍)
-- `transaction_metadata`: 추가 정보를 담을 수 있는 JSONB 필드 (예: 환율, 외부 시스템 데이터 등)
+- `transaction_date`: 거래 발생 일시
+- `description`: 거래 설명 (자동 생성 또는 파싱)
+- `memo`: 사용자 메모
 
 **거래 유형 설명 (TransactionType Enum)**:
 
-| Type                | 설명                | quantity | realized_profit | 예시 |
-|---------------------|---------------------|----------|----------------|------|
-| `buy`               | 매수                | +        | 0              | 주식 매수, 코인 매수 |
-| `sell`              | 매도                | -        | ±              | 주식 매도, 코인 매도 |
-| `deposit`           | 입금                | +        | 0              | 현금 입금, 증권 입금 |
-| `withdraw`          | 출금                | -        | 0              | 현금 출금, 증권 출금 |
-| `dividend`          | 배당                | +        | +              | 현금/주식 배당 |
-| `interest`          | 이자                | +        | +              | 예금 이자, 채권 이자 |
-| `fee`               | 수수료              | -        | -              | 거래 수수료, 송금 수수료 |
-| `transfer_in`       | 이체 입금           | +        | 0              | 계좌간 이체 입금 |
-| `transfer_out`      | 이체 출금           | -        | 0              | 계좌간 이체 출금 |
-| `adjustment`        | 수량 조정           | ±        | 0              | 주식분할, 오류수정 |
-| `invest`            | 투자                | +        | 0              | 펀드/ETF 매수 |
-| `redeem`            | 해지                | -        | ±              | 펀드/ETF 환매 |
-| `internal_transfer` | 내계좌간이체        | ±        | 0              | 내 계좌간 이동 |
-| `card_payment`      | 카드결제            | -        | 0              | 체크/신용카드 결제 |
-| `promotion_deposit` | 프로모션입금        | +        | 0              | 이벤트 입금 |
-| `auto_transfer`     | 자동이체            | ±        | 0              | 정기 자동이체 |
-| `remittance`        | 송금                | -        | 0              | 타인 송금 |
-| `exchange`          | 환전                | ±        | ±              | KRW↔USD, 통화간 교환 |
+> **수량 부호 규칙**: `quantity`는 거래 유형에 따라 부호가 결정됩니다.  
+> - **증가 거래**: 항상 **양수** (예: buy, deposit, dividend)  
+> - **감소 거래**: 항상 **음수** (예: sell, withdraw, fee)  
+> - **양방향 거래**: 상황에 따라 ± (예: exchange, adjustment)  
+> 
+> 이 규칙으로 `SUM(quantity)` 집계만으로 잔액을 계산할 수 있으며, 복식부기 차변/대변 개념과 일치합니다.
+
+| Type                | 설명                | quantity 부호 |  예시 |
+|---------------------|---------------------|----------|------|
+| `buy`               | 매수                | **+** (양수 필수)                  | 주식 매수, 코인 매수 |
+| `sell`              | 매도                | **-** (음수 필수)                     | 주식 매도, 코인 매도 |
+| `deposit`           | 입금                | **+** (양수 필수)                     | 현금 입금, 증권 입금 |
+| `withdraw`          | 출금                | **-** (음수 필수)                     | 현금 출금, 증권 출금 |
+| `dividend`          | 배당                | **+** (양수 필수)                     | 현금/주식 배당 |
+| `interest`          | 이자                | **+** (양수 필수)                      | 예금 이자, 채권 이자 |
+| `fee`               | 수수료              | **-** (음수 필수)                      | 거래 수수료, 송금 수수료 |
+| `transfer_in`       | 이체 입금           | **+** (양수 필수)                      | 계좌간 이체 입금 |
+| `transfer_out`      | 이체 출금           | **-** (음수 필수)                      | 계좌간 이체 출금 |
+| `adjustment`        | 수량 조정           | **±** (양방향)                      | 주식분할, 오류수정 |
+| `invest`            | 투자                | **+** (양수 필수)                     | 펀드/ETF 매수 |
+| `redeem`            | 해지                | **-** (음수 필수)                   | 펀드/ETF 환매 |
+| `internal_transfer` | 내계좌간이체        | **±** (양방향)                  | 내 계좌간 이동 |
+| `card_payment`      | 카드결제            | **-** (음수 필수)                    | 체크/신용카드 결제 |
+| `promotion_deposit` | 프로모션입금        | **+** (양수 필수)                    | 이벤트 입금 |
+| `auto_transfer`     | 자동이체            | **±** (양방향)                     | 정기 자동이체 |
+| `remittance`        | 송금                | **-** (음수 필수)                    | 타인 송금 |
+| `exchange`          | 환전                | **±** (양방향)                    | KRW↔USD, 통화간 교환 |
 
 **특수 거래 패턴**:
 - **현금 배당**: 주식측 마커(quantity=0) + 현금 증가
@@ -1140,7 +1140,7 @@ CREATE INDEX idx_asset_transactions_confirmed ON asset_transactions(is_confirmed
 - **주식 분할**: 소멸(-) + 생성(+) 또는 순증가분만 기록
 - **환전**: 출발 통화 감소(quantity<0) + 도착 통화 증가(quantity>0), `related_transaction_id`로 쌍 연결
   - 예: KRW 현금 -1,300,000 (type=exchange) ↔ USD 현금 +1,000 (type=exchange)
-  - 환율 차익/손실은 realized_profit에 반영
+  - 환율 정보는 `extras.rate`에 저장
   - 제약: 동일 계좌(account_id)가 같은 현금 자산 간에만 허용
 - **복식부기**: 자산 교환 시 2개 거래 레코드 생성, `related_transaction_id`로 연결
 
@@ -1190,11 +1190,11 @@ CREATE INDEX idx_categories_parent ON categories(parent_id);
 2) 거래에 카테고리 참조 컬럼 추가(선택적)
 
 ```sql
-ALTER TABLE asset_transactions
+ALTER TABLE transactions
   ADD COLUMN category_id UUID REFERENCES categories(id) ON DELETE SET NULL;
 
 -- 조회 최적화 인덱스
-CREATE INDEX idx_asset_transactions_category ON asset_transactions(category_id);
+CREATE INDEX idx_transactions_category ON transactions(category_id);
 ```
 
 3) 타입(type) ↔ 카테고리(category) 관계 권장 규칙
@@ -1497,11 +1497,12 @@ export const ASSET_TYPE_TRADABLE: Record<AssetType, boolean> = {
 CREATE INDEX idx_assets_user_account ON assets(user_id, account_id, id);
 
 -- 거래 조회 최적화
-CREATE INDEX idx_asset_transactions_asset_date ON asset_transactions(asset_id, transaction_date DESC);
+CREATE INDEX idx_transactions_asset_date ON transactions(asset_id, transaction_date DESC);
 
--- 수익 집계 최적화  
-CREATE INDEX idx_asset_transactions_realized_profit ON asset_transactions(asset_id, realized_profit) 
-    WHERE realized_profit IS NOT NULL;
+-- extras JSONB 필드 내 realized_profit 조회 최적화 (선택적)
+-- CREATE INDEX idx_transactions_realized_profit ON transactions 
+--     USING GIN ((extras -> 'realized_profit')) 
+--     WHERE extras ? 'realized_profit';
 ```
 
 ### 쿼리 패턴
@@ -1509,19 +1510,19 @@ CREATE INDEX idx_asset_transactions_realized_profit ON asset_transactions(asset_
 ```sql
 -- 특정 사용자의 모든 거래 조회
 SELECT t.*, a.user_id, a.account_id
-FROM asset_transactions t
+FROM transactions t
 JOIN assets a ON t.asset_id = a.id
 WHERE a.user_id = :user_id;
 
 -- 특정 계좌의 모든 거래 조회
 SELECT t.*, a.account_id
-FROM asset_transactions t
+FROM transactions t
 JOIN assets a ON t.asset_id = a.id
 WHERE a.account_id = :account_id;
 
--- 특정 시점의 자산 수량 계산
+-- 특정 시점의 자산 수량 계산 (부호 규칙 활용)
 SELECT SUM(quantity) as quantity_at_time
-FROM asset_transactions
+FROM transactions
 WHERE asset_id = :asset_id
   AND transaction_date <= :target_date;
 
@@ -1534,18 +1535,31 @@ SELECT
         PARTITION BY asset_id 
         ORDER BY transaction_date, created_at
     ) as running_balance
-FROM asset_transactions
+FROM transactions
 WHERE asset_id = :asset_id
 ORDER BY transaction_date;
+
+-- extras JSONB에서 가격 정보 조회
+SELECT 
+    id,
+    type,
+    quantity,
+    extras->>'price' as price,
+    extras->>'fee' as fee,
+    (extras->>'realized_profit')::numeric as realized_profit
+FROM transactions
+WHERE asset_id = :asset_id
+  AND type IN ('buy', 'sell')
+  AND extras ? 'price';
 ```
 
 ### 파티셔닝 고려사항
 
-대규모 트래픽 시 `asset_transactions` 테이블 파티셔닝:
+대규모 트래픽 시 `transactions` 테이블 파티셔닝:
 
 ```sql
 -- 월별 파티션 예시 (PostgreSQL 11+)
-CREATE TABLE asset_transactions_y2025m11 PARTITION OF asset_transactions
+CREATE TABLE transactions_y2025m11 PARTITION OF transactions
     FOR VALUES FROM ('2025-11-01') TO ('2025-12-01');
 ```
 

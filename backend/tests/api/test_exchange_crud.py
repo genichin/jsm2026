@@ -7,7 +7,7 @@ from datetime import datetime
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
-from app.models import User, Account, Asset, AssetTransaction
+from app.models import User, Account, Asset, Transaction
 
 
 @pytest.fixture

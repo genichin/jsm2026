@@ -10,7 +10,7 @@ from sqlalchemy import or_
 from app.core.database import get_db
 from app.api.auth import get_current_user
 from app.core.redis import get_asset_balance, get_asset_price, calculate_and_update_balance
-from app.models import User, Asset, AssetTransaction, Account, Tag, Taggable
+from app.models import User, Asset, Transaction, Account, Tag, Taggable
 from app.core.tag_helpers import (
     validate_taggable_exists,
     validate_tag_allowed_type,
@@ -211,11 +211,11 @@ async def get_portfolio_summary(
         for asset in assets:
             # 거래 집계
             summary_query = db.query(
-                func.sum(AssetTransaction.quantity).label('total_quantity'),
-                func.sum(AssetTransaction.realized_profit).label('total_realized_profit')
+                func.sum(Transaction.quantity).label('total_quantity'),
+                func.sum(Transaction.realized_profit).label('total_realized_profit')
             ).filter(
-                AssetTransaction.asset_id == asset.id,
-                AssetTransaction.is_confirmed == True
+                Transaction.asset_id == asset.id,
+                Transaction.is_confirmed == True
             ).first()
             
             current_quantity = summary_query.total_quantity or 0
@@ -223,13 +223,13 @@ async def get_portfolio_summary(
             
             # 취득원가 계산 (매수 거래만)
             cost_query = db.query(
-                func.sum(AssetTransaction.quantity * AssetTransaction.price + 
-                        AssetTransaction.fee + AssetTransaction.tax)
+                func.sum(Transaction.quantity * Transaction.price + 
+                        Transaction.fee + Transaction.tax)
             ).filter(
-                AssetTransaction.asset_id == asset.id,
-                AssetTransaction.type == 'exchange',
-                AssetTransaction.quantity > 0,
-                AssetTransaction.is_confirmed == True
+                Transaction.asset_id == asset.id,
+                Transaction.type == 'exchange',
+                Transaction.quantity > 0,
+                Transaction.is_confirmed == True
             ).scalar()
             
             asset_cost = cost_query or 0
@@ -393,8 +393,8 @@ async def delete_asset(
         )
     
     # 관련 거래가 있는지 확인
-    transaction_count = db.query(AssetTransaction).filter(
-        AssetTransaction.asset_id == asset_id
+    transaction_count = db.query(Transaction).filter(
+        Transaction.asset_id == asset_id
     ).count()
     
     if transaction_count > 0:
@@ -430,11 +430,11 @@ async def get_asset_summary(
     # 거래 집계
     from sqlalchemy import func
     summary_query = db.query(
-        func.sum(AssetTransaction.quantity).label('total_quantity'),
-        func.sum(AssetTransaction.realized_profit).label('total_realized_profit')
+        func.sum(Transaction.quantity).label('total_quantity'),
+        func.sum(Transaction.realized_profit).label('total_realized_profit')
     ).filter(
-        AssetTransaction.asset_id == asset_id,
-        AssetTransaction.is_confirmed == True
+        Transaction.asset_id == asset_id,
+        Transaction.is_confirmed == True
     ).first()
     
     current_quantity = summary_query.total_quantity or 0
@@ -442,12 +442,12 @@ async def get_asset_summary(
     
     # 취득원가 계산 (매수 거래만)
     cost_query = db.query(
-        func.sum(AssetTransaction.quantity * AssetTransaction.price + AssetTransaction.fee + AssetTransaction.tax)
+        func.sum(Transaction.quantity * Transaction.price + Transaction.fee + Transaction.tax)
     ).filter(
-        AssetTransaction.asset_id == asset_id,
-        AssetTransaction.type == 'exchange',
-        AssetTransaction.quantity > 0,
-        AssetTransaction.is_confirmed == True
+        Transaction.asset_id == asset_id,
+        Transaction.type == 'exchange',
+        Transaction.quantity > 0,
+        Transaction.is_confirmed == True
     ).scalar()
     
     total_cost = cost_query or 0

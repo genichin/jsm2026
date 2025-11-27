@@ -6,7 +6,7 @@ from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 from sqlalchemy import func, case
 from typing import Optional, List
-from app.models import Tag, Taggable, Asset, Account, AssetTransaction, User
+from app.models import Tag, Taggable, Asset, Account, Transaction, User
 
 
 def validate_taggable_exists(
@@ -51,8 +51,8 @@ def validate_taggable_exists(
             entity = None
     elif taggable_type == "transaction":
         # 거래는 자산을 통해 사용자 확인
-        entity = db.query(AssetTransaction).join(Asset).filter(
-            AssetTransaction.id == taggable_id,
+        entity = db.query(Transaction).join(Asset).filter(
+            Transaction.id == taggable_id,
             Asset.user_id == user_id
         ).first()
     

@@ -159,7 +159,7 @@ class Category(Base):
 
     # Relationships
     children = relationship("Category", remote_side=[id])
-    asset_transactions = relationship("AssetTransaction", back_populates="category")
+    transactions = relationship("Transaction", back_populates="category")
     auto_rules = relationship("CategoryAutoRule", back_populates="category", cascade="all, delete-orphan")
 
 
@@ -240,47 +240,32 @@ class Asset(Base):
     # Relationships
     user = relationship("User", back_populates="assets")
     account = relationship("Account", back_populates="assets")
-    transactions = relationship("AssetTransaction", back_populates="asset", cascade="all, delete-orphan")
+    transactions = relationship("Transaction", back_populates="asset", cascade="all, delete-orphan")
 
 
-class AssetTransaction(Base):
-    """자산 거래"""
-    __tablename__ = "asset_transactions"
+class Transaction(Base):
+    """거래 (transactions)"""
+    __tablename__ = "transactions"
 
     id = Column(String(36), primary_key=True, default=generate_uuid)
     asset_id = Column(String(36), ForeignKey("assets.id", ondelete="CASCADE"), nullable=False, index=True)
-    
-    # 거래 유형 (TransactionType enum 값)
-    type = Column(String(20), nullable=False)
-    
-    # 자산 수량 변화
-    quantity = Column(Numeric(20, 8), nullable=False)  # 양수=증가, 음수=감소
+    type = Column(String(20), nullable=False)  # TransactionType enum 값
+    quantity = Column(Numeric(20, 8), nullable=False)  # 양수=증가, 음수=감소, 0=마커
     price = Column(Numeric(15, 2), nullable=False)     # 거래 단가
     fee = Column(Numeric(15, 2), nullable=False, default=0)       # 수수료
     tax = Column(Numeric(15, 2), nullable=False, default=0)       # 세금
-    
-    # 실현 손익
-    realized_profit = Column(Numeric(15, 2))           # 수수료/세금 포함한 순손익
-    
-    # 거래 후 잔액 (주로 은행 거래에서 사용)
+    realized_profit = Column(Numeric(15, 2))           # 실현 손익
     balance_after = Column(Numeric(20, 8))             # 거래 후 잔액
-    
-    # 거래 정보
     transaction_date = Column(DateTime(timezone=True), nullable=False, index=True)
-    description = Column(Text)                         # 거래 설명
-    memo = Column(Text)                               # 사용자 메모
-    
-    # 연결
-    related_transaction_id = Column(String(36), ForeignKey("asset_transactions.id", ondelete="SET NULL"))
+    description = Column(Text)
+    memo = Column(Text)
+    related_transaction_id = Column(String(36), ForeignKey("transactions.id", ondelete="SET NULL"))
     category_id = Column(String(36), ForeignKey("categories.id", ondelete="SET NULL"))
-    
-    # 메타데이터
-    is_confirmed = Column(Boolean, default=True, nullable=False)   # 미확정 거래
-    external_id = Column(String(100))                 # 외부 시스템 거래 ID
-    transaction_metadata = Column(JSONB)              # 추가 정보 (예: {"exchange_rate": 1400.0})
-    
+    is_confirmed = Column(Boolean, default=True, nullable=False)
+    external_id = Column(String(100))
+    extras = Column(JSONB)  # 추가 정보 (예: {"exchange_rate": 1400.0})
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)    # Constraints
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
     __table_args__ = (
         CheckConstraint(
             "type IN ('buy', 'sell', 'deposit', 'withdraw', 'dividend', 'interest', 'fee', "
@@ -293,8 +278,8 @@ class AssetTransaction(Base):
 
     # Relationships
     asset = relationship("Asset", back_populates="transactions")
-    related_transaction = relationship("AssetTransaction", remote_side=[id])
-    category = relationship("Category", back_populates="asset_transactions")
+    related_transaction = relationship("Transaction", remote_side=[id])
+    category = relationship("Category", back_populates="transactions")
 
 
 class CategoryAutoRule(Base):

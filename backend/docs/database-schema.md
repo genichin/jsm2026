@@ -52,7 +52,7 @@ accounts (계좌)
   ↓ 1:N
 assets (자산)
   ↓ 1:N
-asset_transactions (거래)
+transactions (거래)
 ```
 
 ### 주요 Enum 타입
@@ -75,8 +75,8 @@ asset_transactions (거래)
 
 ```
 예시: 주식 매수
-1. 현금 자산 감소 (asset_transactions 레코드)
-2. 주식 자산 증가 (asset_transactions 레코드)
+1. 현금 자산 감소 (transactions 레코드)
+2. 주식 자산 증가 (transactions 레코드)
 → related_transaction_id로 연결
 ```
 
