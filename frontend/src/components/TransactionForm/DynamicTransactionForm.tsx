@@ -66,13 +66,14 @@ export function DynamicTransactionForm({
     );
   }, [assets, selectedAsset]);
 
-  // 동일 계좌 내 현금 자산 (exchange용)
+  // 동일 계좌 내 다른 통화의 현금 자산 (exchange용)
   const cashAssetsInSameAccount = useMemo(() => {
     if (!selectedAsset) return [];
     return assets.filter(
       (a) =>
         a.account_id === selectedAsset.account_id &&
         a.asset_type === "cash" &&
+        a.currency !== selectedAsset.currency && // 다른 통화만
         a.id !== selectedAssetId
     );
   }, [assets, selectedAsset, selectedAssetId]);
