@@ -1077,7 +1077,7 @@ CREATE TABLE transactions (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     
     CONSTRAINT valid_transaction_type CHECK (
-       type IN ('buy', 'sell', 'deposit', 'withdraw', 'dividend', 'interest', 'fee', 
+       type IN ('buy', 'sell', 'deposit', 'withdraw', 'cash_dividend', 'stock_dividend', 'interest', 'fee', 
                 'transfer_in', 'transfer_out', 'adjustment', 'invest', 'redeem', 
                 'internal_transfer', 'card_payment', 'promotion_deposit', 'auto_transfer', 'remittance', 'exchange')
     )
@@ -1107,7 +1107,7 @@ CREATE INDEX idx_transactions_category ON transactions(category_id);
 **거래 유형 설명 (TransactionType Enum)**:
 
 > **수량 부호 규칙**: `quantity`는 거래 유형에 따라 부호가 결정됩니다.  
-> - **증가 거래**: 항상 **양수** (예: buy, deposit, dividend)  
+> - **증가 거래**: 항상 **양수** (예: buy, deposit, cash_dividend, stock_dividend)  
 > - **감소 거래**: 항상 **음수** (예: sell, withdraw, fee)  
 > - **양방향 거래**: 상황에 따라 ± (예: exchange, adjustment)  
 > 
@@ -1119,7 +1119,8 @@ CREATE INDEX idx_transactions_category ON transactions(category_id);
 | `sell`              | 매도                | **-** (음수 필수)                     | 주식 매도, 코인 매도 |
 | `deposit`           | 입금                | **+** (양수 필수)                     | 현금 입금, 증권 입금 |
 | `withdraw`          | 출금                | **-** (음수 필수)                     | 현금 출금, 증권 출금 |
-| `dividend`          | 배당                | **+** (양수 필수)                     | 현금/주식 배당 |
+| `cash_dividend`     | 현금배당            | **+** (양수 필수)                     | 현금 배당 |
+| `stock_dividend`    | 주식배당            | **+** (양수 필수)                     | 주식 배당 |
 | `interest`          | 이자                | **+** (양수 필수)                      | 예금 이자, 채권 이자 |
 | `fee`               | 수수료              | **-** (음수 필수)                      | 거래 수수료, 송금 수수료 |
 | `transfer_in`       | 이체 입금           | **+** (양수 필수)                      | 계좌간 이체 입금 |
@@ -1135,8 +1136,8 @@ CREATE INDEX idx_transactions_category ON transactions(category_id);
 | `exchange`          | 환전                | **±** (양방향)                    | KRW↔USD, 통화간 교환 |
 
 **특수 거래 패턴**:
-- **현금 배당**: 주식측 마커(quantity=0) + 현금 증가
-- **현물 배당**: 주식측 마커(quantity=0) + 수령 자산 증가
+- **현금 배당**: 현금 자산에 cash_dividend 타입으로 기록 (quantity=배당금, extras에 'asset':{asset_id})
+- **주식 배당**: 주식 자산에 stock_dividend 타입으로 기록 (quantity > 0, 수령한 주식 수량)
 - **주식 분할**: 소멸(-) + 생성(+) 또는 순증가분만 기록
 - **환전**: 출발 통화 감소(quantity<0) + 도착 통화 증가(quantity>0), `related_transaction_id`로 쌍 연결
   - 예: KRW 현금 -1,300,000 (type=exchange) ↔ USD 현금 +1,000 (type=exchange)
@@ -1204,7 +1205,7 @@ CREATE INDEX idx_transactions_category ON transactions(category_id);
 | 거래 타입 | 허용 flow_type | 설명 |
 |-----------|----------------|------|
 | buy / sell | investment, neutral | 투자 매수/매도는 투자 혹은 중립 (분류 미정) |
-| deposit / interest / dividend | income, transfer, neutral | 수입 또는 계좌로 유입되는 이동, 미분류 |
+| deposit / interest / cash_dividend / stock_dividend | income, transfer, neutral | 수입 또는 계좌로 유입되는 이동, 미분류 |
 | withdraw / fee | expense, transfer, neutral | 지출/비용 혹은 이동, 미분류 |
 | transfer_in / transfer_out | transfer, neutral | 순수 이동 또는 미분류 |
 | adjustment | neutral | 조정은 집계 제외 중립만 허용 |
@@ -1309,7 +1310,8 @@ class TransactionType(str, Enum):
     SELL = "sell"             # 매도
     DEPOSIT = "deposit"       # 입금
     WITHDRAW = "withdraw"     # 출금
-    DIVIDEND = "dividend"     # 배당
+    CASH_DIVIDEND = "cash_dividend"     # 현금배당
+    STOCK_DIVIDEND = "stock_dividend"   # 주식배당
     INTEREST = "interest"     # 이자
     FEE = "fee"               # 수수료
     TRANSFER_IN = "transfer_in"    # 이체 입금
@@ -1332,7 +1334,8 @@ export enum TransactionType {
   SELL = 'sell',
   DEPOSIT = 'deposit',
   WITHDRAW = 'withdraw',
-  DIVIDEND = 'dividend',
+  CASH_DIVIDEND = 'cash_dividend',
+  STOCK_DIVIDEND = 'stock_dividend',
   INTEREST = 'interest',
   FEE = 'fee',
   TRANSFER_IN = 'transfer_in',

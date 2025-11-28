@@ -1,5 +1,5 @@
 export type TransactionType =
-  | "buy" | "sell" | "deposit" | "withdraw" | "dividend" | "interest"
+  | "buy" | "sell" | "deposit" | "withdraw" | "cash_dividend" | "stock_dividend" | "interest"
   | "fee" | "transfer_in" | "transfer_out" | "adjustment" | "invest"
   | "redeem" | "internal_transfer" | "card_payment" | "promotion_deposit"
   | "auto_transfer" | "remittance" | "exchange";
@@ -9,7 +9,8 @@ export const transactionTypeLabels: Record<TransactionType, string> = {
   sell: "매도",
   deposit: "입금",
   withdraw: "출금",
-  dividend: "배당",
+  cash_dividend: "현금배당",
+  stock_dividend: "주식배당",
   interest: "이자",
   fee: "수수료",
   transfer_in: "이체입금",

@@ -155,18 +155,20 @@ export default function AssetDetailPage({ params }: { params: { id: string } }) 
       {
         accessorKey: "price",
         header: "가격",
-        cell: ({ row }) => row.original.price.toLocaleString(),
+        cell: ({ row }) => row.original.price?.toLocaleString() || "-",
       },
       {
         accessorKey: "fee",
         header: "수수료",
-        cell: ({ row }) => row.original.fee.toLocaleString(),
+        cell: ({ row }) => row.original.fee?.toLocaleString() || "-",
       },
       {
         id: "total",
         header: "합계",
         cell: ({ row }) => {
-          const total = row.original.quantity * row.original.price + row.original.fee + row.original.tax;
+          const { quantity, price, fee, tax } = row.original;
+          if (price == null || quantity == null) return "-";
+          const total = quantity * price + (fee || 0) + (tax || 0);
           return total.toLocaleString();
         },
       },
@@ -224,11 +226,11 @@ export default function AssetDetailPage({ params }: { params: { id: string } }) 
         <div className="grid grid-cols-2 md:grid-cols-5 gap-4 p-4 border rounded-lg bg-gray-50">
           <div>
             <div className="text-xs text-gray-600">현재 잔고</div>
-            <div className="text-lg font-semibold">{summary.current_quantity.toLocaleString()}</div>
+            <div className="text-lg font-semibold">{summary.current_quantity?.toLocaleString() || "0"}</div>
           </div>
           <div>
             <div className="text-xs text-gray-600">총 취득원가</div>
-            <div className="text-lg font-semibold">{summary.total_cost.toLocaleString()}</div>
+            <div className="text-lg font-semibold">{summary.total_cost?.toLocaleString() || "0"}</div>
           </div>
           <div>
             <div className="text-xs text-gray-600">평단가</div>
@@ -240,9 +242,9 @@ export default function AssetDetailPage({ params }: { params: { id: string } }) 
           </div>
           <div>
             <div className="text-xs text-gray-600">실현손익</div>
-            <div className={`text-lg font-semibold ${summary.realized_profit >= 0 ? "text-blue-600" : "text-red-600"}`}>
-              {summary.realized_profit >= 0 ? "+" : ""}
-              {summary.realized_profit.toLocaleString()}
+            <div className={`text-lg font-semibold ${(summary.realized_profit || 0) >= 0 ? "text-blue-600" : "text-red-600"}`}>
+              {(summary.realized_profit || 0) >= 0 ? "+" : ""}
+              {summary.realized_profit?.toLocaleString() || "0"}
             </div>
           </div>
           <div>

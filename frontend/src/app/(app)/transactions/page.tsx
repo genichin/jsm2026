@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState, useEffect } from "react";
+import { useSearchParams } from "next/navigation";
 import TransactionCards from "@/components/TransactionCards";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
@@ -53,9 +54,10 @@ type CategoriesTreeResponse = { id: string; name: string; flow_type: string }[];
 
 export default function TransactionsPage() {
   const qc = useQueryClient();
+  const searchParams = useSearchParams();
 
   // Filters & paging
-  const [assetFilter, setAssetFilter] = useState<string | "">("")
+  const [assetFilter, setAssetFilter] = useState<string | "">("");
   const [accountFilter, setAccountFilter] = useState<string | "">("")
   const [typeFilter, setTypeFilter] = useState<TransactionType | "">("")
   const [categoryFilter, setCategoryFilter] = useState<string | "">("")
@@ -71,6 +73,15 @@ export default function TransactionsPage() {
     if (saved === "card" || saved === "table") return saved as any;
     return "card";
   });
+
+  // URL 파라미터에서 초기 필터 설정 및 변화 감지
+  useEffect(() => {
+    const assetId = searchParams.get('asset_id');
+    if (assetId !== assetFilter) {
+      setAssetFilter(assetId || "");
+      setPage(1); // 페이지를 1로 리셋
+    }
+  }, [searchParams]);
 
   // Assets, Accounts, Categories for filters/create
   const assetsQuery = useQuery<AssetsListResponse>({
@@ -114,13 +125,14 @@ export default function TransactionsPage() {
       if (accountFilter) params.account_id = accountFilter;
       if (typeFilter) params.type = typeFilter;
       if (categoryFilter) params.category_id = categoryFilter;
+    
       const res = await api.get("/transactions/recent", { params });
       return res.data as TransactionListResponse;
     },
     placeholderData: (previousData) => previousData,
   });
 
-  const transactions = useMemo(() => listQuery.data?.items ?? [], [listQuery.data?.items]);
+  const transactions = listQuery.data?.items ?? [];
 
   // Inline create/edit state
   const [editing, setEditing] = useState<Partial<Transaction> | null>(null);
@@ -251,11 +263,24 @@ export default function TransactionsPage() {
   function startEdit(row: Transaction) {
     setSelectedType(row.type);
     setSelectedAssetId(row.asset_id);
+    
     // datetime-local input을 위해 ISO 문자열을 YYYY-MM-DDTHH:mm:ss 형식으로 변환
     const editingData = {
       ...row,
       transaction_date: row.transaction_date.slice(0, 19)
     };
+    
+    // 현금배당의 경우 extras에서 값들을 추출하여 편집 데이터에 추가
+    if (row.type === 'cash_dividend' && row.extras) {
+      const editData = editingData as any;
+      editData.price = row.extras.price || 0;
+      editData.fee = row.extras.fee || 0;
+      editData.tax = row.extras.tax || 0;
+
+      // dividend_asset_id는 별도로 설정 (폼에서 사용)
+      editData.dividend_asset_id = row.extras.asset || '';
+    }
+    
     setEditing(editingData);
     setIsModalOpen(true);
   }
@@ -332,6 +357,25 @@ export default function TransactionsPage() {
         payload.category_id = categoryIdValue;
       } else {
         payload.category_id = null;
+      }
+      
+      // 현금배당 업데이트 시 extras 및 quantity 처리
+      if (editing.type === "cash_dividend") {
+        const dividend_asset_id = fd.get("dividend_asset_id")?.toString();
+        if (!dividend_asset_id) return alert("배당 자산을 선택하세요.");
+        
+        const price = parseFloat(fd.get("price")?.toString() || "0");
+        const fee = parseFloat(fd.get("fee")?.toString() || "0");
+        const tax = parseFloat(fd.get("tax")?.toString() || "0");
+        const calculatedQuantity = parseFloat(fd.get("quantity")?.toString() || "0");
+        
+        const extras: any = { asset: dividend_asset_id };
+        if (!isNaN(price) && price > 0) extras.price = price;
+        if (!isNaN(fee) && fee > 0) extras.fee = fee;
+        if (!isNaN(tax) && tax > 0) extras.tax = tax;
+        
+        payload.extras = extras;
+        payload.quantity = calculatedQuantity; // 계산된 배당금액을 quantity로 설정
       }
       
       await updateMut.mutateAsync({ id: editing.id as string, payload });
@@ -412,12 +456,22 @@ export default function TransactionsPage() {
         }
       }
 
-      // 배당인 경우 현금 자산 추가 (선택사항)
-      if (type === "dividend") {
-        const cash_asset_id = fd.get("cash_asset_id")?.toString();
-        if (cash_asset_id) {
-          payload.cash_asset_id = cash_asset_id;
-        }
+      // 현금배당: 현금 자산에 단일 거래로 기록, extras.asset에 배당 자산 ID 포함
+      if (type === "cash_dividend") {
+        // quantity는 이미 위에서 입력값을 반영 (양수)
+        const dividend_asset_id = fd.get("dividend_asset_id")?.toString();
+        if (!dividend_asset_id) return alert("배당 자산을 선택하세요.");
+        
+        // price(세전배당금), fee, tax를 extras에 추가
+        const price = parseFloat(fd.get("price")?.toString() || "0");
+        const fee = parseFloat(fd.get("fee")?.toString() || "0");
+        const tax = parseFloat(fd.get("tax")?.toString() || "0");
+        const extras: any = { asset: dividend_asset_id };
+        if (!isNaN(price) && price > 0) extras.price = price;
+        if (!isNaN(fee) && fee > 0) extras.fee = fee;
+        if (!isNaN(tax) && tax > 0) extras.tax = tax;
+        
+        payload.extras = { ...(payload.extras || {}), ...extras };
       }
 
       await createMut.mutateAsync(payload);
@@ -498,19 +552,29 @@ export default function TransactionsPage() {
       {/* Filters & Column Settings */}
       <div className="flex flex-wrap gap-2 items-end">
         <div>
-          <label className="block text-xs text-slate-600 mb-1">자산</label>
-          <select value={assetFilter} onChange={(e) => { setAssetFilter(e.target.value); setPage(1); }} className="border rounded px-2 py-1 min-w-40">
+          <label className="block text-xs text-slate-600 mb-1">계좌</label>
+          <select 
+            value={accountFilter} 
+            onChange={(e) => { setAccountFilter(e.target.value); setPage(1); }} 
+            className={`border rounded px-2 py-1 min-w-40 ${searchParams.get('asset_id') ? 'bg-gray-100 cursor-not-allowed' : ''}`}
+            disabled={!!searchParams.get('asset_id')}
+          >
             <option value="">전체</option>
-            {(assetsQuery.data?.items || []).map((a) => (
+            {(accountsQuery.data?.accounts || []).map((a) => (
               <option key={a.id} value={a.id}>{a.name}</option>
             ))}
           </select>
         </div>
         <div>
-          <label className="block text-xs text-slate-600 mb-1">계좌</label>
-          <select value={accountFilter} onChange={(e) => { setAccountFilter(e.target.value); setPage(1); }} className="border rounded px-2 py-1 min-w-40">
+          <label className="block text-xs text-slate-600 mb-1">자산</label>
+          <select 
+            value={assetFilter} 
+            onChange={(e) => { setAssetFilter(e.target.value); setPage(1); }} 
+            className={`border rounded px-2 py-1 min-w-40 ${searchParams.get('asset_id') ? 'bg-gray-100 cursor-not-allowed' : ''}`}
+            disabled={!!searchParams.get('asset_id')}
+          >
             <option value="">전체</option>
-            {(accountsQuery.data?.accounts || []).map((a) => (
+            {(assetsQuery.data?.items || []).map((a) => (
               <option key={a.id} value={a.id}>{a.name}</option>
             ))}
           </select>
@@ -751,21 +815,38 @@ export default function TransactionsPage() {
         <DataTable columns={columns} data={transactions} />
       ) : (
         <TransactionCards
-          items={transactions.map(t => ({
-            id: t.id,
-            asset_id: t.asset_id,
-            asset_name: t.asset?.name,
-            type: t.type,
-            quantity: t.quantity,
-            transaction_date: t.transaction_date,
-            category_name: t.category?.name,
-            description: t.description,
-            memo: t.memo,
-            related_transaction_id: t.related_transaction_id,
-          }))}
+          items={transactions.map(t => {
+            // 현금배당의 경우 extras.asset에서 배당 자산 이름 찾기
+            let dividendAssetName = null;
+            if (t.type === 'cash_dividend' && t.extras?.asset && assetsQuery.data?.items) {
+              const dividendAsset = assetsQuery.data.items.find(a => a.id === t.extras!.asset);
+              dividendAssetName = dividendAsset?.name || null;
+            }
+            
+            return {
+              id: t.id,
+              asset_id: t.asset_id,
+              asset_name: t.asset?.name,
+              type: t.type,
+              quantity: t.quantity,
+              transaction_date: t.transaction_date,
+              category_name: t.category?.name,
+              description: t.description,
+              memo: t.memo,
+              related_transaction_id: t.related_transaction_id,
+              extras: t.extras,
+              dividend_asset_name: dividendAssetName,  // 배당 자산 이름 추가
+              currency: t.asset?.currency,  // 통화 정보 추가
+            };
+          })}
           onEdit={(id) => {
             const tx = transactions.find(x => x.id === id);
             if (tx) startEdit(tx);
+          }}
+          onDelete={(id) => {
+            if (confirm("정말 삭제하시겠습니까? 연관 거래와 잔고에 영향을 줄 수 있습니다.")) {
+              deleteMut.mutate(id);
+            }
           }}
         />
       )}
@@ -773,7 +854,7 @@ export default function TransactionsPage() {
       {/* Pagination */}
       <div className="flex items-center justify-between gap-2">
         <div className="text-sm text-slate-600">
-          총 {listQuery.data?.total ?? 0}개, 페이지 {listQuery.data?.page ?? page}/{listQuery.data?.pages ?? 1}
+          총 {transactions.length}개, 페이지 {listQuery.data?.page ?? page}/{listQuery.data?.pages ?? 1}
         </div>
         <div className="flex items-center gap-2">
           <button

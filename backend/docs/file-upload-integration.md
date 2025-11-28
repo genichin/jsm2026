@@ -21,7 +21,7 @@
 - 업로드 시 각 행의 거래 타입과 매핑된 카테고리의 `flow_type` 일관성을 검증
 - 허용 규칙:
   - buy/sell → investment, neutral
-  - deposit/interest/dividend → income, transfer, neutral
+  - deposit/interest/cash_dividend/stock_dividend → income, transfer, neutral
   - withdraw/fee → expense, transfer, neutral
   - transfer_in/transfer_out → transfer, neutral
   - adjustment → neutral

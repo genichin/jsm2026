@@ -21,11 +21,15 @@ export interface TransactionCardItem {
   realized_profit?: number | null;
   is_confirmed?: boolean;
   external_id?: string | null;
+  // 현금배당용 추가 필드
+  dividend_asset_name?: string | null;
+  currency?: string;
 }
 
 interface Props {
   items: TransactionCardItem[];
   onEdit: (txId: string) => void;
+  onDelete?: (txId: string) => void;
   virtualizeThreshold?: number; // item 수가 임계값을 넘으면 가상 스크롤 적용
 }
 
@@ -35,7 +39,8 @@ const typeColor: Partial<Record<TransactionType, string>> = {
   sell: "bg-rose-100 text-rose-700",
   deposit: "bg-blue-100 text-blue-700",
   withdraw: "bg-orange-100 text-orange-700",
-  dividend: "bg-yellow-100 text-yellow-800",
+  cash_dividend: "bg-yellow-100 text-yellow-800",
+  stock_dividend: "bg-amber-100 text-amber-700",
   interest: "bg-purple-100 text-purple-700",
   fee: "bg-slate-100 text-slate-600",
   transfer_in: "bg-indigo-100 text-indigo-700",
@@ -63,6 +68,21 @@ function formatDate(isoDate: string): string {
   return isoDate.slice(0, 10);
 }
 
+function getCurrencySymbol(currency?: string): string {
+  if (!currency) return "원";
+  
+  const currencyMap: Record<string, string> = {
+    "KRW": "원",
+    "USD": "$",
+    "EUR": "€",
+    "JPY": "¥",
+    "CNY": "¥",
+    "GBP": "£"
+  };
+  
+  return currencyMap[currency.toUpperCase()] || currency;
+}
+
 function money(qty: number, price: number): number {
   return qty * price;
 }
@@ -82,7 +102,7 @@ function isCashTransaction(type: TransactionType): boolean {
 }
 
 // 카테고리를 표시하지 않는 거래 타입
-const NO_CATEGORY_TYPES: readonly TransactionType[] = ["exchange"] as const;
+const NO_CATEGORY_TYPES: readonly TransactionType[] = ["exchange","cash_dividend"] as const;
 
 function shouldShowCategory(type: TransactionType): boolean {
   return !NO_CATEGORY_TYPES.includes(type);
@@ -97,73 +117,192 @@ interface TransactionCardProps {
   expanded: boolean;
   onToggle: () => void;
   onEdit: (txId: string) => void;
+  onDelete?: (txId: string) => void;
 }
 
-const TransactionCard: React.FC<TransactionCardProps> = ({ tx, expanded, onToggle, onEdit }) => {
-  // 현금성 거래는 금액 계산 불필요 (성능 최적화)
-  const amount = !isCashTransaction(tx.type) && typeof tx.price === 'number' ? money(Math.abs(tx.quantity), tx.price) : 0;
-  const qtyDisplay = (tx.quantity < 0 ? "-" : "") + formatNumber(Math.abs(tx.quantity));
+// 거래 유형별 렌더러
+interface TransactionRenderer {
+  renderDescription?: (tx: TransactionCardItem) => React.ReactNode;
+  renderQuantityPrice: (tx: TransactionCardItem) => React.ReactNode;
+  renderAmount?: (tx: TransactionCardItem) => React.ReactNode;
+  renderFeesTaxes: (tx: TransactionCardItem) => React.ReactNode;
+  renderExtraInfo?: (tx: TransactionCardItem) => React.ReactNode;
+  renderExpandedExtraInfo?: (tx: TransactionCardItem) => React.ReactNode;
+}
+
+// 기본 렌더러 (매수/매도 등)
+const defaultRenderer: TransactionRenderer = {
+  renderQuantityPrice: (tx) => {
+    const qtyDisplay = (tx.quantity < 0 ? "-" : "") + formatNumber(Math.abs(tx.quantity));
+    return (
+      <>
+        <span className={tx.quantity < 0 ? "text-rose-600" : "text-emerald-600"}>{qtyDisplay}</span>
+        <span className="text-slate-400 ml-1">@ {formatNumber(tx.price)}</span>
+      </>
+    );
+  },
+  renderAmount: (tx) => {
+    const amount = typeof tx.price === 'number' ? Math.abs(tx.quantity) * tx.price : 0;
+    return <div className="font-mono text-slate-700">{formatNumber(amount)}</div>;
+  },
+  renderFeesTaxes: (tx) => {
+    const hasFees = tx.fee !== 0 || tx.tax !== 0;
+    if (!hasFees) return null;
+    
+    return (
+      <div className="text-xs text-slate-500">
+        {tx.fee !== 0 && <span>수수료 {formatNumber(tx.fee)}</span>}
+        {tx.fee !== 0 && tx.tax !== 0 && <span> / </span>}
+        {tx.tax !== 0 && <span>세금 {formatNumber(tx.tax)}</span>}
+      </div>
+    );
+  }
+};
+
+// 현금성 거래 렌더러
+const cashRenderer: TransactionRenderer = {
+  renderDescription: (tx) => {
+    return (
+      <>
+      {tx.description}
+      </>
+    );
+  },  
+  renderQuantityPrice: (tx) => {
+    const qtyDisplay = (tx.quantity < 0 ? "-" : "") + formatNumber(Math.abs(tx.quantity));
+    const currencySymbol = getCurrencySymbol(tx.currency);
+    return <span className={tx.quantity < 0 ? "text-rose-600" : "text-emerald-600"}>{qtyDisplay}{currencySymbol}</span>;
+  },
+  renderFeesTaxes: () => null, // 현금성 거래는 수수료/세금 표시 안함
+};
+
+// 현금배당 렌더러
+const cashDividendRenderer: TransactionRenderer = {
+  renderDescription: (tx) => {
+    return (
+      <>
+      {tx.dividend_asset_name}
+      </>
+    );
+  },  
+  renderQuantityPrice: (tx) => {
+    const qtyDisplay = (tx.quantity < 0 ? "-" : "") + formatNumber(Math.abs(tx.quantity));    
+    const currencySymbol = getCurrencySymbol(tx.currency);
+    return (
+      <>
+        <span className={tx.quantity < 0 ? "text-rose-600" : "text-emerald-600"}>{qtyDisplay}{currencySymbol}</span>        
+      </>
+    );
+  },
+  renderFeesTaxes: (tx) => {
+    return (
+      <>
+      </>
+    );
+  },
+  renderExtraInfo: (tx) => {
+    return (
+      <>
+      </>
+    );
+  },
+  renderExpandedExtraInfo: (tx) => {
+    const hasValidExtras = tx.extras && typeof tx.extras === 'object';
+    const extrasPrice = tx.extras?.price;
+    const extrasFee = hasValidExtras ? tx.extras?.fee : undefined;
+    const extrasTax = hasValidExtras ? tx.extras?.tax : undefined;
+    if (!tx.dividend_asset_name) return null;
+    return (
+      <>
+        <div className="text-xs text-slate-500">
+          {extrasPrice && <span>배당금 {formatNumber(extrasPrice)}</span>}
+          {extrasPrice && <span> / </span>}
+          {Number(extrasFee) > 0 && <span>수수료 {formatNumber(Number(extrasFee))}</span>}
+          {Number(extrasFee) > 0 && Number(extrasTax) > 0 && <span> / </span>}
+          {Number(extrasTax) > 0 && <span>세금 {formatNumber(Number(extrasTax))}</span>}
+        </div>
+        <div className="text-xs text-blue-600">
+          배당자산: {tx.dividend_asset_name}
+        </div>
+      </>
+    );
+  }
+};
+
+// 거래 유형별 렌더러 매핑
+const TRANSACTION_RENDERERS: Record<string, TransactionRenderer> = {
+  // 현금성 거래
+  auto_transfer: cashRenderer,
+  card_payment: cashRenderer,
+  transfer_in: cashRenderer,
+  transfer_out: cashRenderer,
+  deposit: cashRenderer,
+  exchange: cashRenderer,
+  
+  // 현금배당
+  cash_dividend: cashDividendRenderer,
+  
+  // 기본 (매수/매도 등)
+  default: defaultRenderer,
+};
+
+function getTransactionRenderer(type: TransactionType): TransactionRenderer {
+  return TRANSACTION_RENDERERS[type] || TRANSACTION_RENDERERS.default;
+}
+
+const TransactionCard: React.FC<TransactionCardProps> = ({ tx, expanded, onToggle, onEdit, onDelete }) => {
   const profit = tx.realized_profit;
   const panelId = `tx-panel-${tx.id}`;
-  const btnId = `tx-toggle-${tx.id}`;
+  
+  // 거래 유형별 렌더러 선택
+  const renderer = getTransactionRenderer(tx.type);
 
   return (
-    <div className="border rounded p-3 bg-white shadow-sm flex flex-col gap-2" role="article" aria-labelledby={btnId}>
+    <div 
+      className="border rounded p-3 bg-white shadow-sm flex flex-col gap-2 cursor-pointer hover:bg-slate-50 transition-colors" 
+      role="button"
+      tabIndex={0}
+      onClick={onToggle}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onToggle();
+        }
+      }}
+      aria-expanded={expanded}
+      aria-controls={panelId}
+      aria-label={`${tx.asset_name || tx.asset_id} 거래 ${expanded ? '접기' : '확장'}`}
+    >
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2 min-w-0">
           <span className="text-xs font-mono text-slate-500">{formatDate(tx.transaction_date)}</span>
           <span className={`text-xs px-2 py-1 rounded font-medium shrink-0 ${typeColor[tx.type] || DEFAULT_TYPE_COLOR}`}>{transactionTypeLabels[tx.type] || tx.type}</span>
-          
           {shouldShowCategory(tx.type) && (
             <span className={`text-xs px-2 py-1 rounded bg-slate-100 text-slate-600 truncate ${CATEGORY_BADGE_MAX_WIDTH}`} title={tx.category_name ?? undefined}>{tx.category_name || "미분류"}</span>
           )}
-          
-          {!tx.is_confirmed && <span className="text-xs px-2 py-1 rounded bg-slate-200 text-slate-700">임시</span>}
-        </div>
-        <div className="flex items-center gap-2">
-          <button
-            id={btnId}
-            onClick={onToggle}
-            className="text-xs px-2 py-1 rounded bg-slate-50 hover:bg-slate-100 focus:outline-none focus:ring focus:ring-slate-300"
-            aria-expanded={expanded}
-            aria-controls={panelId}
-          >{expanded ? "접기" : "상세"}</button>
-          <button
-            onClick={() => onEdit(tx.id)}
-            className="text-xs px-2 py-1 rounded bg-slate-100 hover:bg-slate-200 focus:outline-none focus:ring focus:ring-slate-300"
-          >편집</button>
+          <span className="text-xs text-slate-500" title={tx.asset_name || tx.asset_id}>{tx.asset_name || tx.asset_id}</span>
         </div>
       </div>
       <div className="flex flex-col gap-1 text-sm">
         <div className="flex items-center justify-between">
-          <div className="font-medium truncate" title={tx.asset_name || tx.asset_id}>{tx.asset_name || tx.asset_id}</div>
+          <div className="font-medium truncate">
+            {renderer.renderDescription && renderer.renderDescription(tx)}
+          </div>
           <div className="font-mono text-right">
-            {isCashTransaction(tx.type) ? (
-              <span className={tx.quantity < 0 ? "text-rose-600" : "text-emerald-600"}>{qtyDisplay}</span>
-            ) : (
-              <>
-                <span className={tx.quantity < 0 ? "text-rose-600" : "text-emerald-600"}>{qtyDisplay}</span>
-                <span className="text-slate-400 ml-1">@ {formatNumber(tx.price)}</span>
-              </>
-            )}
+            {renderer.renderQuantityPrice(tx)}
           </div>
         </div>
-        {!isCashTransaction(tx.type) && (
+        {renderer.renderAmount && (
           <div className="flex items-center justify-between text-xs">               
-            <div className="font-mono text-slate-700">{formatNumber(amount)}</div>
+            {renderer.renderAmount(tx)}
           </div>
         )}
         {profit !== null && profit !== undefined && profit !== 0 && (
           <div className={`text-xs font-mono ${profit > 0 ? "text-emerald-600" : "text-rose-600"}`}>실현손익 {formatNumber(profit)}</div>
         )}
-        {(tx.fee !== 0 || tx.tax !== 0) && (
-          <div className="text-xs text-slate-500">
-            {tx.fee !== 0 && <span>수수료 {formatNumber(tx.fee)}</span>}
-            {tx.fee !== 0 && tx.tax !== 0 && <span> / </span>}
-            {tx.tax !== 0 && <span>세금 {formatNumber(tx.tax)}</span>}
-          </div>
-        )}
-        {tx.description && <div className="text-xs text-slate-600 truncate" title={tx.description ?? undefined}>{tx.description}</div>}
+        {renderer.renderFeesTaxes(tx)}
+        {renderer.renderExtraInfo && renderer.renderExtraInfo(tx)}
+        {/* {tx.description && <div className="text-xs text-slate-600 truncate" title={tx.description ?? undefined}>{tx.description}</div>} */}
         {tx.memo && <div className="text-xs text-slate-400 truncate" title={tx.memo ?? undefined}>{tx.memo}</div>}
       </div>
       <div
@@ -179,6 +318,26 @@ const TransactionCard: React.FC<TransactionCardProps> = ({ tx, expanded, onToggl
             {tx.related_transaction_id && <div className="flex justify-between"><span className="text-slate-500">연관 거래:</span><span className="font-mono truncate" title={tx.related_transaction_id}>{tx.related_transaction_id}</span></div>}
             {tx.description && <div><span className="text-slate-500 block">설명 전체:</span><div className="mt-0.5 break-words text-slate-700">{tx.description}</div></div>}
             {tx.memo && <div><span className="text-slate-500 block">메모 전체:</span><div className="mt-0.5 break-words text-slate-500">{tx.memo}</div></div>}
+            {renderer.renderExpandedExtraInfo && renderer.renderExpandedExtraInfo(tx)}
+            {/* 편집/삭제 버튼 */}
+            <div className="flex gap-2 pt-2 border-t">
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onEdit(tx.id);
+                }}
+                className="text-xs px-3 py-1 rounded bg-blue-100 text-blue-700 hover:bg-blue-200 focus:outline-none focus:ring focus:ring-blue-300"
+              >편집</button>
+              {onDelete && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onDelete(tx.id);
+                  }}
+                  className="text-xs px-3 py-1 rounded bg-rose-100 text-rose-700 hover:bg-rose-200 focus:outline-none focus:ring focus:ring-rose-300"
+                >삭제</button>
+              )}
+            </div>
           </div>
         )}
       </div>
@@ -186,7 +345,7 @@ const TransactionCard: React.FC<TransactionCardProps> = ({ tx, expanded, onToggl
   );
 };
 
-export const TransactionCards: React.FC<Props> = ({ items, onEdit, virtualizeThreshold = 300 }) => {
+export const TransactionCards: React.FC<Props> = ({ items, onEdit, onDelete, virtualizeThreshold = 300 }) => {
   const [expandedMap, setExpandedMap] = useState<Record<string, boolean>>({});
   const toggle = (id: string) => setExpandedMap(m => ({ ...m, [id]: !m[id] }));
 
@@ -233,6 +392,7 @@ export const TransactionCards: React.FC<Props> = ({ items, onEdit, virtualizeThr
                   expanded={expanded}
                   onToggle={() => toggle(tx.id)}
                   onEdit={onEdit}
+                  onDelete={onDelete}
                 />
               </div>
             );
@@ -254,6 +414,7 @@ export const TransactionCards: React.FC<Props> = ({ items, onEdit, virtualizeThr
             expanded={expanded}
             onToggle={() => toggle(tx.id)}
             onEdit={onEdit}
+            onDelete={onDelete}
           />
         );
       })}

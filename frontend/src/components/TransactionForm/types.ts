@@ -57,4 +57,5 @@ export type TransactionTypeConfig = {
     | 'exchangeRate'
     | 'zeroPrice'
   >;
+  shouldShowField?: (f: string) => boolean;
 };

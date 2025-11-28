@@ -170,9 +170,8 @@ class TestBoundaryValues:
             headers=auth_header,
             json={
                 "asset_id": test_asset.id,
-                "type": "dividend",
+                "type": "cash_dividend",
                 "quantity": 0,
-                "price": 70000,
                 "transaction_date": "2025-11-13T10:00:00",
                 "description": "배당 마커"
             }

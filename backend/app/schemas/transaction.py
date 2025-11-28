@@ -26,7 +26,8 @@ class TransactionType(str, Enum):
     SELL = "sell"             # 매도
     DEPOSIT = "deposit"       # 입금
     WITHDRAW = "withdraw"     # 출금
-    DIVIDEND = "dividend"     # 배당
+    CASH_DIVIDEND = "cash_dividend"     # 현금배당
+    STOCK_DIVIDEND = "stock_dividend"   # 주식배당
     INTEREST = "interest"     # 이자
     FEE = "fee"              # 수수료
     TRANSFER_IN = "transfer_in"    # 이체 입금
@@ -116,6 +117,10 @@ class TransactionBase(BaseModel):
     description: Optional[str] = Field(None, description="거래 설명")
     memo: Optional[str] = Field(None, description="사용자 메모")
 
+    model_config = {
+        "from_attributes": True
+    }
+
 
 class TransactionCreate(TransactionBase):
     """거래 생성 요청"""
@@ -147,7 +152,13 @@ class TransactionCreate(TransactionBase):
         elif self.type == TransactionType.TRANSFER_OUT:
             if self.quantity >= 0:
                 raise ValueError("이체 출금(TRANSFER_OUT) 거래의 수량은 음수여야 합니다.")
-        # 배당(DIVIDEND)은 수량 제약 없음 (현금배당은 0, 주식배당은 양수)
+        # 배당: 현금배당은 수량=0(마커), 주식배당은 양수
+        elif self.type == TransactionType.CASH_DIVIDEND:
+            if self.quantity <= 0:
+                raise ValueError("현금배당(CASH_DIVIDEND)은 수량이 양수여야 합니다.")
+        elif self.type == TransactionType.STOCK_DIVIDEND:
+            if self.quantity <= 0:
+                raise ValueError("주식배당(STOCK_DIVIDEND)은 수량이 양수여야 합니다.")
         elif self.type == TransactionType.INTEREST:
             if self.quantity <= 0:
                 raise ValueError("이자(INTEREST) 거래의 수량은 양수여야 합니다.")
@@ -180,6 +191,7 @@ class TransactionCreate(TransactionBase):
 class TransactionUpdate(BaseModel):
     """거래 업데이트 요청"""
     type: Optional[TransactionType] = Field(None, description="거래 유형 (수정 가능)")
+    quantity: Optional[float] = Field(None, description="수량 변화 (수정 가능)")
     description: Optional[str] = None
     memo: Optional[str] = None
     is_confirmed: Optional[bool] = None

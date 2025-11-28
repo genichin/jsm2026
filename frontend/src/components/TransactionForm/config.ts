@@ -7,7 +7,8 @@ export const FIELD_LABELS: Record<TransactionType, Partial<Record<string, string
   withdraw: { quantity: "출금 금액" },
   buy: { quantity: "매수 수량" },
   sell: { quantity: "매도 수량" },
-  dividend: { quantity: "배당 주식 수" },
+  cash_dividend: { quantity: "배당금액", price: "배당 단가", fee: "수수료", tax: "세금" },
+  stock_dividend: { quantity: "배당 주식 수" },
   interest: { quantity: "이자 금액" },
   fee: { quantity: "수수료 금액" },
   transfer_in: { quantity: "이체 입금 금액" },
@@ -41,8 +42,8 @@ export const TRANSACTION_TYPE_CONFIGS: Record<TransactionType, TransactionTypeCo
   buy: {
     type: 'buy',
     label: '매수',
-    fields: ['asset', 'quantity', 'price', 'fee', 'tax', 'date', 'cash_asset', 'memo'],
-    requiredFields: ['asset', 'quantity', 'price','date'],
+    fields: ['asset', 'quantity', 'price', 'fee', 'tax', 'date', 'cash_asset', 'memo', 'category'],
+    requiredFields: ['asset', 'quantity', 'price', 'date'],
     specialBehavior: ['cashAssetSelector'],
   },
   sell: {
@@ -52,13 +53,22 @@ export const TRANSACTION_TYPE_CONFIGS: Record<TransactionType, TransactionTypeCo
     requiredFields: ['asset', 'quantity', 'price', 'date'],
     specialBehavior: ['negativeQuantity', 'cashAssetSelector'],
   },
-  dividend: {
-    type: 'dividend',
-    label: '배당',
-    fields: ['asset', 'quantity', 'date', 'cash_asset', 'description', 'memo'],
+  cash_dividend: {
+    type: 'cash_dividend',
+    label: '현금배당',
+    fields: ['asset', 'dividend_asset', 'quantity', 'price', 'fee', 'tax', 'date', 'description', 'memo'],
+    requiredFields: ['asset', 'dividend_asset', 'quantity', 'date'],
+    hiddenFields: ['category', 'cash_asset'],
+    specialBehavior: [],
+  },
+  stock_dividend: {
+    type: 'stock_dividend',
+    label: '주식배당',
+    fields: ['asset', 'quantity', 'date', 'description', 'memo'],
     requiredFields: ['asset', 'quantity', 'date'],
     hiddenFields: ['category'],
-    specialBehavior: ['dividendCashAsset'],
+    specialBehavior: [],
+    shouldShowField: (f: string) => f !== 'price' && f !== 'fee' && f !== 'tax',
   },
   interest: {
     type: 'interest',
@@ -168,9 +178,15 @@ export function shouldShowField(
     return false;
   }
   
-  // 카테고리는 dividend와 exchange에서 숨김
-  if (fieldName === 'category' && (transactionType === 'dividend' || transactionType === 'exchange')) {
+  // 카테고리는 cash_dividend/stock_dividend와 exchange에서 숨김
+  if (fieldName === 'category' && (transactionType === 'cash_dividend' || transactionType === 'stock_dividend' || transactionType === 'exchange')) {
     return false;
+  }
+  
+  // 타입별 필드 표시 로직 확장: shouldShowField가 있으면 우선 적용
+  if (typeof (config as any).shouldShowField === 'function') {
+    const show = (config as any).shouldShowField(fieldName);
+    if (show === false) return false;
   }
   
   return config.fields.includes(fieldName);

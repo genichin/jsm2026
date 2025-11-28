@@ -130,7 +130,7 @@ def serialize_transaction(tx: Transaction):
         "transaction_date": tx.transaction_date,
         "description": tx.description,
         "memo": tx.memo,
-        "extras": tx.extras,
+        "extras": tx.extras or {},  # 항상 빈 dict라도 포함
         "created_at": tx.created_at,
         "updated_at": tx.updated_at,
     }
@@ -234,7 +234,7 @@ def allowed_category_flow_types_for(tx_type: str) -> set:
     tx_type = (tx_type or "").lower()
     if tx_type in {"buy", "sell"}:
         return {"investment", "neutral"}
-    if tx_type in {"deposit", "interest", "dividend"}:
+    if tx_type in {"deposit", "interest", "cash_dividend", "stock_dividend"}:
         return {"income", "transfer", "neutral"}
     if tx_type in {"withdraw", "fee"}:
         return {"expense", "transfer", "neutral"}
@@ -470,67 +470,8 @@ async def create_transaction(
                 detail="연결된 계좌를 찾을 수 없습니다"
             )
     
-    # 배당의 경우 수량이 0이고 extras에 price가 있을 때 현금 자산과 연결된 입금 거래 자동 생성
-    dividend_extras = db_transaction.extras or {}
-    dividend_price = float(dividend_extras.get('price', 0))
-    dividend_tax = float(dividend_extras.get('tax', 0))
-    
-    if transaction.type.value == 'dividend' and db_transaction.quantity == 0 and dividend_price > 0:
-        cash_asset = None
-        
-        # 1. 사용자가 지정한 현금 자산이 있으면 해당 자산 사용
-        if transaction.cash_asset_id:
-            cash_asset = db.query(Asset).filter(
-                Asset.id == transaction.cash_asset_id,
-                Asset.user_id == current_user.id,
-                Asset.asset_type == 'cash'
-            ).first()
-            
-            if not cash_asset:
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail="지정한 현금 자산을 찾을 수 없습니다"
-                )
-        else:
-            # 2. 지정하지 않았으면 같은 계좌의 현금 자산 찾기
-            cash_asset = find_cash_asset_in_account(db, current_user.id, asset.account_id)
-            
-            # 3. 현금 자산이 없으면 자동 생성
-            if not cash_asset:
-                cash_asset = create_cash_asset_if_needed(db, current_user.id, asset.account_id)
-        
-        if cash_asset:
-            # 현금배당: 현금 거래의 수량 = 배당 거래의 price - tax (extras에서 추출)
-            dividend_amount = dividend_price - dividend_tax
-            
-            # 연결된 현금 입금 거래 생성
-            cash_transaction = Transaction(
-                asset_id=cash_asset.id,
-                type='deposit',
-                quantity=dividend_amount,
-                transaction_date=db_transaction.transaction_date,
-                description=f"{asset.name} 배당금 입금",
-                memo=f"연결거래: {db_transaction.id}",
-                related_transaction_id=db_transaction.id,
-                extras={}
-            )
-            
-            db.add(cash_transaction)
-            db.commit()
-            db.refresh(cash_transaction)
-            
-            # 현금 자산 잔고도 Redis에 업데이트
-            calculate_and_update_balance(db, cash_asset.id)
-            
-            # 원래 거래에 related_transaction_id 업데이트
-            db_transaction.related_transaction_id = cash_transaction.id
-            db.commit()
-        else:
-            # 계좌를 찾을 수 없는 경우 에러
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="연결된 계좌를 찾을 수 없습니다"
-            )
+    # 현금배당은 단일 현금 자산 거래로 입력되며, extras.asset에 배당 원자산 ID를 담습니다.
+    # 추가 자동 생성 로직 없음.
     
     # 직렬화하여 일관된 응답 스키마 보장 (category dict 포함)
     try:
@@ -605,7 +546,7 @@ async def list_transactions(
             "transaction_date": tx.transaction_date,
             "description": tx.description,
             "memo": tx.memo,
-            "extras": tx.extras,
+            "extras": tx.extras or {},  # 항상 빈 dict라도 포함
             "created_at": tx.created_at,
             "updated_at": tx.updated_at,
             "asset": {
@@ -704,6 +645,7 @@ async def get_portfolio_summary(
 async def get_recent_transactions(
     page: int = Query(1, ge=1, description="페이지 번호 (1부터 시작)"),
     size: int = Query(20, ge=1, le=100, description="페이지당 항목 수"),
+    asset_id: Optional[str] = Query(None, description="자산 ID로 필터링"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -737,6 +679,19 @@ async def get_recent_transactions(
             .filter(Transaction.asset_id.in_(user_asset_ids))
         )
         
+        # asset_id 필터 적용
+        if asset_id:
+            # 해당 자산이 사용자 소유인지 확인
+            if asset_id not in user_asset_ids:
+                return TransactionListResponse(
+                    items=[],
+                    total=0,
+                    page=page,
+                    size=size,
+                    pages=0
+                )
+            query = query.filter(Transaction.asset_id == asset_id)
+        
         # 최신순 정렬
         query = query.order_by(desc(Transaction.transaction_date), desc(Transaction.id))
         
@@ -762,7 +717,7 @@ async def get_recent_transactions(
                 "transaction_date": tx.transaction_date,
                 "description": tx.description,
                 "memo": tx.memo,
-                "extras": tx.extras,
+                "extras": tx.extras or {},  # 항상 빈 dict라도 포함
                 "created_at": tx.created_at,
                 "updated_at": tx.updated_at,
                 "asset": {

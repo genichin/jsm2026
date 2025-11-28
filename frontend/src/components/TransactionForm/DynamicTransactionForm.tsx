@@ -40,6 +40,24 @@ export function DynamicTransactionForm({
   const [exchangeTargetAmount, setExchangeTargetAmount] = useState(0);
   const [exchangeRate, setExchangeRate] = useState<number | null>(null);
 
+  // 현금배당 계산 상태
+  const [grossDividend, setGrossDividend] = useState(
+    (editing as any)?.price || 0   // 세전배당금
+  );
+  const [dividendFee, setDividendFee] = useState(
+    (editing as any)?.fee || 0
+  );
+  const [dividendTax, setDividendTax] = useState(
+    (editing as any)?.tax || 0
+  );
+
+  // 배당금액 계산 (세전배당금 - 수수료 - 세금) = quantity로 사용
+  const calculatedDividendAmount = useMemo(() => {
+    if (transactionType !== 'cash_dividend') return 0;
+    const netAmount = grossDividend - dividendFee - dividendTax;
+    return Math.max(0, netAmount); // 음수 방지
+  }, [transactionType, grossDividend, dividendFee, dividendTax]);
+
   // 단계적 입력 상태
   const [isAssetLocked, setIsAssetLocked] = useState(isEditMode || !!selectedAssetId);
 
@@ -111,11 +129,12 @@ export function DynamicTransactionForm({
   const showCategory = shouldShowField("category", transactionType);
   const showDescription = shouldShowField("description", transactionType);
   const showCashAsset = shouldShowField("cash_asset", transactionType);
+  const showDividendAsset = shouldShowField("dividend_asset", transactionType);
   const showExchange = transactionType === "exchange";
 
   // 특수 동작 체크
   const isNegativeQuantity = hasSpecialBehavior("negativeQuantity", transactionType);
-  const isDividend = transactionType === "dividend";
+  const isDividend = transactionType === "cash_dividend";
 
   // 자산 선택 시 자동 확정
   const handleAssetSelect = (assetId: string) => {
@@ -165,14 +184,31 @@ export function DynamicTransactionForm({
             {/* 수량 (exchange 제외) */}
             {showQuantity && (
               <div className="col-span-1">
-                <Fields.QuantityField
-                  label={FIELD_LABELS[transactionType]?.quantity || "수량"}
-                  defaultValue={
-                    editing?.quantity ? Math.abs(editing.quantity) : 0
-                  }
-                  required
-                  showNegativeHint={isNegativeQuantity}
-                />
+                {transactionType === 'cash_dividend' ? (
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">
+                      배당금액 (자동계산)
+                    </label>
+                    <input
+                      type="number"
+                      value={calculatedDividendAmount}
+                      readOnly
+                      className="w-full border rounded px-3 py-2 bg-slate-50 text-slate-600"
+                      title={`${grossDividend} - ${dividendFee} - ${dividendTax} = ${calculatedDividendAmount}`}
+                    />
+                    {/* 실제 quantity는 계산된 배당금액 */}
+                    <input type="hidden" name="quantity" value={calculatedDividendAmount} />
+                  </div>
+                ) : (
+                  <Fields.QuantityField
+                    label={FIELD_LABELS[transactionType]?.quantity || "수량"}
+                    defaultValue={
+                      editing?.quantity ? Math.abs(editing.quantity) : 0
+                    }
+                    required
+                    showNegativeHint={isNegativeQuantity}
+                  />
+                )}
               </div>
             )}
 
@@ -187,21 +223,89 @@ export function DynamicTransactionForm({
             {/* 가격/수수료/세금 (config 기반 표시) */}
             {showPrice && (
               <div className="col-span-1">
-                <Fields.PriceField required defaultValue={0} />
+                {transactionType === 'cash_dividend' ? (
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">
+                      세전배당금 *
+                    </label>
+                    <input
+                      type="number"
+                      step="any"
+                      name="price"
+                      value={grossDividend}
+                      onChange={(e) => setGrossDividend(Number(e.target.value) || 0)}
+                      required
+                      className="w-full border rounded px-3 py-2"
+                    />
+                  </div>
+                ) : (
+                  <Fields.PriceField 
+                    required 
+                    defaultValue={(editing as any)?.price || 0} 
+                  />
+                )}
               </div>
             )}
             {showFee && (
               <div className="col-span-1">
-                <Fields.FeeField defaultValue={0} />
+                {transactionType === 'cash_dividend' ? (
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">
+                      수수료
+                    </label>
+                    <input
+                      type="number"
+                      step="any"
+                      name="fee"
+                      value={dividendFee}
+                      onChange={(e) => setDividendFee(Number(e.target.value) || 0)}
+                      className="w-full border rounded px-3 py-2"
+                    />
+                  </div>
+                ) : (
+                  <Fields.FeeField 
+                    defaultValue={(editing as any)?.fee || 0} 
+                  />
+                )}
               </div>
             )}
             {showTax && (
               <div className="col-span-1">
-                <Fields.TaxField defaultValue={0} />
+                {transactionType === 'cash_dividend' ? (
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">
+                      세금
+                    </label>
+                    <input
+                      type="number"
+                      step="any"
+                      name="tax"
+                      value={dividendTax}
+                      onChange={(e) => setDividendTax(Number(e.target.value) || 0)}
+                      className="w-full border rounded px-3 py-2"
+                    />
+                  </div>
+                ) : (
+                  <Fields.TaxField 
+                    defaultValue={(editing as any)?.tax || 0} 
+                  />
+                )}
               </div>
             )}
 
-            {/* 현금 자산 선택 (buy/sell/dividend) */}
+
+
+            {/* 배당 자산 선택 (cash_dividend 전용) */}
+            {showDividendAsset && (
+              <div className="col-span-1">
+                <Fields.DividendAssetField
+                  assets={assets.filter(a => a.asset_type !== 'cash')}
+                  defaultValue={(editing as any)?.dividend_asset_id || ""}
+                />
+              </div>
+            )}
+
+            {/* 현금 자산 선택 (buy/sell) */}
             {showCashAsset && (
               <div className="col-span-1">
                 <Fields.CashAssetField

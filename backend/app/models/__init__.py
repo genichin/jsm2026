@@ -179,7 +179,8 @@ class TransactionType(str, Enum):
     SELL = "sell"             # 매도
     DEPOSIT = "deposit"       # 입금
     WITHDRAW = "withdraw"     # 출금
-    DIVIDEND = "dividend"     # 배당
+    CASH_DIVIDEND = "cash_dividend"     # 현금배당
+    STOCK_DIVIDEND = "stock_dividend"   # 주식배당
     INTEREST = "interest"     # 이자
     FEE = "fee"              # 수수료
     TRANSFER_IN = "transfer_in"    # 이체 입금
@@ -261,7 +262,7 @@ class Transaction(Base):
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
     __table_args__ = (
         CheckConstraint(
-            "type IN ('buy', 'sell', 'deposit', 'withdraw', 'dividend', 'interest', 'fee', "
+            "type IN ('buy', 'sell', 'deposit', 'withdraw', 'cash_dividend', 'stock_dividend', 'interest', 'fee', "
             "'transfer_in', 'transfer_out', 'adjustment', 'invest', 'redeem', "
             "'internal_transfer', 'card_payment', 'promotion_deposit', 'auto_transfer', 'remittance', 'exchange')",
             name='valid_transaction_type'

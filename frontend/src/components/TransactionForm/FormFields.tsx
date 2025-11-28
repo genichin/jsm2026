@@ -392,7 +392,7 @@ export function MemoField({
   );
 }
 
-// 현금 자산 선택 필드 (매수/매도/배당용)
+// 현금 자산 선택 필드 (매수/매도용)
 export function CashAssetField({
   assets,
   transactionType,
@@ -401,22 +401,18 @@ export function CashAssetField({
   assets: AssetBrief[];
   transactionType: TransactionType;
 }) {
-  const isDividend = transactionType === 'dividend';
-  
   return (
     <div className="col-span-2">
       <label className="block text-sm font-medium text-slate-700 mb-1">
-        {isDividend ? '배당금 입금 계좌 (현금)' : '현금 자산'}
-        {!isDividend && assets.length === 0 && ' (선택사항)'}
+        현금 자산
+        {assets.length === 0 && ' (선택사항)'}
       </label>
       <select
         name="cash_asset_id"
         defaultValue={defaultValue || ""}
         className="w-full border rounded px-3 py-2"
       >
-        <option value="">
-          {isDividend ? '없음 (가격이 0인 경우)' : '자동 선택'}
-        </option>
+        <option value="">자동 선택</option>
         {assets.map((a) => (
           <option key={a.id} value={a.id}>
             {a.name}
@@ -425,11 +421,36 @@ export function CashAssetField({
       </select>
       {assets.length === 0 && (
         <p className="text-xs text-amber-600 mt-1">
-          {isDividend
-            ? '동일 계좌·통화의 현금 자산이 없습니다. 가격 > 0이면 자동으로 생성됩니다.'
-            : '동일 계좌·통화의 현금 자산이 없습니다. 자동으로 생성됩니다.'}
+          동일 계좌·통화의 현금 자산이 없습니다. 자동으로 생성됩니다.
         </p>
       )}
+    </div>
+  );
+}
+
+// 배당 자산 선택 필드 (cash_dividend 전용)
+export function DividendAssetField({
+  assets,
+  defaultValue,
+}: FormFieldProps & { assets: AssetBrief[] }) {
+  return (
+    <div className="col-span-2">
+      <label className="block text-sm font-medium text-slate-700 mb-1">
+        배당 자산
+      </label>
+      <select
+        name="dividend_asset_id"
+        defaultValue={defaultValue || ""}
+        className="w-full border rounded px-3 py-2"
+        required
+      >
+        <option value="">선택하세요</option>
+        {assets.map((a) => (
+          <option key={a.id} value={a.id}>
+            {a.name}
+          </option>
+        ))}
+      </select>
     </div>
   );
 }
