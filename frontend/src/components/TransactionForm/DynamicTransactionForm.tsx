@@ -220,7 +220,13 @@ export function DynamicTransactionForm({
       console.log('Early return: invalid cashAmount or price', { cashAmount, relatedPrice });
       return;
     }
-    const quantity = Number((cashAmount / relatedPrice).toFixed(8));
+    let quantity = Number((cashAmount / relatedPrice).toFixed(8));
+    
+    // 매도(sell) 거래는 수량이 음수여야 함
+    if (targetType === 'sell') {
+      quantity = -Math.abs(quantity);
+    }
+    
     try {
       // Convert local time to UTC for backend
       const localDate = new Date(transactionDate);
