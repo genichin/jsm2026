@@ -11,7 +11,7 @@ from sqlalchemy import or_, and_
 from app.core.database import get_db
 from app.api.auth import get_current_user
 from app.models import User, Activity, ActivityType, TargetType
-from app.schemas.activity import ActivityCreate, ActivityUpdate, ActivityResponse
+from app.schemas.activity import ActivityCreate, ActivityUpdate, ActivityResponse, ActivitiesListResponse
 from app.core.activity_helpers import (
     validate_target,
     check_activity_exists,
@@ -55,19 +55,19 @@ def create_activity(
     return activity
 
 
-@router.get("", response_model=List[ActivityResponse])
+@router.get("", response_model=ActivitiesListResponse)
 def list_activities(
     target_type: TargetType = Query(..., description="대상 타입"),
     target_id: str = Query(..., description="대상 ID"),
     activity_type: Optional[ActivityType] = Query(None, description="활동 유형 필터"),
     include_deleted: bool = Query(False, description="삭제된 댓글 포함 여부"),
-    order: str = Query("asc", pattern="^(asc|desc)$", description="정렬 순서"),
-    skip: int = Query(0, ge=0),
-    limit: int = Query(100, ge=1, le=1000),
+    order: str = Query("desc", pattern="^(asc|desc)$", description="정렬 순서"),
+    page: int = Query(1, ge=1, description="페이지 번호"),
+    size: int = Query(20, ge=1, le=100, description="페이지 크기"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """대상별 활동 목록"""
+    """대상별 활동 목록 (페이지네이션)"""
     validate_target(db, current_user.id, target_type, target_id)
 
     query = db.query(Activity).filter(
@@ -81,9 +81,23 @@ def list_activities(
     if activity_type:
         query = query.filter(Activity.activity_type == activity_type.value)
 
-    query = query.order_by(Activity.created_at.asc() if order == 'asc' else Activity.created_at.desc())
+    # 총 개수
+    total = query.count()
 
-    return query.offset(skip).limit(limit).all()
+    # 정렬 및 페이지네이션
+    query = query.order_by(Activity.created_at.asc() if order == 'asc' else Activity.created_at.desc())
+    items = query.offset((page - 1) * size).limit(size).all()
+
+    # 총 페이지 수
+    pages = (total + size - 1) // size if total > 0 else 1
+
+    return ActivitiesListResponse(
+        items=items,
+        total=total,
+        page=page,
+        size=size,
+        pages=pages
+    )
 
 
 @router.get("/{activity_id}", response_model=ActivityResponse)

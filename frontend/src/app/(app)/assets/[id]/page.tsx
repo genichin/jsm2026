@@ -1,11 +1,20 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { useRouter } from "next/navigation";
 import { DataTable } from "@/components/DataTable";
 import { ColumnDef } from "@tanstack/react-table";
+import RecentTransactions from "@/components/RecentTransactions";
+import { Modal } from "@/components/Modal";
+import { DynamicTransactionForm } from "@/components/TransactionForm/DynamicTransactionForm";
 import { useMemo, useState } from "react";
+
+type TransactionType = 
+  | "buy" | "sell" | "deposit" | "withdraw" | "transfer_in" | "transfer_out"
+  | "cash_dividend" | "stock_dividend" | "interest" | "fee" | "adjustment"
+  | "invest" | "redeem" | "internal_transfer" | "card_payment" 
+  | "promotion_deposit" | "auto_transfer" | "remittance" | "exchange";
 
 // Types
 interface Asset {
@@ -75,11 +84,56 @@ interface EntityTagsResponse {
   total: number;
 }
 
+interface Activity {
+  id: string;
+  user_id: string;
+  target_type: string;
+  target_id: string;
+  activity_type: "comment" | "log";
+  content: string | null;
+  payload: Record<string, any> | null;
+  parent_id: string | null;
+  thread_root_id: string | null;
+  visibility: "private" | "shared" | "public";
+  is_immutable: boolean;
+  is_deleted: boolean;
+  deleted_at: string | null;
+  created_at: string;
+  updated_at: string;
+  user?: {
+    username: string;
+    full_name: string | null;
+  };
+}
+
+interface ActivitiesResponse {
+  items: Activity[];
+  total: number;
+  page: number;
+  size: number;
+  pages: number;
+}
+
 export default function AssetDetailPage({ params }: { params: { id: string } }) {
   const router = useRouter();
-  const [activeTab, setActiveTab] = useState<"transactions" | "tags">("transactions");
+  const queryClient = useQueryClient();
+  const [activeTab, setActiveTab] = useState<"overview" | "transactions" | "tags" | "activities">("overview");
   const [txPage, setTxPage] = useState(1);
   const [txSize] = useState(20);
+  const [activityPage, setActivityPage] = useState(1);
+  const [activitySize] = useState(20);
+  const [newComment, setNewComment] = useState("");
+
+  // 거래 추가 모달 상태
+  const [isTransactionModalOpen, setIsTransactionModalOpen] = useState(false);
+  const [selectedAssetId, setSelectedAssetId] = useState<string | null>(null);
+  const [selectedType, setSelectedType] = useState<TransactionType | null>(null);
+  const [editing, setEditing] = useState<any>(null);
+  const [isSuggesting, setIsSuggesting] = useState(false);
+  const [suggestedCategoryId, setSuggestedCategoryId] = useState<string | null>(null);
+
+  // 파일 업로드 모달 상태
+  const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
 
   // 자산 기본 정보
   const assetQuery = useQuery<Asset>({
@@ -93,7 +147,7 @@ export default function AssetDetailPage({ params }: { params: { id: string } }) 
     queryFn: async () => (await api.get(`/assets/${params.id}/summary`)).data,
   });
 
-  // 거래 내역
+  // 거래 내역 (개요 탭에서도 사용하므로 항상 로드)
   const transactionsQuery = useQuery<TransactionListResponse>({
     queryKey: ["asset-transactions", params.id, txPage, txSize],
     queryFn: async () => {
@@ -102,15 +156,238 @@ export default function AssetDetailPage({ params }: { params: { id: string } }) 
       });
       return data;
     },
-    enabled: activeTab === "transactions",
   });
 
-  // 태그
+  // 태그 (개요 탭에서도 사용하므로 항상 로드)
   const tagsQuery = useQuery<EntityTagsResponse>({
     queryKey: ["asset-tags", params.id],
     queryFn: async () => (await api.get(`/assets/${params.id}/tags`)).data,
-    enabled: activeTab === "tags",
   });
+
+  // 활동 내역 (개요 탭에서도 사용하므로 항상 로드)
+  const activitiesQuery = useQuery<ActivitiesResponse>({
+    queryKey: ["asset-activities", params.id, activityPage, activitySize],
+    queryFn: async () => {
+      const { data } = await api.get(`/activities`, {
+        params: {
+          target_type: "asset",
+          target_id: params.id,
+          page: activityPage,
+          size: activitySize,
+        },
+      });
+      return data;
+    },
+  });
+
+  // 카테고리 조회
+  const categoriesQuery = useQuery({
+    queryKey: ["categories"],
+    queryFn: async () => {
+      const res = await api.get("/categories");
+      return res.data;
+    },
+  });
+
+  // 카테고리 평탄화
+  const categoriesFlat = useMemo(() => {
+    if (!categoriesQuery.data?.categories) return [];
+    const flatten = (cats: any[], level = 0): any[] => {
+      return cats.flatMap((c) => [
+        { ...c, level },
+        ...(c.children ? flatten(c.children, level + 1) : [])
+      ]);
+    };
+    return flatten(categoriesQuery.data.categories);
+  }, [categoriesQuery.data]);
+
+  // 거래 생성 mutation
+  const createTransactionMut = useMutation({
+    mutationFn: async (payload: any) => {
+      const res = await api.post("/transactions", payload);
+      return res.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["asset-transactions"] });
+      queryClient.invalidateQueries({ queryKey: ["asset-summary"] });
+      setIsTransactionModalOpen(false);
+      setEditing(null);
+      setSelectedAssetId(null);
+      setSelectedType(null);
+      setSuggestedCategoryId(null);
+    },
+    onError: (error: any) => {
+      console.error("Transaction creation failed:", error);
+      alert(`거래 생성 실패: ${error.response?.data?.detail || error.message}`);
+    },
+  });
+
+  // 파일 업로드 mutation
+  const uploadMut = useMutation({
+    mutationFn: async (formData: FormData) => {
+      const response = await api.post("/transactions/upload", formData, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+      return response.data;
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["asset-transactions"] });
+      queryClient.invalidateQueries({ queryKey: ["asset-summary"] });
+      
+      if (data.dry_run) {
+        alert(`미리보기 결과:\n생성될 거래: ${data.created || 0}개\n중복 스킵: ${data.skipped || 0}개\n실패: ${data.failed || 0}개`);
+      } else {
+        setIsUploadModalOpen(false);
+      }
+    },
+    onError: (err: any) => {
+      const msg = err?.response?.data?.detail || "파일 업로드 중 오류가 발생했습니다.";
+      alert(msg);
+    },
+  });
+
+  // 거래 추가 시작
+  function startCreateTransaction() {
+    setSelectedAssetId(params.id);
+    setSelectedType(null);
+    setEditing(null);
+    setIsTransactionModalOpen(true);
+  }
+
+  // 거래 폼 제출
+  async function submitTransactionForm(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    
+    const form = e.currentTarget as HTMLFormElement;
+    const fd = new FormData(form);
+
+    if (!selectedAssetId) {
+      alert("자산을 선택해주세요.");
+      return;
+    }
+    if (!selectedType) {
+      alert("거래 유형을 선택해주세요.");
+      return;
+    }
+
+    const payload: any = {
+      asset_id: selectedAssetId,
+      type: selectedType,
+      quantity: parseFloat(fd.get("quantity")?.toString() || "0"),
+      transaction_date: fd.get("transaction_date")?.toString(),
+      description: fd.get("description")?.toString().trim() || null,
+      memo: fd.get("memo")?.toString().trim() || null,
+      extras: {},
+    };
+
+    const categoryId = fd.get("category_id")?.toString();
+    if (categoryId) {
+      payload.category_id = categoryId;
+    }
+
+    const price = fd.get("price");
+    const fee = fd.get("fee");
+    const tax = fd.get("tax");
+    
+    if (price) payload.extras.price = parseFloat(price.toString());
+    if (fee) payload.extras.fee = parseFloat(fee.toString());
+    if (tax) payload.extras.tax = parseFloat(tax.toString());
+
+    if (selectedType === "exchange") {
+      payload.target_asset_id = fd.get("target_asset_id")?.toString();
+      payload.target_amount = parseFloat(fd.get("target_amount")?.toString() || "0");
+    }
+
+    if (selectedType === "cash_dividend") {
+      const dividendAssetId = fd.get("dividend_asset_id")?.toString();
+      if (dividendAssetId) {
+        payload.extras.asset = dividendAssetId;
+      }
+    }
+
+    if (selectedType === "buy" || selectedType === "sell") {
+      const cashAssetId = fd.get("cash_asset_id")?.toString();
+      if (cashAssetId) {
+        payload.cash_asset_id = cashAssetId;
+      }
+    }
+
+    await createTransactionMut.mutateAsync(payload);
+  }
+
+  // 카테고리 추천
+  async function suggestCategory() {
+    const form = document.querySelector("form") as HTMLFormElement;
+    if (!form) return;
+    const description = (form.querySelector("[name='description']") as HTMLInputElement)?.value?.trim();
+    if (!description) {
+      alert("설명을 입력하세요.");
+      return;
+    }
+    setIsSuggesting(true);
+    try {
+      const res = await api.post("/auto-rules/simulate", { description });
+      const data = res.data;
+      if (data.matched && data.category_id) {
+        setSuggestedCategoryId(data.category_id);
+        const categorySelect = form.querySelector("[name='category_id']") as HTMLSelectElement;
+        if (categorySelect) {
+          categorySelect.value = data.category_id;
+        }
+      } else {
+        setSuggestedCategoryId(null);
+        alert("매칭되는 자동 규칙이 없습니다.");
+      }
+    } catch (e) {
+      console.error(e);
+      alert("자동 추천 실패");
+    } finally {
+      setIsSuggesting(false);
+    }
+  }
+
+  // 모달 닫기
+  function cancelTransactionEdit() {
+    setIsTransactionModalOpen(false);
+    setEditing(null);
+    setSelectedAssetId(null);
+    setSelectedType(null);
+    setSuggestedCategoryId(null);
+  }
+
+  // 댓글 작성
+  const handleSubmitComment = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newComment.trim()) return;
+
+    try {
+      await api.post("/activities", {
+        target_type: "asset",
+        target_id: params.id,
+        activity_type: "comment",
+        content: newComment.trim(),
+        visibility: "private",
+      });
+      setNewComment("");
+      activitiesQuery.refetch();
+    } catch (error) {
+      console.error("댓글 작성 실패:", error);
+      alert("댓글 작성에 실패했습니다.");
+    }
+  };
+
+  // 댓글 삭제 (소프트 삭제)
+  const handleDeleteComment = async (activityId: string) => {
+    if (!confirm("이 댓글을 삭제하시겠습니까?")) return;
+
+    try {
+      await api.delete(`/activities/${activityId}`);
+      activitiesQuery.refetch();
+    } catch (error) {
+      console.error("댓글 삭제 실패:", error);
+      alert("댓글 삭제에 실패했습니다.");
+    }
+  };
 
   // 거래 내역 컬럼
   const transactionColumns: ColumnDef<Transaction>[] = useMemo(
@@ -213,12 +490,26 @@ export default function AssetDetailPage({ params }: { params: { id: string } }) 
             </div>
           </div>
         </div>
-        <button
-          onClick={() => router.push(`/assets?edit=${params.id}`)}
-          className="px-4 py-2 border rounded hover:bg-gray-50"
-        >
-          편집
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setIsUploadModalOpen(true)}
+            className="px-3 py-2 rounded bg-purple-600 text-white hover:bg-purple-700 text-sm font-medium transition-colors"
+          >
+            📁 파일 업로드
+          </button>
+          <button
+            onClick={() => startCreateTransaction()}
+            className="px-3 py-2 rounded bg-emerald-600 text-white hover:bg-emerald-700 text-sm font-medium transition-colors"
+          >
+            + 거래 추가
+          </button>
+          <button
+            onClick={() => router.push(`/assets?edit=${params.id}` as any)}
+            className="px-4 py-2 border rounded hover:bg-gray-50"
+          >
+            편집
+          </button>
+        </div>
       </div>
 
       {/* 요약 카드 */}
@@ -257,8 +548,18 @@ export default function AssetDetailPage({ params }: { params: { id: string } }) 
       )}
 
       {/* 탭 */}
-      <div className="border-b">
+      <div className="border-b mb-6">
         <div className="flex gap-4">
+          <button
+            onClick={() => setActiveTab("overview")}
+            className={`px-4 py-2 border-b-2 transition-colors ${
+              activeTab === "overview"
+                ? "border-blue-600 text-blue-600 font-medium"
+                : "border-transparent text-gray-600 hover:text-gray-900"
+            }`}
+          >
+            개요
+          </button>
           <button
             onClick={() => setActiveTab("transactions")}
             className={`px-4 py-2 border-b-2 transition-colors ${
@@ -267,7 +568,7 @@ export default function AssetDetailPage({ params }: { params: { id: string } }) 
                 : "border-transparent text-gray-600 hover:text-gray-900"
             }`}
           >
-            거래 내역
+            전체 거래
           </button>
           <button
             onClick={() => setActiveTab("tags")}
@@ -279,11 +580,130 @@ export default function AssetDetailPage({ params }: { params: { id: string } }) 
           >
             태그
           </button>
+          <button
+            onClick={() => setActiveTab("activities")}
+            className={`px-4 py-2 border-b-2 transition-colors ${
+              activeTab === "activities"
+                ? "border-blue-600 text-blue-600 font-medium"
+                : "border-transparent text-gray-600 hover:text-gray-900"
+            }`}
+          >
+            검토 & 이력
+          </button>
         </div>
       </div>
 
       {/* 탭 내용 */}
       <div>
+        {activeTab === "overview" && (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* 왼쪽: 최근 거래 */}
+            <div className="border rounded-lg p-4">
+              {transactionsQuery.isError ? (
+                <p className="text-red-600">거래 내역을 불러오는데 실패했습니다.</p>
+              ) : (
+                <RecentTransactions
+                  transactions={transactionsQuery.data?.items || []}
+                  isLoading={transactionsQuery.isLoading}
+                  viewAllLink={`/transactions?asset_id=${params.id}`}
+                  maxItems={10}
+                  showAssetName={false}
+                />
+              )}
+            </div>
+
+            {/* 오른쪽: 태그 + 검토 */}
+            <div className="space-y-6">
+              {/* 태그 섹션 */}
+              <div className="border rounded-lg p-4">
+                <div className="flex justify-between items-center mb-4">
+                  <h2 className="text-lg font-semibold">태그</h2>
+                  <button
+                    onClick={() => setActiveTab("tags")}
+                    className="text-sm text-blue-600 hover:underline"
+                  >
+                    관리 →
+                  </button>
+                </div>
+                {tagsQuery.isLoading && <p className="text-gray-500">태그 로딩 중...</p>}
+                {tagsQuery.isError && <p className="text-red-600">태그를 불러오는데 실패했습니다.</p>}
+                {tagsQuery.isSuccess && (
+                  <>
+                    {tagsQuery.data.tags.length === 0 ? (
+                      <p className="text-gray-500 text-center py-8">연결된 태그가 없습니다.</p>
+                    ) : (
+                      <div className="flex flex-wrap gap-2">
+                        {tagsQuery.data.tags.slice(0, 10).map((tag) => (
+                          <div
+                            key={tag.id}
+                            className="flex items-center gap-2 px-3 py-1.5 border rounded-full"
+                            style={{ borderColor: tag.color || undefined }}
+                          >
+                            {tag.color && (
+                              <div
+                                className="w-3 h-3 rounded-full"
+                                style={{ backgroundColor: tag.color }}
+                              />
+                            )}
+                            <span className="text-sm font-medium">{tag.name}</span>
+                          </div>
+                        ))}
+                        {tagsQuery.data.tags.length > 10 && (
+                          <span className="text-sm text-gray-500 px-3 py-1.5">
+                            +{tagsQuery.data.tags.length - 10}개 더
+                          </span>
+                        )}
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+
+              {/* 최근 검토 */}
+              <div className="border rounded-lg p-4">
+                <div className="flex justify-between items-center mb-4">
+                  <h2 className="text-lg font-semibold">최근 검토</h2>
+                  <button
+                    onClick={() => setActiveTab("activities")}
+                    className="text-sm text-blue-600 hover:underline"
+                  >
+                    전체 보기 →
+                  </button>
+                </div>
+                {activitiesQuery.isLoading && <p className="text-gray-500">활동 내역 로딩 중...</p>}
+                {activitiesQuery.isError && <p className="text-red-600">활동 내역을 불러오는데 실패했습니다.</p>}
+                {activitiesQuery.isSuccess && activitiesQuery.data && (
+                  <>
+                    {activitiesQuery.data.items?.length === 0 ? (
+                      <p className="text-gray-500 text-center py-8">검토 내역이 없습니다.</p>
+                    ) : (
+                      <div className="space-y-3">
+                        {activitiesQuery.data.items?.slice(0, 3).map((activity) => (
+                          <div key={activity.id} className="border-b pb-3 last:border-b-0">
+                            <div className="flex items-center gap-2 mb-1">
+                              <span className="text-xs font-medium text-gray-700">
+                                {activity.user?.username || "사용자"}
+                              </span>
+                              <span className="text-xs text-gray-500">
+                                {new Date(activity.created_at).toLocaleDateString()}
+                              </span>
+                            </div>
+                            <p className="text-sm text-gray-800 line-clamp-2">
+                              {activity.activity_type === "comment" 
+                                ? activity.content 
+                                : `[로그] ${JSON.stringify(activity.payload)}`}
+                            </p>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
         {activeTab === "transactions" && (
           <div className="space-y-4">
             {transactionsQuery.isLoading && <p>거래 내역 로딩 중...</p>}
@@ -358,7 +778,280 @@ export default function AssetDetailPage({ params }: { params: { id: string } }) 
             )}
           </div>
         )}
+
+        {activeTab === "activities" && (
+          <div className="space-y-6">
+            {/* 댓글 작성 폼 */}
+            <div className="border rounded-lg p-4 bg-gray-50">
+              <h3 className="text-sm font-semibold mb-3">검토 글 작성</h3>
+              <form onSubmit={handleSubmitComment} className="space-y-3">
+                <textarea
+                  value={newComment}
+                  onChange={(e) => setNewComment(e.target.value)}
+                  placeholder="자산에 대한 검토 내용을 작성하세요..."
+                  className="w-full border rounded px-3 py-2 min-h-[100px] focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <div className="flex justify-end">
+                  <button
+                    type="submit"
+                    disabled={!newComment.trim()}
+                    className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    작성
+                  </button>
+                </div>
+              </form>
+            </div>
+
+            {/* 활동 내역 목록 */}
+            {activitiesQuery.isLoading && <p>활동 내역 로딩 중...</p>}
+            {activitiesQuery.isError && <p className="text-red-600">활동 내역을 불러오는데 실패했습니다.</p>}
+            {activitiesQuery.isSuccess && activitiesQuery.data && (
+              <>
+                <div className="flex justify-between items-center">
+                  <p className="text-sm text-gray-600">총 {activitiesQuery.data.total}건</p>
+                </div>
+                
+                {activitiesQuery.data.items?.length === 0 ? (
+                  <p className="text-gray-500 text-center py-8">활동 내역이 없습니다.</p>
+                ) : (
+                  <div className="space-y-4">
+                    {activitiesQuery.data.items?.map((activity) => (
+                      <div key={activity.id} className="border rounded-lg p-4 bg-white">
+                        <div className="flex items-start justify-between">
+                          <div className="flex items-center gap-3">
+                            <div className="w-8 h-8 bg-gray-200 rounded-full flex items-center justify-center">
+                              {activity.activity_type === "comment" ? "💬" : "📋"}
+                            </div>
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <span className="font-medium text-sm">
+                                  {activity.user?.username || "사용자"}
+                                </span>
+                                <span className="text-xs text-gray-500">
+                                  {new Date(activity.created_at).toLocaleString("ko-KR")}
+                                </span>
+                                {activity.activity_type === "log" && (
+                                  <span className="text-xs px-2 py-0.5 bg-blue-100 text-blue-700 rounded">
+                                    시스템 로그
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                          
+                          {activity.activity_type === "comment" && !activity.is_immutable && !activity.is_deleted && (
+                            <button
+                              onClick={() => handleDeleteComment(activity.id)}
+                              className="text-xs text-red-600 hover:text-red-800"
+                            >
+                              삭제
+                            </button>
+                          )}
+                        </div>
+
+                        <div className="mt-3 ml-11">
+                          {activity.activity_type === "comment" && activity.content && (
+                            <p className="text-sm text-gray-800 whitespace-pre-wrap">{activity.content}</p>
+                          )}
+                          
+                          {activity.activity_type === "log" && activity.payload && (
+                            <div className="text-sm">
+                              <div className="font-medium text-gray-700 mb-2">
+                                {activity.payload.event || "변경 이력"}
+                              </div>
+                              <pre className="bg-gray-50 p-3 rounded text-xs overflow-x-auto">
+                                {JSON.stringify(activity.payload, null, 2)}
+                              </pre>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {activitiesQuery.data?.pages && activitiesQuery.data.pages > 1 && (
+                  <div className="flex justify-center gap-2 mt-6">
+                    <button
+                      onClick={() => setActivityPage((p) => Math.max(1, p - 1))}
+                      disabled={activityPage === 1}
+                      className="px-3 py-1 border rounded disabled:opacity-50"
+                    >
+                      이전
+                    </button>
+                    <span className="px-3 py-1">
+                      {activityPage} / {activitiesQuery.data.pages}
+                    </span>
+                    <button
+                      onClick={() => setActivityPage((p) => Math.min(activitiesQuery.data?.pages || 1, p + 1))}
+                      disabled={activityPage === activitiesQuery.data.pages}
+                      className="px-3 py-1 border rounded disabled:opacity-50"
+                    >
+                      다음
+                    </button>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        )}
       </div>
+
+      {/* 거래 추가 모달 */}
+      <Modal
+        isOpen={isTransactionModalOpen}
+        onClose={cancelTransactionEdit}
+        title={`새 거래 - ${asset?.name || ""}`}
+        size="xl"
+      >
+        <DynamicTransactionForm
+          transactionType={(selectedType || 'deposit') as TransactionType}
+          editing={editing}
+          isEditMode={false}
+          assets={[{
+            id: params.id,
+            name: asset?.name || '',
+            symbol: asset?.symbol || '',
+            asset_type: asset?.asset_type || '',
+            account_id: asset?.account_id || ''
+          }]}
+          categories={categoriesFlat}
+          selectedAssetId={params.id}
+          onAssetChange={() => {}}
+          onTypeChange={(type) => setSelectedType(type)}
+          onSubmit={submitTransactionForm}
+          onCancel={cancelTransactionEdit}
+          onSuggestCategory={suggestCategory}
+          isSuggesting={isSuggesting}
+          suggestedCategoryId={suggestedCategoryId}
+        />
+      </Modal>
+
+      {/* 파일 업로드 모달 */}
+      <Modal
+        isOpen={isUploadModalOpen}
+        onClose={() => setIsUploadModalOpen(false)}
+        title="거래 내역 파일 업로드"
+        size="lg"
+      >
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            const formData = new FormData(e.currentTarget);
+            // 자산 ID를 폼 데이터에 추가
+            formData.set('asset_id', params.id);
+            uploadMut.mutate(formData);
+          }}
+          className="space-y-4"
+        >
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
+            <h3 className="text-sm font-semibold text-blue-900 mb-2">지원 형식</h3>
+            <ul className="text-xs text-blue-800 space-y-1">
+              <li>• <strong>토스뱅크</strong>: 암호화된 Excel 파일 (.xlsx) - 비밀번호 입력 필요</li>
+              <li>• <strong>KB은행</strong>: HTML 형식 Excel 파일 (.xls)</li>
+              <li>• <strong>KB증권</strong>: 거래내역 CSV/Excel</li>
+              <li>• <strong>미래에셋증권</strong>: 거래내역 CSV/Excel</li>
+              <li>• <strong>CSV 파일</strong>: UTF-8 또는 CP949 인코딩</li>
+            </ul>
+          </div>
+
+          <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
+            <p className="text-sm text-amber-900">
+              <strong>선택된 자산:</strong> {asset?.name || params.id}
+            </p>
+            <p className="text-xs text-amber-700 mt-1">
+              파일의 거래 내역이 이 자산에 연결됩니다
+            </p>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-2">
+              파일 선택 *
+            </label>
+            <input
+              type="file"
+              name="file"
+              accept=".csv,.xlsx,.xls"
+              required
+              className="w-full border rounded px-3 py-2 file:mr-4 file:py-2 file:px-4 file:rounded file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+            />
+            <p className="text-xs text-slate-500 mt-1">
+              CSV, XLSX, XLS 파일 지원
+            </p>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-2">
+              파일 비밀번호 (선택사항)
+            </label>
+            <input
+              type="password"
+              name="password"
+              placeholder="암호화된 Excel 파일인 경우 입력"
+              className="w-full border rounded px-3 py-2"
+            />
+            <p className="text-xs text-slate-500 mt-1">
+              토스뱅크 등 암호화된 파일의 경우 비밀번호를 입력하세요
+            </p>
+          </div>
+
+          <div className="flex items-center gap-2 bg-amber-50 border border-amber-200 rounded p-3">
+            <input
+              type="checkbox"
+              name="dry_run"
+              id="dry_run"
+              value="true"
+              className="w-4 h-4"
+            />
+            <label htmlFor="dry_run" className="text-sm text-amber-900">
+              <strong>미리보기 모드</strong> (실제로 저장하지 않고 확인만)
+            </label>
+          </div>
+
+          <div className="flex justify-end gap-3 pt-4 border-t">
+            <button
+              type="button"
+              onClick={() => setIsUploadModalOpen(false)}
+              className="px-4 py-2 rounded bg-slate-200 hover:bg-slate-300"
+            >
+              취소
+            </button>
+            <button
+              type="submit"
+              disabled={uploadMut.isPending}
+              className="px-4 py-2 rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {uploadMut.isPending ? "업로드 중..." : "업로드"}
+            </button>
+          </div>
+        </form>
+
+        {uploadMut.isSuccess && uploadMut.data && (
+          <div className="mt-4 p-4 bg-green-50 border border-green-200 rounded">
+            <h4 className="font-semibold text-green-900 mb-2">업로드 완료</h4>
+            <div className="text-sm text-green-800 space-y-1">
+              <p>• 생성된 거래: {uploadMut.data.created || 0}개</p>
+              {uploadMut.data.skipped > 0 && (
+                <p>• 중복 스킵: {uploadMut.data.skipped}개</p>
+              )}
+              {uploadMut.data.failed > 0 && (
+                <p className="text-red-700">• 실패: {uploadMut.data.failed}개</p>
+              )}
+              {uploadMut.data.errors && uploadMut.data.errors.length > 0 && (
+                <div className="mt-2">
+                  <p className="text-red-700 font-medium">오류 발생: {uploadMut.data.errors.length}개</p>
+                  <ul className="mt-1 text-xs text-red-600 max-h-40 overflow-y-auto">
+                    {uploadMut.data.errors.map((err: any, idx: number) => (
+                      <li key={idx}>행 {err.row}: {err.error}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </Modal>
     </div>
   );
 }

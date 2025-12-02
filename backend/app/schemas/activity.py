@@ -69,10 +69,22 @@ class ActivityUpdate(BaseModel):
         return v
 
 
+class UserBasic(BaseModel):
+    """사용자 기본 정보"""
+    id: str
+    username: str
+    full_name: Optional[str]
+
+    model_config = {
+        "from_attributes": True
+    }
+
+
 class ActivityResponse(BaseModel):
     """활동 응답 스키마"""
     id: str
     user_id: str
+    user: Optional[UserBasic] = None
     target_type: TargetType
     target_id: str
     activity_type: ActivityType
@@ -90,3 +102,12 @@ class ActivityResponse(BaseModel):
     model_config = {
         "from_attributes": True
     }
+
+
+class ActivitiesListResponse(BaseModel):
+    """활동 목록 페이지네이션 응답"""
+    items: list[ActivityResponse]
+    total: int
+    page: int
+    size: int
+    pages: int
