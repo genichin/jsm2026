@@ -27,6 +27,7 @@ type Transaction = {
   id: string;
   asset_id: string;
   related_transaction_id?: string | null;
+  related_asset_name?: string | null;
   category_id?: string | null;
   category?: CategoryBrief | null;
   type: TransactionType;
@@ -248,13 +249,19 @@ export default function TransactionsPage() {
     const initialType = (typeFilter || "deposit") as TransactionType;
     // URL 파라미터에 asset_id가 있으면 자동 선택
     const initialAssetId = assetFilter || "";
+    
+    // 로컬 시간으로 기본값 생성
+    const now = new Date();
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const localDateTime = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+    
     setSelectedType(initialType);
     setSelectedAssetId(initialAssetId);
     setEditing({
       asset_id: initialAssetId,
       type: initialType,
       quantity: 0,
-      transaction_date: new Date().toISOString().slice(0, 19),
+      transaction_date: localDateTime,
       description: "",
       memo: "",
     });
@@ -268,7 +275,7 @@ export default function TransactionsPage() {
     // datetime-local input을 위해 ISO 문자열을 YYYY-MM-DDTHH:mm:ss 형식으로 변환
     const editingData = {
       ...row,
-      transaction_date: row.transaction_date.slice(0, 19)
+      transaction_date: new Date(row.transaction_date).toISOString().slice(0, 19)
     };
     
     // 현금배당의 경우 extras에서 값들을 추출하여 편집 데이터에 추가
@@ -335,9 +342,10 @@ export default function TransactionsPage() {
       // Update: type, description, memo, category_id, transaction_date
       // 거래일시 처리: datetime-local 형식(YYYY-MM-DDTHH:mm:ss)을 ISO 문자열로 변환
       let transactionDate = fd.get("transaction_date")?.toString();
-      if (transactionDate && !transactionDate.endsWith('Z') && transactionDate.length === 19) {
-        // datetime-local 형식이면 ISO 형식으로 변환
-        transactionDate = transactionDate + '.000Z';
+      if (transactionDate) {
+        // Convert local time to UTC for backend
+        const localDate = new Date(transactionDate);
+        transactionDate = new Date(localDate.getTime() - localDate.getTimezoneOffset() * 60000).toISOString();
       }
       
       const payload: any = {
@@ -358,6 +366,14 @@ export default function TransactionsPage() {
         payload.category_id = categoryIdValue;
       } else {
         payload.category_id = null;
+      }
+      
+      // related_transaction_id 처리 (out_asset/in_asset 등 연결 거래)
+      const relatedTransactionIdValue = fd.get("related_transaction_id")?.toString();
+      if (relatedTransactionIdValue) {
+        payload.related_transaction_id = relatedTransactionIdValue;
+      } else {
+        payload.related_transaction_id = null;
       }
       
       // 현금배당 업데이트 시 extras 및 quantity 처리
@@ -415,6 +431,11 @@ export default function TransactionsPage() {
         category_id: fd.get("category_id")?.toString() || null,
       };
 
+      // out_asset/in_asset 타입은 현금 거래 자동 생성 건너뛰기
+      if (type === "out_asset" || type === "in_asset") {
+        payload.skip_auto_cash_transaction = true;
+      }
+
       // 환전인 경우 대상 자산과 금액 추가
       if (type === "exchange") {
         const target_asset_id = fd.get("target_asset_id")?.toString();
@@ -443,8 +464,8 @@ export default function TransactionsPage() {
         }
       }
 
-      // 매수인 경우 가격/수수료/세금을 extras로 전달
-      if (type === "buy") {
+      // 매수/매도인 경우 가격/수수료/세금을 extras로 전달
+      if (type === "buy" || type === "sell") {
         const price = parseFloat(fd.get("price")?.toString() || "0");
         const fee = parseFloat(fd.get("fee")?.toString() || "0");
         const tax = parseFloat(fd.get("tax")?.toString() || "0");
@@ -840,6 +861,7 @@ export default function TransactionsPage() {
               description: t.description,
               memo: t.memo,
               related_transaction_id: t.related_transaction_id,
+              related_asset_name: t.related_asset_name,  // 연결된 자산 이름 추가
               extras: t.extras,
               dividend_asset_name: dividendAssetName,  // 배당 자산 이름 추가
               currency: t.asset?.currency,  // 통화 정보 추가

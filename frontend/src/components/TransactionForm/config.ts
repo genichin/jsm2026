@@ -22,6 +22,8 @@ export const FIELD_LABELS: Record<TransactionType, Partial<Record<string, string
   auto_transfer: { quantity: "이체 금액" },
   remittance: { quantity: "송금 금액" },
   exchange: { quantity: "환전 금액" },
+  out_asset: { quantity: "출금 금액" },
+  in_asset: { quantity: "입금 금액" },
 };
 
 export const TRANSACTION_TYPE_CONFIGS: Record<TransactionType, TransactionTypeConfig> = {
@@ -162,6 +164,20 @@ export const TRANSACTION_TYPE_CONFIGS: Record<TransactionType, TransactionTypeCo
     requiredFields: ['asset', 'target_asset', 'source_amount', 'target_amount', 'date'],
     hiddenFields: ['quantity', 'category'],
     specialBehavior: ['exchangeRate'],
+  },
+  out_asset: {
+    type: 'out_asset',
+    label: '자산매수출금',
+    fields: ['asset', 'quantity', 'date', 'related_transaction', 'category', 'description', 'memo'],
+    requiredFields: ['asset', 'quantity', 'date'],
+    specialBehavior: ['negativeQuantity', 'relatedTransaction'],
+  },
+  in_asset: {
+    type: 'in_asset',
+    label: '자산매도입금',
+    fields: ['asset', 'quantity', 'date', 'related_transaction', 'category', 'description', 'memo'],
+    requiredFields: ['asset', 'quantity', 'date'],
+    specialBehavior: ['relatedTransaction'],
   },
 };
 

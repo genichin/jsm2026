@@ -17,6 +17,7 @@ export interface TransactionCardItem {
   description?: string | null;
   memo?: string | null;
   related_transaction_id?: string | null;
+  related_asset_name?: string | null; // 연결된 거래의 자산명 (out_asset/in_asset용)
   extras?: Record<string, any> | null;
   realized_profit?: number | null;
   is_confirmed?: boolean;
@@ -102,7 +103,7 @@ function isCashTransaction(type: TransactionType): boolean {
 }
 
 // 카테고리를 표시하지 않는 거래 타입
-const NO_CATEGORY_TYPES: readonly TransactionType[] = ["exchange","cash_dividend"] as const;
+const NO_CATEGORY_TYPES: readonly TransactionType[] = ["exchange","cash_dividend","out_asset","in_asset","buy"] as const;
 
 function shouldShowCategory(type: TransactionType): boolean {
   return !NO_CATEGORY_TYPES.includes(type);
@@ -134,26 +135,28 @@ interface TransactionRenderer {
 const defaultRenderer: TransactionRenderer = {
   renderQuantityPrice: (tx) => {
     const qtyDisplay = (tx.quantity < 0 ? "-" : "") + formatNumber(Math.abs(tx.quantity));
+    const price = tx.extras?.price;
     return (
       <>
         <span className={tx.quantity < 0 ? "text-rose-600" : "text-emerald-600"}>{qtyDisplay}</span>
-        <span className="text-slate-400 ml-1">@ {formatNumber(tx.price)}</span>
+        <span className="text-slate-400 ml-1">@ {formatNumber(price)}</span>
       </>
     );
   },
   renderAmount: (tx) => {
-    const amount = typeof tx.price === 'number' ? Math.abs(tx.quantity) * tx.price : 0;
+    const price = tx.extras?.price;
+    const amount = typeof price === 'number' ? Math.abs(tx.quantity) * price : 0;
     return <div className="font-mono text-slate-700">{formatNumber(amount)}</div>;
   },
   renderFeesTaxes: (tx) => {
-    const hasFees = tx.fee !== 0 || tx.tax !== 0;
+    const hasFees = (tx.fee != null && tx.fee !== 0) || (tx.tax != null && tx.tax !== 0);
     if (!hasFees) return null;
     
     return (
       <div className="text-xs text-slate-500">
-        {tx.fee !== 0 && <span>수수료 {formatNumber(tx.fee)}</span>}
-        {tx.fee !== 0 && tx.tax !== 0 && <span> / </span>}
-        {tx.tax !== 0 && <span>세금 {formatNumber(tx.tax)}</span>}
+        {(tx.fee != null && tx.fee !== 0) && <span>수수료 {formatNumber(tx.fee)}</span>}
+        {(tx.fee != null && tx.fee !== 0) && (tx.tax != null && tx.tax !== 0) && <span> / </span>}
+        {(tx.tax != null && tx.tax !== 0) && <span>세금 {formatNumber(tx.tax)}</span>}
       </div>
     );
   }
@@ -208,7 +211,7 @@ const cashDividendRenderer: TransactionRenderer = {
   },
   renderExpandedExtraInfo: (tx) => {
     const hasValidExtras = tx.extras && typeof tx.extras === 'object';
-    const extrasPrice = tx.extras?.price;
+    const extrasPrice = hasValidExtras ? tx.extras?.price : undefined;
     const extrasFee = hasValidExtras ? tx.extras?.fee : undefined;
     const extrasTax = hasValidExtras ? tx.extras?.tax : undefined;
     if (!tx.dividend_asset_name) return null;
@@ -229,6 +232,61 @@ const cashDividendRenderer: TransactionRenderer = {
   }
 };
 
+// 자산매수출금(out_asset) / 자산매도입금(in_asset) 렌더러
+const assetTransferRenderer: TransactionRenderer = {
+  renderDescription: (tx) => {
+    // 설명에 연결된 거래의 자산명 표시
+    return (
+      <>
+        {tx.related_asset_name ? (
+          <span className="text-blue-600 font-medium">→ {tx.related_asset_name}</span>
+        ) : (
+          <span className="text-slate-400 text-xs">(연결 자산 없음)</span>
+        )}
+        {tx.description && (
+          <span className="ml-2 text-slate-600">{tx.description}</span>
+        )}
+      </>
+    );
+  },  
+  renderQuantityPrice: (tx) => {
+    const qtyDisplay = (tx.quantity < 0 ? "-" : "") + formatNumber(Math.abs(tx.quantity));    
+    const currencySymbol = getCurrencySymbol(tx.currency);
+    return (
+      <>
+        <span className={tx.quantity < 0 ? "text-rose-600" : "text-emerald-600"}>{qtyDisplay}{currencySymbol}</span>        
+      </>
+    );
+  },
+  renderFeesTaxes: () => null, // 현금성 거래는 수수료/세금 표시 안함
+};
+
+// 매수(buy) / 매도(sell) 렌더러
+const assetTransactionRenderer: TransactionRenderer = {
+  renderQuantityPrice: (tx) => {
+    const qtyDisplay = (tx.quantity < 0 ? "-" : "") + formatNumber(Math.abs(tx.quantity));
+    const price = tx.extras?.price;
+    return (
+      <>
+        <span className={tx.quantity < 0 ? "text-rose-600" : "text-emerald-600"}>{qtyDisplay}</span>
+        <span className="text-slate-400 ml-1">@ {formatNumber(price)}</span>
+      </>
+    );
+  },
+  renderFeesTaxes: (tx) => {
+    const hasFees = (tx.fee != null && tx.fee !== 0) || (tx.tax != null && tx.tax !== 0);
+    if (!hasFees) return null;
+    
+    return (
+      <div className="text-xs text-slate-500">
+        {(tx.fee != null && tx.fee !== 0) && <span>수수료 {formatNumber(tx.fee)}</span>}
+        {(tx.fee != null && tx.fee !== 0) && (tx.tax != null && tx.tax !== 0) && <span> / </span>}
+        {(tx.tax != null && tx.tax !== 0) && <span>세금 {formatNumber(tx.tax)}</span>}
+      </div>
+    );
+  }
+};
+
 // 거래 유형별 렌더러 매핑
 const TRANSACTION_RENDERERS: Record<string, TransactionRenderer> = {
   // 현금성 거래
@@ -241,6 +299,14 @@ const TRANSACTION_RENDERERS: Record<string, TransactionRenderer> = {
   
   // 현금배당
   cash_dividend: cashDividendRenderer,
+
+  // 자산매수출금/매도입금
+  out_asset: assetTransferRenderer,
+  in_asset: assetTransferRenderer,
+
+  // 매수/매도
+  buy: assetTransactionRenderer,
+  sell: assetTransactionRenderer,
   
   // 기본 (매수/매도 등)
   default: defaultRenderer,
@@ -303,7 +369,7 @@ const TransactionCard: React.FC<TransactionCardProps> = ({ tx, expanded, onToggl
         {renderer.renderFeesTaxes(tx)}
         {renderer.renderExtraInfo && renderer.renderExtraInfo(tx)}
         {/* {tx.description && <div className="text-xs text-slate-600 truncate" title={tx.description ?? undefined}>{tx.description}</div>} */}
-        {tx.memo && <div className="text-xs text-slate-400 truncate" title={tx.memo ?? undefined}>{tx.memo}</div>}
+        {/*tx.memo && <div className="text-xs text-slate-400 truncate" title={tx.memo ?? undefined}>{tx.memo}</div>*/}
       </div>
       <div
         id={panelId}

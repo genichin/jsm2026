@@ -12,7 +12,8 @@ type TransactionType =
   | "buy" | "sell" | "deposit" | "withdraw" | "transfer_in" | "transfer_out"
   | "cash_dividend" | "stock_dividend" | "interest" | "fee" | "adjustment"
   | "invest" | "redeem" | "internal_transfer" | "card_payment" 
-  | "promotion_deposit" | "auto_transfer" | "remittance" | "exchange";
+  | "promotion_deposit" | "auto_transfer" | "remittance" | "exchange"
+  | "out_asset" | "in_asset";
 
 type AccountType =
   | "bank_account"
@@ -498,7 +499,7 @@ export default function AccountDetailPage() {
           categories={categoriesFlat}
           selectedAssetId={selectedAssetId || ''}
           onAssetChange={handleAssetChange}
-          onTypeChange={setSelectedType}
+          onTypeChange={(type) => setSelectedType(type)}
           onSubmit={submitTransactionForm}
           onCancel={cancelTransactionEdit}
           onSuggestCategory={suggestCategory}

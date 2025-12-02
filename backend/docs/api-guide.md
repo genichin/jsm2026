@@ -1118,6 +1118,22 @@ A: 알림 생성 시 `repeat_interval`을 설정하면 자동으로 반복됩니
 ### Q: 활동(Activity)의 댓글과 로그 차이는?
 A: 댓글(`activity_type="comment"`)은 사용자가 작성하는 메모이고, 로그(`activity_type="log"`)는 시스템이 자동으로 기록하는 변경 이력입니다. 로그는 `is_immutable=true`로 설정하여 수정을 방지할 수 있습니다.
 
+### Q: 거래 타입(TransactionType)은 어떤 것들이 있나요?
+A: 다음 거래 타입을 지원합니다:
+- **매수/매도**: `buy` (매수), `sell` (매도)
+- **입출금**: `deposit` (입금), `withdraw` (출금)
+- **자산거래 현금흐름**: `out_asset` (자산매수출금), `in_asset` (자산매도입금)
+- **배당/이자**: `cash_dividend` (현금배당), `stock_dividend` (주식배당), `interest` (이자)
+- **수수료**: `fee` (수수료)
+- **이체**: `transfer_in` (이체입금), `transfer_out` (이체출금), `internal_transfer` (내부이체)
+- **투자**: `invest` (투자), `redeem` (해지)
+- **카드/자동이체**: `card_payment` (카드결제), `auto_transfer` (자동이체)
+- **기타**: `adjustment` (수량조정), `promotion_deposit` (프로모션입금), `remittance` (송금), `exchange` (환전)
+
+**복식부기 패턴**:
+- 자산 매수: `buy` (자산 증가) + `out_asset` (현금 감소)가 `related_transaction_id`로 연결
+- 자산 매도: `sell` (자산 감소) + `in_asset` (현금 증가)가 `related_transaction_id`로 연결
+
 ### Q: API 사용량 제한이 있나요?
 A: 현재 버전에서는 rate limiting이 없지만, 향후 추가될 수 있습니다.
 

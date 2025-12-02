@@ -35,7 +35,11 @@ def find_cash_asset_in_account(db: Session, user_id: str, account_id: str):
     ).first()
 
 def create_linked_cash_transaction(db: Session, asset_transaction: Transaction, cash_asset: Asset, description: str):
-    """매수/매도와 연결된 현금 거래 생성"""
+    """매수/매도와 연결된 현금 거래 생성
+    
+    매수 시: out_asset (자산매수출금) - 현금 감소
+    매도 시: in_asset (자산매도입금) - 현금 증가
+    """
     
     # 매수: 현금 감소, 매도: 현금 증가
     is_buy = asset_transaction.type == 'buy'
@@ -54,13 +58,13 @@ def create_linked_cash_transaction(db: Session, asset_transaction: Transaction, 
     trade_amount = float(abs(asset_transaction.quantity)) * price
     
     if is_buy:
-        # 매수: 현금 출금 (거래금액 + 수수료 + 세금)
+        # 매수: 자산매수출금 (거래금액 + 수수료 + 세금, 음수)
         cash_quantity = -1 * (trade_amount + fee + tax)
-        transaction_type = 'withdraw'
+        transaction_type = 'out_asset'
     else:
-        # 매도: 현금 입금 (거래금액 - 수수료 - 세금)  
+        # 매도: 자산매도입금 (거래금액 - 수수료 - 세금, 양수)
         cash_quantity = trade_amount - fee - tax
-        transaction_type = 'deposit'
+        transaction_type = 'in_asset'
     
     # 현금 거래 생성
     cash_transaction = Transaction(
@@ -109,7 +113,7 @@ def create_cash_asset_if_needed(db: Session, user_id: str, account_id: str):
 router = APIRouter()
 
 
-def serialize_transaction(tx: Transaction):
+def serialize_transaction(tx: Transaction, db: Session = None):
     """단일 거래 직렬화 (카테고리 dict 포함)"""
     category_summary = None
     if getattr(tx, 'category_id', None) and getattr(tx, 'category', None):
@@ -119,10 +123,24 @@ def serialize_transaction(tx: Transaction):
             "name": tx.category.name,
             "flow_type": tx.category.flow_type
         }
+    
+    # 연결된 거래의 자산명 가져오기 (out_asset/in_asset용)
+    related_asset_name = None
+    if tx.related_transaction_id and db:
+        try:
+            related_tx = db.query(Transaction).options(
+                joinedload(Transaction.asset)
+            ).filter(Transaction.id == str(tx.related_transaction_id)).first()
+            if related_tx and related_tx.asset:
+                related_asset_name = related_tx.asset.name
+        except Exception:
+            pass
+    
     return {
         "id": tx.id,
         "asset_id": tx.asset_id,
         "related_transaction_id": tx.related_transaction_id,
+        "related_asset_name": related_asset_name,
         "category_id": getattr(tx, 'category_id', None),
         "category": category_summary,
         "type": tx.type,
@@ -211,8 +229,8 @@ async def create_exchange(
     calculate_and_update_balance(db, target_asset.id)
     invalidate_user_cache(current_user.id)
 
-    src_dict = serialize_transaction(source_tx)
-    dst_dict = serialize_transaction(target_tx)
+    src_dict = serialize_transaction(source_tx, db)
+    dst_dict = serialize_transaction(target_tx, db)
     return ExchangeResponse(
         created_count=2,
         transactions=[TransactionResponse.model_validate(src_dict), TransactionResponse.model_validate(dst_dict)],
@@ -355,9 +373,9 @@ async def create_transaction(
         
         # 출발 거래 응답
         db.refresh(source_tx_final)
-        return TransactionResponse.model_validate(serialize_transaction(source_tx_final))
+        return TransactionResponse.model_validate(serialize_transaction(source_tx_final, db))
         db.refresh(source_tx)
-        return TransactionResponse.model_validate(serialize_transaction(source_tx))
+        return TransactionResponse.model_validate(serialize_transaction(source_tx, db))
     
     # 자산 소유권 확인
     asset = db.query(Asset).filter(
@@ -418,7 +436,11 @@ async def create_transaction(
     invalidate_user_cache(current_user.id)
     
     # 매수/매도의 경우 현금 자산과 연결된 거래 자동 생성
-    if transaction.type.value in ['buy', 'sell']:
+    # skip_auto_cash_transaction=True이면 자동 생성 건너뛰기 (out_asset/in_asset 수동 생성 시)
+    # related_transaction_id가 이미 있으면 건너뛰기 (수동으로 연결된 경우)
+    if (transaction.type.value in ['buy', 'sell'] 
+        and not transaction.skip_auto_cash_transaction 
+        and not transaction.related_transaction_id):
         cash_asset = None
         
         # 1. 사용자가 지정한 현금 자산이 있으면 해당 자산 사용
@@ -479,7 +501,7 @@ async def create_transaction(
         db_transaction = db.query(Transaction).options(joinedload(Transaction.category)).get(db_transaction.id)
     except Exception:
         pass
-    return TransactionResponse.model_validate(serialize_transaction(db_transaction))
+    return TransactionResponse.model_validate(serialize_transaction(db_transaction, db))
 
 
 @router.get("", response_model=TransactionListResponse)
@@ -535,10 +557,24 @@ async def list_transactions(
                 "name": tx.category.name,
                 "flow_type": tx.category.flow_type
             }
+        
+        # 연결된 거래의 자산명 가져오기 (out_asset/in_asset용)
+        related_asset_name = None
+        if tx.related_transaction_id:
+            try:
+                related_tx = db.query(Transaction).options(
+                    joinedload(Transaction.asset)
+                ).filter(Transaction.id == str(tx.related_transaction_id)).first()
+                if related_tx and related_tx.asset:
+                    related_asset_name = related_tx.asset.name
+            except Exception:
+                pass
+        
         return {
             "id": tx.id,
             "asset_id": tx.asset_id,
             "related_transaction_id": tx.related_transaction_id,
+            "related_asset_name": related_asset_name,
             "category_id": getattr(tx, "category_id", None),
             "category": category_summary,
             "type": tx.type,
@@ -708,9 +744,23 @@ async def get_recent_transactions(
         # SQLAlchemy 객체를 dict로 명시적 변환 (asset 관계 포함)
         items = []
         for tx in transactions:
+            # 연결된 거래의 자산명 가져오기 (out_asset/in_asset용)
+            related_asset_name = None
+            if tx.related_transaction_id:
+                try:
+                    related_tx = db.query(Transaction).options(
+                        joinedload(Transaction.asset)
+                    ).filter(Transaction.id == str(tx.related_transaction_id)).first()
+                    if related_tx and related_tx.asset:
+                        related_asset_name = related_tx.asset.name
+                except Exception:
+                    pass
+            
             item = {
                 "id": tx.id,
                 "asset_id": tx.asset_id,
+                "related_transaction_id": tx.related_transaction_id,
+                "related_asset_name": related_asset_name,
                 "category_id": getattr(tx, "category_id", None),
                 "type": tx.type,
                 "quantity": tx.quantity,
@@ -874,7 +924,7 @@ async def update_transaction(
     invalidate_user_cache(current_user.id)
     
     # 직렬화하여 응답 (category를 dict로 보장)
-    return TransactionResponse.model_validate(serialize_transaction(transaction))
+    return TransactionResponse.model_validate(serialize_transaction(transaction, db))
 
 
 @router.delete("/{transaction_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -1322,7 +1372,7 @@ async def upload_transactions_file(
                 ).order_by(desc(Transaction.created_at)).limit(created).all()
                 
                 created_transactions = [
-                    TransactionResponse.model_validate(serialize_transaction(t)) for t in transactions
+                    TransactionResponse.model_validate(serialize_transaction(t, db)) for t in transactions
                 ]
                 
                 # Redis 캐시 갱신

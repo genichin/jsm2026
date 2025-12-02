@@ -14,7 +14,8 @@ type TransactionType =
   | "buy" | "sell" | "deposit" | "withdraw" | "transfer_in" | "transfer_out"
   | "cash_dividend" | "stock_dividend" | "interest" | "fee" | "adjustment"
   | "invest" | "redeem" | "internal_transfer" | "card_payment" 
-  | "promotion_deposit" | "auto_transfer" | "remittance" | "exchange";
+  | "promotion_deposit" | "auto_transfer" | "remittance" | "exchange"
+  | "out_asset" | "in_asset";
 
 // Types
 interface Asset {

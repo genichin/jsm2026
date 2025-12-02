@@ -26,6 +26,7 @@ export type TransactionFormData = {
   description?: string;
   memo?: string;
   category_id?: string;
+  related_transaction_id?: string;
 };
 
 export type FieldConfig = {
@@ -56,6 +57,7 @@ export type TransactionTypeConfig = {
     | 'dividendCashAsset'
     | 'exchangeRate'
     | 'zeroPrice'
+    | 'relatedTransaction'
   >;
   shouldShowField?: (f: string) => boolean;
 };

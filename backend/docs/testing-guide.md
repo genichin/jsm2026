@@ -167,6 +167,8 @@ def mock_redis_functions(monkeypatch):
 - ✅ POST /api/v1/transactions
   - cash/stock 자산별 비즈니스 규칙 검증
   - buy/sell 시 현금 연결거래 자동 생성 확인
+  - 매수 시 out_asset (자산매수출금) 타입으로 현금 감소 기록
+  - 매도 시 in_asset (자산매도입금) 타입으로 현금 증가 기록
   - DB에 두 거래 존재, 타입/수량/수수료/세금/realized_profit 계산 검증
 - ✅ PUT /api/v1/transactions/{id} → 수정 성공
 - ✅ DELETE /api/v1/transactions/{id} → 삭제 성공

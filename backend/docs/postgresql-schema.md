@@ -1079,7 +1079,8 @@ CREATE TABLE transactions (
     CONSTRAINT valid_transaction_type CHECK (
        type IN ('buy', 'sell', 'deposit', 'withdraw', 'cash_dividend', 'stock_dividend', 'interest', 'fee', 
                 'transfer_in', 'transfer_out', 'adjustment', 'invest', 'redeem', 
-                'internal_transfer', 'card_payment', 'promotion_deposit', 'auto_transfer', 'remittance', 'exchange')
+                'internal_transfer', 'card_payment', 'promotion_deposit', 'auto_transfer', 'remittance', 'exchange',
+                'out_asset', 'in_asset')
     )
 );
 
@@ -1134,6 +1135,8 @@ CREATE INDEX idx_transactions_category ON transactions(category_id);
 | `auto_transfer`     | 자동이체            | **±** (양방향)                     | 정기 자동이체 |
 | `remittance`        | 송금                | **-** (음수 필수)                    | 타인 송금 |
 | `exchange`          | 환전                | **±** (양방향)                    | KRW↔USD, 통화간 교환 |
+| `out_asset`         | 자산매수출금                | **-** (음수 필수)                    | 자산매수를 위한 출금 |
+| `in_asset`          | 자산매도입금                | **+** (양수 필수)                    | 자산매도에 의한 입금 |
 
 **특수 거래 패턴**:
 - **현금 배당**: 현금 자산에 cash_dividend 타입으로 기록 (quantity=배당금, extras에 'asset':{asset_id})
@@ -1143,6 +1146,10 @@ CREATE INDEX idx_transactions_category ON transactions(category_id);
   - 예: KRW 현금 -1,300,000 (type=exchange) ↔ USD 현금 +1,000 (type=exchange)
   - 환율 정보는 `extras.rate`에 저장
   - 제약: 동일 계좌(account_id)가 같은 현금 자산 간에만 허용
+- **자산 매수/매도**: 현금 자산과 투자 자산 간의 교환
+  - 매수: 현금 감소(out_asset, quantity<0) + 자산 증가(buy, quantity>0)
+  - 매도: 자산 감소(sell, quantity<0) + 현금 증가(in_asset, quantity>0)
+  - `related_transaction_id`로 쌍 연결, `extras.price`에 거래 단가 저장
 - **복식부기**: 자산 교환 시 2개 거래 레코드 생성, `related_transaction_id`로 연결
 
 ---
@@ -1325,6 +1332,8 @@ class TransactionType(str, Enum):
     AUTO_TRANSFER = "auto_transfer"  # 자동이체
     REMITTANCE = "remittance"  # 송금
     EXCHANGE = "exchange"  # 환전
+    OUT_ASSET = "out_asset"  # 자산매수출금
+    IN_ASSET = "in_asset"  # 자산매도입금
 ```
 
 **TypeScript Frontend Enum**
@@ -1349,6 +1358,8 @@ export enum TransactionType {
   AUTO_TRANSFER = 'auto_transfer',
   REMITTANCE = 'remittance',
   EXCHANGE = 'exchange',
+  OUT_ASSET = 'out_asset',
+  IN_ASSET = 'in_asset',
 }
 ```
 

@@ -2,7 +2,7 @@ export type TransactionType =
   | "buy" | "sell" | "deposit" | "withdraw" | "cash_dividend" | "stock_dividend" | "interest"
   | "fee" | "transfer_in" | "transfer_out" | "adjustment" | "invest"
   | "redeem" | "internal_transfer" | "card_payment" | "promotion_deposit"
-  | "auto_transfer" | "remittance" | "exchange";
+  | "auto_transfer" | "remittance" | "exchange" | "out_asset" | "in_asset";
 
 export const transactionTypeLabels: Record<TransactionType, string> = {
   buy: "매수",
@@ -24,6 +24,8 @@ export const transactionTypeLabels: Record<TransactionType, string> = {
   auto_transfer: "자동이체",
   remittance: "송금",
   exchange: "환전",
+  out_asset: "자산매수출금",
+  in_asset: "자산매도입금",
 };
 
 // transactionTypeLabels로부터 자동 생성

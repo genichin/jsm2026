@@ -1,7 +1,10 @@
+"use client";
+
 import React, { useState, useMemo, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { TransactionType, transactionTypeOptions } from "@/lib/transactionTypes";
 import { AssetBrief, CategoryBrief } from "./types";
+import { api } from "@/lib/api";
 
 export type FormFieldProps = {
   value?: any;
@@ -275,9 +278,24 @@ export function TaxField({
 
 // 거래일시 입력 필드
 export function DateField({
+  value,
   defaultValue,
+  onChange,
   required,
 }: FormFieldProps) {
+  // 로컬 시간으로 기본값 생성
+  const getLocalDateTimeString = () => {
+    const now = new Date();
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const year = now.getFullYear();
+    const month = pad(now.getMonth() + 1);
+    const day = pad(now.getDate());
+    const hour = pad(now.getHours());
+    const minute = pad(now.getMinutes());
+    const second = pad(now.getSeconds());
+    return `${year}-${month}-${day}T${hour}:${minute}:${second}`;
+  };
+
   return (
     <div className="col-span-2">
       <label className="block text-sm font-medium text-slate-700 mb-1">
@@ -286,10 +304,12 @@ export function DateField({
       <input
         type="datetime-local"
         name="transaction_date"
-        defaultValue={defaultValue || new Date().toISOString().slice(0, 19)}
         className="w-full border rounded px-3 py-2"
         step="1"
         required={required}
+        {...(value !== undefined
+          ? { value, onChange }
+          : { defaultValue: defaultValue || getLocalDateTimeString(), onChange })}
       />
     </div>
   );
@@ -548,5 +568,211 @@ export function ExchangeAmountFields({
         </>
       )}
     </>
+  );
+}
+
+// 연결 거래 선택 필드 (검색 가능)
+export function RelatedTransactionField({
+  value,
+  onChange,
+  required,
+  disabled,
+  transactionDate,
+  selectedAsset,
+  assets,
+  onCreateNew,
+}: FormFieldProps & {
+  transactionDate?: string;
+  selectedAsset?: AssetBrief;
+  assets: AssetBrief[];
+  onCreateNew?: () => void;
+}) {
+  const [searchTerm, setSearchTerm] = useState("");
+  const [isOpen, setIsOpen] = useState(false);
+  const [dropdownPosition, setDropdownPosition] = useState({ top: 0, left: 0, width: 0 });
+  const [transactions, setTransactions] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const inputRef = useRef<HTMLDivElement>(null);
+
+  // 같은 계좌, 같은 날짜의 거래 조회
+  useEffect(() => {
+    if (!selectedAsset || !transactionDate) return;
+
+    const fetchTransactions = async () => {
+      setIsLoading(true);
+      try {
+        const dateOnly = transactionDate.split('T')[0];
+        const params = new URLSearchParams({
+          account_id: selectedAsset.account_id || '',
+          start_date: `${dateOnly}T00:00:00`,
+          end_date: `${dateOnly}T23:59:59`,
+          size: '100'
+        });
+        const response = await api.get(`/transactions?${params.toString()}`);
+        setTransactions(response.data.items || []);
+      } catch (error) {
+        console.error('Failed to fetch transactions:', error);
+        setTransactions([]);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchTransactions();
+  }, [selectedAsset?.account_id, transactionDate]);
+
+  const filteredTransactions = useMemo(() => {
+    if (!searchTerm) return transactions;
+    const term = searchTerm.toLowerCase();
+    return transactions.filter((t) =>
+      t.description?.toLowerCase().includes(term) ||
+      t.memo?.toLowerCase().includes(term) ||
+      t.type?.toLowerCase().includes(term)
+    );
+  }, [transactions, searchTerm]);
+
+  const selectedTransaction = transactions.find((t) => t.id === value);
+
+  // 드롭다운 위치 계산
+  useEffect(() => {
+    if (isOpen && inputRef.current) {
+      const rect = inputRef.current.getBoundingClientRect();
+      setDropdownPosition({
+        top: rect.bottom + window.scrollY,
+        left: rect.left + window.scrollX,
+        width: rect.width,
+      });
+    }
+  }, [isOpen]);
+
+  const handleSelect = (transactionId: string) => {
+    if (onChange) {
+      onChange({ target: { value: transactionId } } as any);
+    }
+    setIsOpen(false);
+    setSearchTerm("");
+  };
+
+  const handleClear = () => {
+    if (onChange) {
+      onChange({ target: { value: "" } } as any);
+    }
+    setSearchTerm("");
+  };
+
+  const getTransactionAsset = (transaction: any) => {
+    return assets.find(a => a.id === transaction.asset_id);
+  };
+
+  return (
+    <div className="relative" ref={inputRef}>
+      {/* Hidden input for form submission */}
+      <input type="hidden" name="related_transaction_id" value={value || ""} />
+      
+      <div className="relative">
+        <div
+          className={`w-full px-3 py-2 border rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${
+            disabled ? "bg-gray-100 cursor-not-allowed" : "bg-white cursor-pointer"
+          }`}
+          onClick={() => !disabled && setIsOpen(!isOpen)}
+        >
+          {selectedTransaction ? (
+            <div className="flex justify-between items-center">
+              <div>
+                <span className="font-medium">{selectedTransaction.description || '설명 없음'}</span>
+                <span className="text-sm text-gray-500 ml-2">
+                  ({selectedTransaction.type}) {selectedTransaction.quantity?.toLocaleString()}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleClear();
+                }}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                ✕
+              </button>
+            </div>
+          ) : (
+            <span className="text-gray-400">
+              {isLoading ? "로딩 중..." : "연결할 거래 선택 (선택사항)"}
+            </span>
+          )}
+        </div>
+
+        {isOpen &&
+          createPortal(
+            <div
+              className="fixed bg-white border rounded-md shadow-lg z-[9999] max-h-80 overflow-y-auto"
+              style={{
+                top: `${dropdownPosition.top}px`,
+                left: `${dropdownPosition.left}px`,
+                width: `${dropdownPosition.width}px`,
+              }}
+            >
+              <div className="sticky top-0 bg-white border-b p-2">
+                <input
+                  type="text"
+                  className="w-full px-3 py-1.5 border rounded-md text-sm"
+                  placeholder="거래 검색..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  onClick={(e) => e.stopPropagation()}
+                  autoFocus
+                />
+              </div>
+              <div className="py-1">
+                {filteredTransactions.length === 0 ? (
+                  <div className="px-3 py-2 text-sm text-gray-500">
+                    {isLoading ? "로딩 중..." : "해당 날짜에 거래가 없습니다"}
+                  </div>
+                ) : (
+                  filteredTransactions.map((transaction) => {
+                    const txAsset = getTransactionAsset(transaction);
+                    return (
+                      <div
+                        key={transaction.id}
+                        className="px-3 py-2 hover:bg-gray-100 cursor-pointer"
+                        onClick={() => handleSelect(transaction.id)}
+                      >
+                        <div className="flex justify-between items-start">
+                          <div className="flex-1">
+                            <p className="text-sm font-medium">
+                              {transaction.description || '설명 없음'}
+                            </p>
+                            <p className="text-xs text-gray-500">
+                              {txAsset?.name} · {transaction.type}
+                            </p>
+                          </div>
+                          <span
+                            className={`text-sm font-medium ${
+                              transaction.quantity >= 0 ? "text-green-600" : "text-red-600"
+                            }`}
+                          >
+                            {transaction.quantity?.toLocaleString()}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </div>,
+            document.body
+          )}
+      </div>
+      {!selectedAsset && (
+        <p className="text-xs text-gray-500 mt-1">
+          먼저 자산을 선택하세요
+        </p>
+      )}
+      {!transactionDate && selectedAsset && (
+        <p className="text-xs text-gray-500 mt-1">
+          먼저 거래 날짜를 선택하세요
+        </p>
+      )}
+    </div>
   );
 }

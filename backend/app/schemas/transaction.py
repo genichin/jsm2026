@@ -41,6 +41,8 @@ class TransactionType(str, Enum):
     AUTO_TRANSFER = "auto_transfer"  # 자동이체
     REMITTANCE = "remittance"  # 송금
     EXCHANGE = "exchange"  # 환전
+    OUT_ASSET = "out_asset"   # 자산매수출금
+    IN_ASSET = "in_asset"     # 자산매도입금
 
 
 # Asset Schemas
@@ -127,6 +129,7 @@ class TransactionCreate(TransactionBase):
     asset_id: str = Field(..., description="자산 ID")
     related_transaction_id: Optional[str] = Field(None, description="관련 거래 ID (복식부기)")
     cash_asset_id: Optional[str] = Field(None, description="매수/매도 시 사용할 현금 자산 ID (지정하지 않으면 자동 선택)")
+    skip_auto_cash_transaction: bool = Field(False, description="매수/매도 시 현금 거래 자동 생성 건너뛰기 (out_asset/in_asset 수동 생성용)")
     # 환전(exchange) 거래용 필드
     target_asset_id: Optional[str] = Field(None, description="환전 대상 자산 ID (type=exchange일 때)")
     target_amount: Optional[float] = Field(None, description="환전 대상 금액 (type=exchange일 때)")
@@ -165,6 +168,12 @@ class TransactionCreate(TransactionBase):
         elif self.type == TransactionType.FEE:
             if self.quantity >= 0:
                 raise ValueError("수수료(FEE) 거래의 수량은 음수여야 합니다.")
+        elif self.type == TransactionType.OUT_ASSET:
+            if self.quantity >= 0:
+                raise ValueError("자산매수출금(OUT_ASSET) 거래의 수량은 음수여야 합니다.")
+        elif self.type == TransactionType.IN_ASSET:
+            if self.quantity <= 0:
+                raise ValueError("자산매도입금(IN_ASSET) 거래의 수량은 양수여야 합니다.")
         # ADJUSTMENT는 양수/음수 모두 허용 (수량 조정)
         return self
 
@@ -198,6 +207,7 @@ class TransactionUpdate(BaseModel):
     transaction_date: Optional[datetime] = Field(None, description="거래 일시 (수정 가능)")
     extras: Optional[dict] = Field(None, description="추가 정보 (예: 환율, 외부 시스템 데이터 등)")
     category_id: Optional[str] = Field(None, description="카테고리 ID (변경/해제)")
+    related_transaction_id: Optional[str] = Field(None, description="연결된 거래 ID (변경/해제)")
 
 
 class TransactionResponse(TransactionBase):
@@ -220,6 +230,7 @@ class TransactionResponse(TransactionBase):
 class TransactionWithAsset(TransactionResponse):
     """자산 정보 포함 거래 응답"""
     asset: Optional[dict] = None  # Temporarily use dict instead of AssetResponse
+    related_asset_name: Optional[str] = Field(None, description="연결된 거래의 자산명 (out_asset/in_asset용)")
     category_id: Optional[str] = Field(None, description="카테고리 ID")
 
     model_config = {

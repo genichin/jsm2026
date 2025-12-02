@@ -235,7 +235,7 @@ def upgrade():
         sa.Column('updated_at', sa.TIMESTAMP(timezone=True), server_default=sa.func.now()),
         sa.ForeignKeyConstraint(['asset_id'], ['assets.id'], ondelete='CASCADE'),
         sa.ForeignKeyConstraint(['related_transaction_id'], ['transactions.id'], ondelete='SET NULL'),
-        sa.CheckConstraint("type IN ('buy', 'sell', 'deposit', 'withdraw', 'cash_dividend', 'stock_dividend', 'interest', 'fee', 'transfer_in', 'transfer_out', 'adjustment', 'invest', 'redeem', 'internal_transfer', 'card_payment', 'promotion_deposit', 'auto_transfer', 'remittance', 'exchange')", name='valid_transaction_type'),
+        sa.CheckConstraint("type IN ('buy', 'sell', 'deposit', 'withdraw', 'cash_dividend', 'stock_dividend', 'interest', 'fee', 'transfer_in', 'transfer_out', 'adjustment', 'invest', 'redeem', 'internal_transfer', 'card_payment', 'promotion_deposit', 'auto_transfer', 'remittance', 'exchange', 'out_asset', 'in_asset')", name='valid_transaction_type'),
         sa.CheckConstraint('fee >= 0 AND tax >= 0', name='non_negative_fees')
     )
     

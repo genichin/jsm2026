@@ -168,7 +168,7 @@ curl -X POST "http://localhost:8000/api/transactions/upload" \
 ### 4. 잘못된 거래 유형
 ```json
 {
-  "detail": "잘못된 거래 유형: unknown_type. 지원하는 유형: buy, sell, deposit, ..."
+  "detail": "잘못된 거래 유형: unknown_type. 지원하는 유형: buy, sell, deposit, withdraw, out_asset, in_asset, ..."
 }
 
 ### 5. 카테고리 불일치(flow_type 미호환)

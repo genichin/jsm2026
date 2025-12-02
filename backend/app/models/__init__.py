@@ -194,6 +194,8 @@ class TransactionType(str, Enum):
     AUTO_TRANSFER = "auto_transfer"  # 자동이체
     REMITTANCE = "remittance"  # 송금
     EXCHANGE = "exchange"  # 환전
+    OUT_ASSET = "out_asset"   # 자산매수출금
+    IN_ASSET = "in_asset"     # 자산매도입금
 
 
 # 유형별 속성 매핑
@@ -264,7 +266,8 @@ class Transaction(Base):
         CheckConstraint(
             "type IN ('buy', 'sell', 'deposit', 'withdraw', 'cash_dividend', 'stock_dividend', 'interest', 'fee', "
             "'transfer_in', 'transfer_out', 'adjustment', 'invest', 'redeem', "
-            "'internal_transfer', 'card_payment', 'promotion_deposit', 'auto_transfer', 'remittance', 'exchange')",
+            "'internal_transfer', 'card_payment', 'promotion_deposit', 'auto_transfer', 'remittance', 'exchange', "
+            "'out_asset', 'in_asset')",
             name='valid_transaction_type'
         ),
     )

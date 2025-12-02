@@ -278,7 +278,14 @@ async def calculate_avg_profit(asset_id: str, sell_quantity: float, sell_price: 
 async def add_purchase_to_queue(asset_id: str, transaction_id: str, 
                                quantity: float, price: float, 
                                transaction_date: datetime, calc_method: str):
-    """매수 시 큐에 추가"""
+    """매수 시 큐에 추가
+    
+    참고: 자산 매수 시 복식부기로 2개의 거래가 생성됩니다:
+    - buy 타입: 자산 수량 증가 (양수)
+    - out_asset 타입: 현금 감소 (음수) - 연결된 현금 자산에 기록
+    
+    매수 큐에는 buy 타입 거래만 추가됩니다.
+    """
     
     if calc_method in ['FIFO', 'LIFO']:
         # Sorted Set에 추가

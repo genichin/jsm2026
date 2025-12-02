@@ -67,13 +67,9 @@ def test_transaction(db_session: Session, test_cash_asset: Asset) -> Transaction
         asset_id=test_cash_asset.id,
         type="deposit",
         quantity=10000,
-        price=1.0,
-        fee=0,
-        tax=0,
-        realized_profit=0,
         transaction_date=datetime(2025, 11, 1, 10, 0, 0),
         description="Test Deposit",
-        is_confirmed=True
+        extras={"price": 1.0, "fee": 0, "tax": 0, "realized_profit": 0}
     )
     db_session.add(transaction)
     db_session.commit()
@@ -93,9 +89,11 @@ class TestCreateTransaction:
                 "asset_id": test_cash_asset.id,
                 "type": "deposit",
                 "quantity": 50000,
-                "price": 1.0,
-                "fee": 0,
-                "tax": 0,
+                "extras": {
+                    "price": 1.0,
+                    "fee": 0,
+                    "tax": 0
+                },
                 "transaction_date": "2025-11-13T10:00:00",
                 "description": "월급 입금"
             }
@@ -105,7 +103,7 @@ class TestCreateTransaction:
         data = response.json()
         assert data["type"] == "deposit"
         assert data["quantity"] == 50000
-        assert data["price"] == 1.0
+        assert data["extras"]["price"] == 1.0
         assert data["asset_id"] == test_cash_asset.id
         assert "id" in data
     
@@ -138,9 +136,11 @@ class TestCreateTransaction:
                 "asset_id": test_stock_asset.id,
                 "type": "buy",
                 "quantity": 10,
-                "price": 50000,
-                "fee": 500,
-                "tax": 150,
+                "extras": {
+                    "price": 50000,
+                    "fee": 500,
+                    "tax": 150
+                },
                 "transaction_date": "2025-11-13T14:00:00",
                 "description": "주식 매수"
             }
@@ -150,9 +150,9 @@ class TestCreateTransaction:
         data = response.json()
         assert data["type"] == "buy"
         assert data["quantity"] == 10
-        assert data["price"] == 50000
-        assert data["fee"] == 500
-        assert data["tax"] == 150
+        assert data["extras"]["price"] == 50000
+        assert data["extras"]["fee"] == 500
+        assert data["extras"]["tax"] == 150
     
     def test_create_stock_sell_success(self, client: TestClient, auth_header: dict, test_stock_asset: Asset):
         """주식 매도 거래 생성 성공"""
@@ -163,9 +163,11 @@ class TestCreateTransaction:
                 "asset_id": test_stock_asset.id,
                 "type": "sell",
                 "quantity": -5,
-                "price": 55000,
-                "fee": 275,
-                "tax": 825,
+                "extras": {
+                    "price": 55000,
+                    "fee": 275,
+                    "tax": 825
+                },
                 "transaction_date": "2025-11-13T15:00:00",
                 "description": "주식 매도"
             }
@@ -175,7 +177,7 @@ class TestCreateTransaction:
         data = response.json()
         assert data["type"] == "sell"
         assert data["quantity"] == -5
-        assert data["price"] == 55000
+        assert data["extras"]["price"] == 55000
     
     def test_create_transaction_no_auth(self, client: TestClient, test_cash_asset: Asset):
         """인증 없이 거래 생성 시도"""
@@ -403,14 +405,12 @@ class TestUpdateTransaction:
             f"/api/v1/transactions/{test_transaction.id}",
             headers=auth_header,
             json={
-                "is_confirmed": False,
                 "memo": "수정된 메모"
             }
         )
         
         assert response.status_code == 200
         data = response.json()
-        assert data["is_confirmed"] == False
         assert data["memo"] == "수정된 메모"
         # quantity는 변경되지 않음
         assert data["quantity"] == test_transaction.quantity
@@ -512,9 +512,11 @@ class TestTransactionBusinessRules:
                 "asset_id": test_stock_asset.id,
                 "type": "buy",
                 "quantity": 10,
-                "price": 50000,
-                "fee": 500,
-                "tax": 150,
+                "extras": {
+                    "price": 50000,
+                    "fee": 500,
+                    "tax": 150
+                },
                 "transaction_date": "2025-11-13T14:00:00",
                 "description": "주식 매수"
             }
@@ -532,7 +534,7 @@ class TestTransactionBusinessRules:
         # 연결 거래가 생성되었는지 확인
         if len(cash_transactions) > 0:
             cash_tx = cash_transactions[0]
-            assert cash_tx.type == "withdraw"
+            assert cash_tx.type == "out_asset"  # 자산매수출금
             # 매수금액 + 수수료 + 세금 = 50000*10 + 500 + 150 = 500650
             expected_amount = -(50000 * 10 + 500 + 150)
             assert cash_tx.quantity == expected_amount
@@ -554,9 +556,11 @@ class TestTransactionBusinessRules:
                 "asset_id": test_stock_asset.id,
                 "type": "sell",
                 "quantity": -5,
-                "price": 55000,
-                "fee": 275,
-                "tax": 825,
+                "extras": {
+                    "price": 55000,
+                    "fee": 275,
+                    "tax": 825
+                },
                 "transaction_date": "2025-11-13T15:00:00",
                 "description": "주식 매도"
             }
@@ -574,7 +578,7 @@ class TestTransactionBusinessRules:
         # 연결 거래가 생성되었는지 확인
         if len(cash_transactions) > 0:
             cash_tx = cash_transactions[0]
-            assert cash_tx.type == "deposit"
+            assert cash_tx.type == "in_asset"  # 자산매도입금
             # 매도금액 - 수수료 - 세금 = 55000*5 - 275 - 825 = 273900
             expected_amount = 55000 * 5 - 275 - 825
             assert cash_tx.quantity == expected_amount
