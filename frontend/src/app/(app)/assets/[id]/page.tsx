@@ -28,6 +28,9 @@ interface Asset {
   is_active: boolean;
   created_at: string;
   updated_at: string;
+  balance?: number;  // Redis에서 조회한 현재 잔고
+  price?: number;    // Redis에서 조회한 현재 가격
+  change?: number;   // Redis에서 조회한 가격 변화량 (퍼센트)
 }
 
 interface AssetSummary {
@@ -40,6 +43,9 @@ interface AssetSummary {
   realized_profit: number;
   unrealized_profit: number | null;
   current_value: number | null;
+  foreign_value?: number | null;
+  foreign_currency?: string | null;
+  krw_value?: number | null;
 }
 
 interface Transaction {
@@ -135,6 +141,12 @@ export default function AssetDetailPage({ params }: { params: { id: string } }) 
 
   // 파일 업로드 모달 상태
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
+
+  // 가격 변경 모달 상태
+  const [isPriceModalOpen, setIsPriceModalOpen] = useState(false);
+  const [newPrice, setNewPrice] = useState<string>("");
+  const [newChange, setNewChange] = useState<string>("");
+  const [useSymbol, setUseSymbol] = useState(false);
 
   // 자산 기본 정보
   const assetQuery = useQuery<Asset>({
@@ -247,12 +259,60 @@ export default function AssetDetailPage({ params }: { params: { id: string } }) 
     },
   });
 
+  // 가격 변경 mutation
+  const updatePriceMut = useMutation({
+    mutationFn: async (data: { price: number; change?: number; use_symbol: boolean }) => {
+      const queryParams = new URLSearchParams({
+        price: data.price.toString(),
+        use_symbol: data.use_symbol.toString(),
+      });
+      if (data.change !== undefined) {
+        queryParams.append("change", data.change.toString());
+      }
+      const response = await api.put(`/assets/${params.id}/price?${queryParams.toString()}`);
+      return response.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["asset", params.id] });
+      queryClient.invalidateQueries({ queryKey: ["asset-summary", params.id] });
+      setIsPriceModalOpen(false);
+      setNewPrice("");
+      setNewChange("");
+      alert("가격이 업데이트되었습니다.");
+    },
+    onError: (err: any) => {
+      const msg = err?.response?.data?.detail || "가격 업데이트 중 오류가 발생했습니다.";
+      alert(msg);
+    },
+  });
+
   // 거래 추가 시작
   function startCreateTransaction() {
     setSelectedAssetId(params.id);
     setSelectedType(null);
     setEditing(null);
     setIsTransactionModalOpen(true);
+  }
+
+  // 가격 변경 모달 열기
+  function openPriceModal() {
+    setNewPrice(asset?.price?.toString() || "");
+    setNewChange(asset?.change?.toString() || "");
+    setUseSymbol(false);
+    setIsPriceModalOpen(true);
+  }
+
+  // 가격 변경 제출
+  function handlePriceUpdate(e: React.FormEvent) {
+    e.preventDefault();
+    const price = parseFloat(newPrice);
+    if (isNaN(price) || price <= 0) {
+      alert("유효한 가격을 입력해주세요.");
+      return;
+    }
+    
+    const change = newChange ? parseFloat(newChange) : undefined;
+    updatePriceMut.mutate({ price, change, use_symbol: useSymbol });
   }
 
   // 거래 폼 제출
@@ -515,10 +575,43 @@ export default function AssetDetailPage({ params }: { params: { id: string } }) 
 
       {/* 요약 카드 */}
       {summary && (
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-4 p-4 border rounded-lg bg-gray-50">
+        <div className="grid grid-cols-2 md:grid-cols-6 gap-4 p-4 border rounded-lg bg-gray-50">
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <div className="text-xs text-gray-600">현재가</div>
+              {asset?.asset_type !== "cash" && (
+                <button
+                  onClick={openPriceModal}
+                  className="text-xs text-blue-600 hover:text-blue-800 hover:underline"
+                  title="가격 변경"
+                >
+                  ✏️ 변경
+                </button>
+              )}
+            </div>
+            <div className="text-lg font-semibold text-indigo-600">
+              {asset?.price != null 
+                ? asset.price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+                : "-"}
+            </div>
+            {asset?.change != null && (
+              <div className={`text-xs font-medium mt-0.5 ${
+                asset.change > 0 ? "text-red-600" : asset.change < 0 ? "text-blue-600" : "text-gray-500"
+              }`}>
+                {asset.change > 0 ? "▲" : asset.change < 0 ? "▼" : ""}
+                {Math.abs(asset.change).toFixed(2)}%
+              </div>
+            )}
+          </div>
           <div>
             <div className="text-xs text-gray-600">현재 잔고</div>
-            <div className="text-lg font-semibold">{summary.current_quantity?.toLocaleString() || "0"}</div>
+            <div className="text-lg font-semibold">
+              {summary.current_quantity != null
+                ? Number(summary.current_quantity) % 1 === 0
+                  ? Math.floor(Number(summary.current_quantity)).toLocaleString()
+                  : Number(summary.current_quantity).toLocaleString(undefined, { maximumFractionDigits: 8, minimumFractionDigits: 0 })
+                : "0"}
+            </div>
           </div>
           <div>
             <div className="text-xs text-gray-600">총 취득원가</div>
@@ -532,6 +625,7 @@ export default function AssetDetailPage({ params }: { params: { id: string } }) 
                 : "-"}
             </div>
           </div>
+          
           <div>
             <div className="text-xs text-gray-600">실현손익</div>
             <div className={`text-lg font-semibold ${(summary.realized_profit || 0) >= 0 ? "text-blue-600" : "text-red-600"}`}>
@@ -542,8 +636,21 @@ export default function AssetDetailPage({ params }: { params: { id: string } }) 
           <div>
             <div className="text-xs text-gray-600">평가액</div>
             <div className="text-lg font-semibold">
-              {summary.current_value != null ? summary.current_value.toLocaleString() : "-"}
+              {summary.krw_value != null
+                ? `${Math.floor(Number(summary.krw_value)).toLocaleString()} 원`
+                : "-"}
             </div>
+            {asset?.currency && asset.currency !== "KRW" && (
+              <div className="mt-1 text-xs text-gray-600 space-y-0.5">
+                <div>
+                  <span className="font-medium">
+                    {summary.foreign_value != null
+                      ? `${Math.floor(Number(summary.foreign_value)).toLocaleString()} ${summary.foreign_currency || asset.currency}`
+                      : "-"}
+                  </span>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -1052,6 +1159,92 @@ export default function AssetDetailPage({ params }: { params: { id: string } }) 
             </div>
           </div>
         )}
+      </Modal>
+
+      {/* 가격 변경 모달 */}
+      <Modal
+        isOpen={isPriceModalOpen}
+        onClose={() => setIsPriceModalOpen(false)}
+        title="자산 가격 변경"
+        size="md"
+      >
+        <form onSubmit={handlePriceUpdate} className="space-y-4">
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
+            <h3 className="text-sm font-semibold text-blue-900 mb-2">가격 업데이트</h3>
+            <p className="text-xs text-blue-800">
+              Redis에 저장된 실시간 가격 정보를 업데이트합니다.
+            </p>
+            {asset?.symbol && (
+              <p className="text-xs text-blue-700 mt-1">
+                심볼: <strong>{asset.symbol}</strong>
+              </p>
+            )}
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-2">
+              현재가 *
+            </label>
+            <input
+              type="number"
+              step="0.01"
+              value={newPrice}
+              onChange={(e) => setNewPrice(e.target.value)}
+              required
+              className="w-full border rounded px-3 py-2"
+              placeholder="예: 68000"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-2">
+              변화량 (%) <span className="text-xs text-gray-500">(선택사항)</span>
+            </label>
+            <input
+              type="number"
+              step="0.01"
+              value={newChange}
+              onChange={(e) => setNewChange(e.target.value)}
+              className="w-full border rounded px-3 py-2"
+              placeholder="예: 2.35 또는 -1.52"
+            />
+            <p className="text-xs text-slate-500 mt-1">
+              양수는 상승(▲), 음수는 하락(▼)
+            </p>
+          </div>
+
+          {asset?.symbol && (
+            <div className="flex items-center gap-2 bg-amber-50 border border-amber-200 rounded p-3">
+              <input
+                type="checkbox"
+                id="use_symbol"
+                checked={useSymbol}
+                onChange={(e) => setUseSymbol(e.target.checked)}
+                className="w-4 h-4"
+              />
+              <label htmlFor="use_symbol" className="text-sm text-amber-900">
+                <strong>심볼 기반 업데이트</strong> (동일 심볼 &quot;{asset.symbol}&quot;을 가진 모든 자산에 적용)
+              </label>
+            </div>
+          )}
+
+          <div className="flex justify-end gap-3 pt-4 border-t">
+            <button
+              type="button"
+              onClick={() => setIsPriceModalOpen(false)}
+              className="px-4 py-2 rounded bg-slate-200 hover:bg-slate-300"
+            >
+              취소
+            </button>
+            <button
+              type="submit"
+              disabled={updatePriceMut.isPending}
+              className="px-4 py-2 rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {updatePriceMut.isPending ? "업데이트 중..." : "변경"}
+            </button>
+          </div>
+        </form>
       </Modal>
     </div>
   );

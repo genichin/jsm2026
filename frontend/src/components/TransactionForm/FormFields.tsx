@@ -619,7 +619,7 @@ export function RelatedTransactionField({
     };
 
     fetchTransactions();
-  }, [selectedAsset?.account_id, transactionDate]);
+  }, [selectedAsset, transactionDate]);
 
   const filteredTransactions = useMemo(() => {
     if (!searchTerm) return transactions;

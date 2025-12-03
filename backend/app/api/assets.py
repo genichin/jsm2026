@@ -3,13 +3,14 @@ Asset API endpoints
 """
 
 from typing import List, Optional
+from decimal import Decimal
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import or_
 
 from app.core.database import get_db
 from app.api.auth import get_current_user
-from app.core.redis import get_asset_balance, get_asset_price, calculate_and_update_balance
+from app.core.redis import get_asset_balance, get_asset_price, get_asset_change, calculate_and_update_balance, update_asset_price, update_asset_price_by_symbol, update_asset_change_by_symbol
 from app.models import User, Asset, Transaction, Account, Tag, Taggable
 from app.core.tag_helpers import (
     validate_taggable_exists,
@@ -80,7 +81,8 @@ async def create_asset(
     balance = get_asset_balance(db_asset.id)
 
     # db_asset.asset_type 이 현금인 경우 가격은 항상 1.0 으로 설정
-    price = 1.0 if db_asset.asset_type == AssetType.CASH.value else get_asset_price(db_asset.id)
+    price = 1.0 if db_asset.asset_type == AssetType.CASH.value else get_asset_price(db_asset.id, db_asset.symbol)
+    change = None if db_asset.asset_type == AssetType.CASH.value else get_asset_change(db_asset.id, db_asset.symbol)
     
     # 응답 객체 생성
     asset_dict = {  
@@ -96,7 +98,8 @@ async def create_asset(
         "created_at": db_asset.created_at,
         "updated_at": db_asset.updated_at,
         "balance": balance,
-        "price": price
+        "price": price,
+        "change": change
     }
     
     return asset_dict
@@ -147,7 +150,8 @@ async def list_assets(
     for asset in items:
         balance = get_asset_balance(asset.id)
         # db_asset.asset_type 이 현금인 경우 가격은 항상 1.0 으로 설정
-        price = 1.0 if asset.asset_type == AssetType.CASH.value else get_asset_price(asset.id)
+        price = 1.0 if asset.asset_type == AssetType.CASH.value else get_asset_price(asset.id, asset.symbol)
+        change = None if asset.asset_type == AssetType.CASH.value else get_asset_change(asset.id, asset.symbol)
         asset_dict = {
             "id": asset.id,
             "user_id": asset.user_id,
@@ -162,6 +166,7 @@ async def list_assets(
             "updated_at": asset.updated_at,
             "balance": balance,
             "price": price,
+            "change": change,
             "account": {
                 "id": asset.account.id,
                 "name": asset.account.name,
@@ -202,10 +207,11 @@ async def get_portfolio_summary(
         
         # 각 자산의 요약 정보 계산
         asset_summaries = []
-        total_cost = 0
-        total_realized_profit = 0
-        total_current_value = 0
-        
+        from decimal import Decimal
+        total_cost = Decimal(0)
+        total_realized_profit = Decimal(0)
+        total_current_value = Decimal(0)
+
         from sqlalchemy import func
         
         for asset in assets:
@@ -216,16 +222,19 @@ async def get_portfolio_summary(
                 Transaction.asset_id == asset.id
             ).first()
             
-            current_quantity = summary_query.total_quantity or 0
+            current_quantity = Decimal(summary_query.total_quantity or 0)
             # TODO: Calculate realized_profit from transaction extras if needed
-            realized_profit = 0
+            realized_profit = Decimal(0)
             
             # TODO: Calculate cost from transaction extras (price, fee, tax)
-            asset_cost = 0
+            asset_cost = Decimal(0)
             
-            # 현재가는 외부 API에서 가져와야 하므로 임시로 0 설정
-            current_value = 0
-            unrealized_profit = 0
+            # Redis 가격 기반 현재가 계산
+            price = get_asset_price(asset.id, asset.symbol)
+            current_value = Decimal(0)
+            if price is not None:
+                current_value = Decimal(current_quantity) * Decimal(str(price))
+            unrealized_profit = Decimal(0)
             
             asset_summary = AssetSummary(
                 asset_id=asset.id,
@@ -236,7 +245,6 @@ async def get_portfolio_summary(
                 total_cost=asset_cost,
                 realized_profit=realized_profit,
                 unrealized_profit=unrealized_profit,
-                current_value=current_value
             )
             
             asset_summaries.append(asset_summary)
@@ -244,11 +252,11 @@ async def get_portfolio_summary(
             total_realized_profit += realized_profit
             total_current_value += current_value
         
-        total_unrealized_profit = total_current_value - total_cost
+        total_unrealized_profit = Decimal(total_current_value) - Decimal(total_cost)
         
         return PortfolioSummary(
             total_assets_value=total_current_value,
-            total_cash=0,  # 현금은 별도 계산 필요
+            total_cash=Decimal(0),  # 현금은 별도 계산 필요
             total_realized_profit=total_realized_profit,
             total_unrealized_profit=total_unrealized_profit,
             asset_summaries=asset_summaries
@@ -282,7 +290,8 @@ async def get_asset(
     # Redis에서 잔고와 가격 조회
     balance = get_asset_balance(asset.id)
     # db_asset.asset_type 이 현금인 경우 가격은 항상 1.0 으로 설정
-    price = 1.0 if asset.asset_type == AssetType.CASH.value else get_asset_price(asset.id)
+    price = 1.0 if asset.asset_type == AssetType.CASH.value else get_asset_price(asset.id, asset.symbol)
+    change = None if asset.asset_type == AssetType.CASH.value else get_asset_change(asset.id, asset.symbol)
     
     # 응답 객체 생성
     asset_dict = {
@@ -299,6 +308,7 @@ async def get_asset(
         "updated_at": asset.updated_at,
         "balance": balance,
         "price": price,
+        "change": change,
         "account": {
             "id": asset.account.id,
             "name": asset.account.name,
@@ -340,7 +350,8 @@ async def update_asset(
     # Redis에서 잔고와 가격 조회
     balance = get_asset_balance(asset.id)
     # db_asset.asset_type 이 현금인 경우 가격은 항상 1.0 으로 설정
-    price = 1.0 if asset.asset_type == AssetType.CASH.value else get_asset_price(asset.id)
+    price = 1.0 if asset.asset_type == AssetType.CASH.value else get_asset_price(asset.id, asset.symbol)
+    change = None if asset.asset_type == AssetType.CASH.value else get_asset_change(asset.id, asset.symbol)
     
     # 응답 객체 생성
     asset_dict = {
@@ -356,7 +367,8 @@ async def update_asset(
         "created_at": asset.created_at,
         "updated_at": asset.updated_at,
         "balance": balance,
-        "price": price
+        "price": price,
+        "change": change
     }
     
     return asset_dict
@@ -396,6 +408,53 @@ async def delete_asset(
     db.commit()
 
 
+@router.put("/{asset_id}/price", status_code=status.HTTP_200_OK)
+async def update_asset_price_endpoint(
+    asset_id: str,
+    price: float = Query(..., description="현재 가격"),
+    change: float = Query(None, description="가격 변화량 (퍼센트)"),
+    use_symbol: bool = Query(False, description="심볼 기반으로 업데이트 (동일 심볼 자산 모두 적용)"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """자산 가격 업데이트 (Redis)"""
+    
+    # 자산 소유권 확인
+    asset = db.query(Asset).filter(
+        Asset.id == asset_id,
+        Asset.user_id == current_user.id
+    ).first()
+    
+    if not asset:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="자산을 찾을 수 없습니다"
+        )
+    
+    # 가격 업데이트
+    if use_symbol and asset.symbol:
+        # 심볼 기반 업데이트 (동일 심볼 자산 모두 적용)
+        update_asset_price_by_symbol(asset.symbol, price)
+        if change is not None:
+            update_asset_change_by_symbol(asset.symbol, change)
+    else:
+        # 개별 자산 업데이트
+        update_asset_price(asset_id, price)
+        if change is not None:
+            key = f"asset:{asset_id}:change"
+            from app.core.redis import redis_client
+            redis_client.set(key, str(change))
+    
+    return {
+        "message": "가격이 업데이트되었습니다",
+        "asset_id": asset_id,
+        "symbol": asset.symbol,
+        "price": price,
+        "change": change,
+        "use_symbol": use_symbol
+    }
+
+
 @router.get("/{asset_id}/summary", response_model=AssetSummary)
 async def get_asset_summary(
     asset_id: str,
@@ -431,9 +490,35 @@ async def get_asset_summary(
     # TODO: Calculate cost from transaction extras (price, fee, tax)
     total_cost = 0
     
-    # 현재가는 외부 API에서 가져와야 하므로 임시로 0 설정
-    current_value = 0
+    # 현재가를 Redis에서 조회하여 평가액 계산
+    price = None
+    try:
+        price = get_asset_price(asset.id, asset.symbol)
+    except Exception:
+        price = None
+
+    foreign_value = None
+    foreign_currency = None
+    krw_value = None
     unrealized_profit = 0
+
+    if price is not None:
+        # 평가액 계산 (기준 통화의 평가액)
+        base_value = Decimal(current_quantity) * Decimal(str(price))
+        # 통화별 처리: USD면 KRW 환산도 제공
+        if asset.currency and asset.currency.upper() != "KRW":
+            foreign_value = base_value
+            foreign_currency = asset.currency.upper()
+            # 통화→KRW 환율은 Redis 키 `asset:{CURRENCY}:price` 사용 (예: asset:USD:price, asset:JPY:price)
+            try:
+                fx_rate = get_asset_price(foreign_currency, foreign_currency)
+            except Exception:
+                fx_rate = None
+            if fx_rate is not None:
+                krw_value = Decimal(foreign_value) * Decimal(str(fx_rate))
+        else:
+            # KRW 통화이면 KRW 평가액은 동일
+            krw_value = base_value
     
     return AssetSummary(
         asset_id=asset.id,
@@ -444,7 +529,9 @@ async def get_asset_summary(
         total_cost=total_cost,
         realized_profit=realized_profit,
         unrealized_profit=unrealized_profit,
-        current_value=current_value
+        foreign_value=foreign_value,
+        foreign_currency=foreign_currency,
+        krw_value=krw_value
     )
 
 

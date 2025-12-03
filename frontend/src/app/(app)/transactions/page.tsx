@@ -82,7 +82,7 @@ export default function TransactionsPage() {
       setAssetFilter(assetId || "");
       setPage(1); // 페이지를 1로 리셋
     }
-  }, [searchParams]);
+  }, [searchParams, assetFilter]);
 
   // Assets, Accounts, Categories for filters/create
   const assetsQuery = useQuery<AssetsListResponse>({
@@ -560,7 +560,7 @@ export default function TransactionsPage() {
         </div>
       ),
     },
-  ], [updateMut, deleteMut]);
+  ], [deleteMut]);
   const columns: ColumnDef<Transaction>[] = useMemo(() => {
     return baseColumns.filter(c => {
       const key = (c as any).accessorKey || c.id;

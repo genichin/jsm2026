@@ -59,19 +59,90 @@ def update_asset_price(asset_id: str, price: float) -> None:
     redis_client.set(key, str(price))
 
 
-def get_asset_price(asset_id: str) -> float | None:
+def update_asset_price_by_symbol(symbol: str, price: float) -> None:
+    """
+    심볼 기반으로 자산 가격을 Redis에 업데이트
+    
+    Args:
+        symbol: 자산 심볼 (예: "005930", "BTC")
+        price: 현재 가격
+    """
+    key = f"asset:{symbol}:price"
+    redis_client.set(key, str(price))
+
+
+def update_asset_change_by_symbol(symbol: str, change_percent: float) -> None:
+    """
+    심볼 기반으로 자산 가격 변화량을 Redis에 업데이트
+    
+    Args:
+        symbol: 자산 심볼 (예: "005930", "BTC")
+        change_percent: 가격 변화량 퍼센트 (예: 2.5, -1.3)
+    """
+    key = f"asset:{symbol}:change"
+    redis_client.set(key, str(change_percent))
+
+
+def get_asset_price(asset_id: str, symbol: str = None) -> float | None:
     """
     Redis에서 자산 가격 조회
     
+    우선순위:
+    1) symbol이 있을 때 `asset:{symbol}:price`
+    2) 그 외 또는 없을 때 `asset:{asset_id}:price`
+    
     Args:
         asset_id: 자산 ID
+        symbol: 자산 심볼 (있는 경우 symbol 키를 우선 사용)
     
     Returns:
         가격 (없으면 None)
     """
-    key = f"asset:{asset_id}:price"
-    price = redis_client.get(key)
-    return float(price) if price else None
+    # 1차 시도: symbol 우선 (공백/빈 문자열 방지)
+    if symbol is not None and str(symbol).strip():
+        key_symbol = f"asset:{str(symbol).strip()}:price"
+        price_symbol = redis_client.get(key_symbol)
+        if price_symbol:
+            return float(price_symbol)
+
+    # 2차 시도: asset_id 기반
+    key_id = f"asset:{asset_id}:price"
+    price_id = redis_client.get(key_id)
+    if price_id:
+        return float(price_id)
+
+    return None
+
+
+def get_asset_change(asset_id: str, symbol: str = None) -> float | None:
+    """
+    Redis에서 자산 가격 변화량 조회 (퍼센트)
+    
+    우선순위:
+    1) symbol이 있을 때 `asset:{symbol}:change`
+    2) 그 외 또는 없을 때 `asset:{asset_id}:change`
+    
+    Args:
+        asset_id: 자산 ID
+        symbol: 자산 심볼 (있는 경우 symbol 키를 우선 사용)
+    
+    Returns:
+        변화량 퍼센트 (없으면 None)
+    """
+    # 1차 시도: symbol 우선 (공백/빈 문자열 방지)
+    if symbol is not None and str(symbol).strip():
+        key_symbol = f"asset:{str(symbol).strip()}:change"
+        change_symbol = redis_client.get(key_symbol)
+        if change_symbol:
+            return float(change_symbol)
+
+    # 2차 시도: asset_id 기반
+    key_id = f"asset:{asset_id}:change"
+    change_id = redis_client.get(key_id)
+    if change_id:
+        return float(change_id)
+
+    return None
 
 
 def delete_asset_price(asset_id: str) -> None:

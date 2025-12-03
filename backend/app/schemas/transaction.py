@@ -94,6 +94,7 @@ class AssetResponse(AssetBase):
     updated_at: datetime
     balance: Optional[float] = Field(None, description="현재 보유 수량 (Redis)")
     price: Optional[float] = Field(None, description="현재 가격 (Redis)")
+    change: Optional[float] = Field(None, description="가격 변화량 퍼센트 (Redis)")
     
     # Nested, lightweight account info for convenience in detail/list views
     class AccountBrief(BaseModel):
@@ -290,7 +291,10 @@ class AssetSummary(BaseModel):
     total_cost: Decimal
     realized_profit: Decimal
     unrealized_profit: Optional[Decimal] = None
-    current_value: Optional[Decimal] = None
+    # 통화별 평가액 (KRW 외 통화일 때 사용)
+    foreign_value: Optional[Decimal] = None
+    foreign_currency: Optional[str] = None
+    krw_value: Optional[Decimal] = None
 
 
 class PortfolioSummary(BaseModel):
