@@ -190,12 +190,15 @@ curl -X GET "https://jsfamily2.myds.me:40041/api/v1/users/me" \
 거래 내역 조회 (필터링 및 페이징 지원)
 
 **쿼리 파라미터:**
+- `asset_id`: 자산 ID로 필터링
 - `account_id`: 계좌 ID로 필터링
-- `type`: 거래 유형 (income, expense, transfer)
+- `type`: 거래 유형 (buy, sell, deposit, withdraw 등)
+- `category_id`: 카테고리 ID로 필터링
+- `confirmed`: 확인 여부 필터 (true: 확인된 거래만, false: 미확인 거래만, 생략: 전체)
 - `start_date`: 시작일 (YYYY-MM-DD)
 - `end_date`: 종료일 (YYYY-MM-DD)
 - `page`: 페이지 번호 (기본값: 1)
-- `per_page`: 페이지당 항목 수 (기본값: 20)
+- `size`: 페이지당 항목 수 (기본값: 20, 최대: 100)
 
 **응답:**
 ```json
@@ -203,19 +206,37 @@ curl -X GET "https://jsfamily2.myds.me:40041/api/v1/users/me" \
   "items": [
     {
       "id": "uuid",
-      "account_id": "uuid",
-      "type": "income",
-      "amount": 3000000.00,
-      "description": "월급",
-      "transaction_date": "2025-10-25",
-      "category": "급여",
-      "balance_after": 4000000.00
+      "asset_id": "uuid",
+      "type": "buy",
+      "quantity": 10.0,
+      "transaction_date": "2025-10-25T09:30:00Z",
+      "description": "삼성전자 매수",
+      "memo": "장기 투자",
+      "confirmed": false,
+      "category_id": "uuid",
+      "category": {
+        "id": "uuid",
+        "name": "투자",
+        "flow_type": "investment"
+      },
+      "extras": {
+        "price": 67000,
+        "fee": 335,
+        "tax": 0
+      },
+      "asset": {
+        "id": "uuid",
+        "name": "삼성전자",
+        "asset_type": "stock",
+        "symbol": "005930",
+        "currency": "KRW"
+      }
     }
   ],
   "total": 100,
   "page": 1,
-  "per_page": 20,
-  "total_pages": 5
+  "size": 20,
+  "pages": 5
 }
 ```
 

@@ -119,6 +119,7 @@ class TransactionBase(BaseModel):
     transaction_date: datetime = Field(..., description="거래 일시")
     description: Optional[str] = Field(None, description="거래 설명")
     memo: Optional[str] = Field(None, description="사용자 메모")
+    confirmed: bool = Field(default=False, description="사용자 확인 여부 (거래 유형, 카테고리 등)")
 
     model_config = {
         "from_attributes": True
@@ -204,7 +205,7 @@ class TransactionUpdate(BaseModel):
     quantity: Optional[float] = Field(None, description="수량 변화 (수정 가능)")
     description: Optional[str] = None
     memo: Optional[str] = None
-    is_confirmed: Optional[bool] = None
+    confirmed: Optional[bool] = Field(None, description="사용자 확인 여부")
     transaction_date: Optional[datetime] = Field(None, description="거래 일시 (수정 가능)")
     extras: Optional[dict] = Field(None, description="추가 정보 (예: 환율, 외부 시스템 데이터 등)")
     category_id: Optional[str] = Field(None, description="카테고리 ID (변경/해제)")
@@ -274,7 +275,7 @@ class TransactionFilter(BaseModel):
     type: Optional[TransactionType] = None
     start_date: Optional[datetime] = None
     end_date: Optional[datetime] = None
-    is_confirmed: Optional[bool] = None
+    confirmed: Optional[bool] = Field(None, description="확인 여부 필터")
     min_amount: Optional[Decimal] = None
     max_amount: Optional[Decimal] = None
     category_id: Optional[str] = None

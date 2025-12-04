@@ -1070,8 +1070,9 @@ CREATE TABLE transactions (
     description TEXT,                   -- 거래 설명
     memo TEXT,                          -- 사용자 메모
     
-    -- 연결
+    -- 연결 및 확인
     related_transaction_id UUID REFERENCES transactions(id) ON DELETE SET NULL,  -- 쌍 거래 ID
+    confirmed BOOLEAN NOT NULL DEFAULT false,  -- 사용자 확인 여부 (거래 유형, 카테고리 등)
     
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
@@ -1088,6 +1089,7 @@ CREATE INDEX idx_transactions_asset ON transactions(asset_id);
 CREATE INDEX idx_transactions_date ON transactions(transaction_date DESC);
 CREATE INDEX idx_transactions_type ON transactions(type);
 CREATE INDEX idx_transactions_category ON transactions(category_id);
+CREATE INDEX idx_transactions_confirmed ON transactions(confirmed);
 
 ```
 
@@ -1101,6 +1103,7 @@ CREATE INDEX idx_transactions_category ON transactions(category_id);
   - `tax`: 세금
   - `balance_after`: 거래 후 잔액
 - `related_transaction_id`: 복식부기 연결 (교환 거래 시 쌍)
+- `confirmed`: 사용자 확인 여부 (거래 유형, 카테고리 등 확인 완료)
 - `transaction_date`: 거래 발생 일시
 - `description`: 거래 설명 (자동 생성 또는 파싱)
 - `memo`: 사용자 메모

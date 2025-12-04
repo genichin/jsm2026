@@ -35,6 +35,7 @@ type Transaction = {
   transaction_date: string;
   description?: string | null;
   memo?: string | null;
+  confirmed: boolean;
   extras?: Record<string, any> | null;
   created_at: string;
   updated_at: string;
@@ -62,6 +63,7 @@ export default function TransactionsPage() {
   const [accountFilter, setAccountFilter] = useState<string | "">("")
   const [typeFilter, setTypeFilter] = useState<TransactionType | "">("")
   const [categoryFilter, setCategoryFilter] = useState<string | "">("")
+  const [confirmedFilter, setConfirmedFilter] = useState<string>("")  // "", "true", "false"
   const [page, setPage] = useState(1);
   const [size, setSize] = useState(20);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -119,13 +121,14 @@ export default function TransactionsPage() {
 
   // List transactions
   const listQuery = useQuery<TransactionListResponse>({
-    queryKey: ["transactions", { assetFilter, accountFilter, typeFilter, categoryFilter, page, size }],
+    queryKey: ["transactions", { assetFilter, accountFilter, typeFilter, categoryFilter, confirmedFilter, page, size }],
     queryFn: async () => {
       const params: any = { page, size };
       if (assetFilter) params.asset_id = assetFilter;
       if (accountFilter) params.account_id = accountFilter;
       if (typeFilter) params.type = typeFilter;
       if (categoryFilter) params.category_id = categoryFilter;
+      if (confirmedFilter) params.confirmed = confirmedFilter === "true";
     
       const res = await api.get("/transactions/recent", { params });
       return res.data as TransactionListResponse;
@@ -207,6 +210,19 @@ export default function TransactionsPage() {
     },
     onError: (err: any) => {
       const msg = err?.response?.data?.detail || "거래 삭제 중 오류가 발생했습니다.";
+      alert(msg);
+    },
+  });
+
+  const confirmToggleMut = useMutation({
+    mutationFn: async (id: string) =>
+      (await api.put(`/transactions/${id}/confirmed`)).data as Transaction,
+    onSuccess: () => {
+      // 단순하게 쿼리를 무효화해서 새로 로드
+      qc.invalidateQueries({ queryKey: ["transactions"] });
+    },
+    onError: (err: any) => {
+      const msg = err?.response?.data?.detail || "거래 확인 상태 변경 중 오류가 발생했습니다.";
       alert(msg);
     },
   });
@@ -619,6 +635,14 @@ export default function TransactionsPage() {
             ))}
           </select>
         </div>
+        <div>
+          <label className="block text-xs text-slate-600 mb-1">확인 여부</label>
+          <select value={confirmedFilter} onChange={(e) => { setConfirmedFilter(e.target.value); setPage(1); }} className="border rounded px-2 py-1">
+            <option value="">전체</option>
+            <option value="false">미확인</option>
+            <option value="true">확인됨</option>
+          </select>
+        </div>
         <div className="flex-1" />
         <button onClick={() => setIsUploadModalOpen(true)} className="px-3 py-2 rounded bg-blue-600 text-white hover:bg-blue-700">
           파일 업로드
@@ -865,6 +889,7 @@ export default function TransactionsPage() {
               extras: t.extras,
               dividend_asset_name: dividendAssetName,  // 배당 자산 이름 추가
               currency: t.asset?.currency,  // 통화 정보 추가
+              is_confirmed: t.confirmed,  // 거래 확인 상태 추가
             };
           })}
           onEdit={(id) => {
@@ -875,6 +900,9 @@ export default function TransactionsPage() {
             if (confirm("정말 삭제하시겠습니까? 연관 거래와 잔고에 영향을 줄 수 있습니다.")) {
               deleteMut.mutate(id);
             }
+          }}
+          onConfirmToggle={(id) => {
+            confirmToggleMut.mutate(id);
           }}
         />
       )}

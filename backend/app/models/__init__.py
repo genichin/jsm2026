@@ -260,6 +260,7 @@ class Transaction(Base):
     description = Column(Text)
     memo = Column(Text)
     related_transaction_id = Column(String(36), ForeignKey("transactions.id", ondelete="SET NULL"))
+    confirmed = Column(Boolean, nullable=False, server_default='false')  # 사용자 확인 여부
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
     __table_args__ = (

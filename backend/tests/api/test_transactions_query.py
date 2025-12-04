@@ -666,3 +666,49 @@ class TestTransactionsResponseStructure:
         assert data["page"] == 2
         assert data["size"] == 10
         assert data["pages"] == 3
+
+    def test_filter_by_confirmed_status(
+        self,
+        client: TestClient,
+        auth_header: dict,
+        db_session: Session,
+        test_stock_asset: Asset
+    ):
+        """confirmed 필터링 테스트"""
+        # 확인된 거래와 미확인 거래 생성
+        confirmed_tx = Transaction(
+            asset_id=test_stock_asset.id,
+            type="buy",
+            quantity=10,
+            transaction_date=datetime.now(),
+            confirmed=True,
+            extras={"price": 10000}
+        )
+        unconfirmed_tx = Transaction(
+            asset_id=test_stock_asset.id,
+            type="sell",
+            quantity=-5,
+            transaction_date=datetime.now(),
+            confirmed=False,
+            extras={"price": 11000}
+        )
+        db_session.add_all([confirmed_tx, unconfirmed_tx])
+        db_session.commit()
+        
+        # 확인된 거래만 조회
+        response = client.get(
+            "/api/v1/transactions?confirmed=true",
+            headers=auth_header
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert all(item["confirmed"] == True for item in data["items"])
+        
+        # 미확인 거래만 조회
+        response = client.get(
+            "/api/v1/transactions?confirmed=false",
+            headers=auth_header
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert all(item["confirmed"] == False for item in data["items"])

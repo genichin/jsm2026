@@ -3,7 +3,7 @@ from app.models import User, Asset, Transaction, Account, Category
 Transaction API endpoints
 """
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status, UploadFile, File, Form
 from sqlalchemy.orm import Session, joinedload
@@ -114,7 +114,7 @@ router = APIRouter()
 
 
 def serialize_transaction(tx: Transaction, db: Session = None):
-    """단일 거래 직렬화 (카테고리 dict 포함)"""
+    """단일 거래 직렬화 (카테고리, 자산 정보 포함)"""
     category_summary = None
     if getattr(tx, 'category_id', None) and getattr(tx, 'category', None):
         # relationship 객체가 dict로 기대되는 스키마에 맞게 변환
@@ -122,6 +122,18 @@ def serialize_transaction(tx: Transaction, db: Session = None):
             "id": tx.category.id,
             "name": tx.category.name,
             "flow_type": tx.category.flow_type
+        }
+    
+    # 자산 정보 포함
+    asset_summary = None
+    if getattr(tx, 'asset', None):
+        asset_summary = {
+            "id": tx.asset.id,
+            "name": tx.asset.name,
+            "asset_type": tx.asset.asset_type,
+            "symbol": tx.asset.symbol,
+            "currency": tx.asset.currency,
+            "is_active": tx.asset.is_active
         }
     
     # 연결된 거래의 자산명 가져오기 (out_asset/in_asset용)
@@ -139,6 +151,7 @@ def serialize_transaction(tx: Transaction, db: Session = None):
     return {
         "id": tx.id,
         "asset_id": tx.asset_id,
+        "asset": asset_summary,
         "related_transaction_id": tx.related_transaction_id,
         "related_asset_name": related_asset_name,
         "category_id": getattr(tx, 'category_id', None),
@@ -148,6 +161,7 @@ def serialize_transaction(tx: Transaction, db: Session = None):
         "transaction_date": tx.transaction_date,
         "description": tx.description,
         "memo": tx.memo,
+        "confirmed": tx.confirmed,
         "extras": tx.extras or {},  # 항상 빈 dict라도 포함
         "created_at": tx.created_at,
         "updated_at": tx.updated_at,
@@ -514,6 +528,7 @@ async def list_transactions(
     start_date: Optional[datetime] = Query(None),
     end_date: Optional[datetime] = Query(None),
     category_id: Optional[str] = Query(None, description="카테고리 ID 필터"),
+    confirmed: Optional[bool] = Query(None, description="확인 여부 필터"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -539,6 +554,8 @@ async def list_transactions(
         query = query.filter(Transaction.transaction_date <= end_date)
     if category_id:
         query = query.filter(Transaction.category_id == category_id)
+    if confirmed is not None:
+        query = query.filter(Transaction.confirmed == confirmed)
     
     # 최신 거래 먼저 정렬
     query = query.order_by(desc(Transaction.transaction_date), desc(Transaction.created_at))
@@ -582,6 +599,7 @@ async def list_transactions(
             "transaction_date": tx.transaction_date,
             "description": tx.description,
             "memo": tx.memo,
+            "confirmed": tx.confirmed,
             "extras": tx.extras or {},  # 항상 빈 dict라도 포함
             "created_at": tx.created_at,
             "updated_at": tx.updated_at,
@@ -682,6 +700,7 @@ async def get_recent_transactions(
     page: int = Query(1, ge=1, description="페이지 번호 (1부터 시작)"),
     size: int = Query(20, ge=1, le=100, description="페이지당 항목 수"),
     asset_id: Optional[str] = Query(None, description="자산 ID로 필터링"),
+    confirmed: Optional[bool] = Query(None, description="확인 여부 필터링"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -690,6 +709,8 @@ async def get_recent_transactions(
     
     - **page**: 페이지 번호 (1부터 시작)
     - **size**: 페이지당 항목 수 (기본 20, 최대 100)
+    - **asset_id**: 특정 자산으로 필터링
+    - **confirmed**: 확인 여부 필터링 (true/false)
     """
     try:
         # 사용자 소유 자산 ID 목록 조회
@@ -727,6 +748,10 @@ async def get_recent_transactions(
                     pages=0
                 )
             query = query.filter(Transaction.asset_id == asset_id)
+        
+        # confirmed 필터 적용
+        if confirmed is not None:
+            query = query.filter(Transaction.confirmed == confirmed)
         
         # 최신순 정렬
         query = query.order_by(desc(Transaction.transaction_date), desc(Transaction.id))
@@ -767,6 +792,7 @@ async def get_recent_transactions(
                 "transaction_date": tx.transaction_date,
                 "description": tx.description,
                 "memo": tx.memo,
+                "confirmed": tx.confirmed,
                 "extras": tx.extras or {},  # 항상 빈 dict라도 포함
                 "created_at": tx.created_at,
                 "updated_at": tx.updated_at,
@@ -924,6 +950,46 @@ async def update_transaction(
     invalidate_user_cache(current_user.id)
     
     # 직렬화하여 응답 (category를 dict로 보장)
+    return TransactionResponse.model_validate(serialize_transaction(transaction, db))
+
+
+@router.put("/{transaction_id}/confirmed", response_model=TransactionResponse)
+async def toggle_transaction_confirmed(
+    transaction_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """거래 확인 상태 토글"""
+    
+    transaction = db.query(Transaction).join(Asset).filter(
+        Transaction.id == transaction_id,
+        Asset.user_id == current_user.id
+    ).first()
+    
+    if not transaction:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="거래를 찾을 수 없습니다"
+        )
+    
+    # 확인 상태 토글
+    transaction.confirmed = not transaction.confirmed
+    
+    # 명시적으로 updated_at 갱신
+    transaction.updated_at = datetime.now(timezone.utc)
+    
+    db.flush()
+    db.commit()
+    
+    # 최신 상태 재조회 (asset, category 포함)
+    transaction = db.query(Transaction).options(
+        joinedload(Transaction.asset),
+        joinedload(Transaction.category)
+    ).filter(Transaction.id == transaction_id).first()
+    
+    # 사용자 캐시 무효화
+    invalidate_user_cache(current_user.id)
+    
     return TransactionResponse.model_validate(serialize_transaction(transaction, db))
 
 
