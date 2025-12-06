@@ -78,6 +78,7 @@ frontend/dist/
 frontend/build/
 frontend/.turbo/
 frontend/.cache/
+frontend/tsconfig.tsbuildinfo
 
 ### Test/coverage reports
 coverage.xml
