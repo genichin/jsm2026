@@ -5,6 +5,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { DataTable } from "@/components/DataTable";
 import { Button } from "@/components/Button";
+import { Modal } from "@/components/Modal";
 import { ColumnDef } from "@tanstack/react-table";
 import { useRouter } from "next/navigation";
 
@@ -294,57 +295,63 @@ export default function AssetsPage() {
         <Button onClick={startCreate}>새 자산</Button>
       </div>
 
-      {/* Inline Form */}
+      {/* Modal Form */}
       {editing && (
-        <form onSubmit={submitForm} className="border border-gh-border-default rounded-md p-4 space-y-3 bg-gh-canvas-inset">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-            <div>
-              <label className="block text-xs text-gh-fg-muted mb-1">이름</label>
-              <input name="name" defaultValue={editing.name || ""} className="w-full border-gh-border-default bg-gh-canvas-default rounded-md px-3 py-1.5 focus:ring-2 focus:ring-gh-accent-emphasis" required />
-            </div>
-            {editing.id ? null : (
+        <Modal
+          isOpen={!!editing}
+          onClose={cancelEdit}
+          title={editing.id ? "자산 수정" : "새 자산"}
+        >
+          <form onSubmit={submitForm} className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label className="block text-xs text-gh-fg-muted mb-1">계좌</label>
-                <select name="account_id" defaultValue={editing.account_id || ""} className="w-full border-gh-border-default bg-gh-canvas-default rounded-md px-3 py-1.5 focus:ring-2 focus:ring-gh-accent-emphasis">
-                  <option value="">선택하세요</option>
-                  {(accountsQuery.data?.accounts || []).map((a) => (
-                    <option key={a.id} value={a.id}>{a.name}</option>
-                  ))}
-                </select>
+                <label className="block text-sm font-medium text-gh-fg-default mb-1.5">이름</label>
+                <input name="name" defaultValue={editing.name || ""} className="w-full border border-gh-border-default bg-gh-canvas-inset rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gh-accent-emphasis" required />
               </div>
-            )}
-            {editing.id ? null : (
+              {!editing.id && (
+                <div>
+                  <label className="block text-sm font-medium text-gh-fg-default mb-1.5">계좌</label>
+                  <select name="account_id" defaultValue={editing.account_id || ""} className="w-full border border-gh-border-default bg-gh-canvas-inset rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gh-accent-emphasis">
+                    <option value="">선택하세요</option>
+                    {(accountsQuery.data?.accounts || []).map((a) => (
+                      <option key={a.id} value={a.id}>{a.name}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+              {!editing.id && (
+                <div>
+                  <label className="block text-sm font-medium text-gh-fg-default mb-1.5">유형</label>
+                  <select name="asset_type" defaultValue={(editing.asset_type || "stock") as string} className="w-full border border-gh-border-default bg-gh-canvas-inset rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gh-accent-emphasis">
+                    {assetTypeOptions.map((o) => (
+                      <option key={o.value} value={o.value}>{o.label}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
               <div>
-                <label className="block text-xs text-gh-fg-muted mb-1">유형</label>
-                <select name="asset_type" defaultValue={(editing.asset_type || "stock") as string} className="w-full border-gh-border-default bg-gh-canvas-default rounded-md px-3 py-1.5 focus:ring-2 focus:ring-gh-accent-emphasis">
-                  {assetTypeOptions.map((o) => (
-                    <option key={o.value} value={o.value}>{o.label}</option>
-                  ))}
-                </select>
+                <label className="block text-sm font-medium text-gh-fg-default mb-1.5">심볼</label>
+                <input name="symbol" defaultValue={editing.symbol || ""} className="w-full border border-gh-border-default bg-gh-canvas-inset rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gh-accent-emphasis" />
               </div>
-            )}
-            <div>
-              <label className="block text-xs text-gh-fg-muted mb-1">심볼</label>
-              <input name="symbol" defaultValue={editing.symbol || ""} className="w-full border-gh-border-default bg-gh-canvas-default rounded-md px-3 py-1.5 focus:ring-2 focus:ring-gh-accent-emphasis" />
+              <div>
+                <label className="block text-sm font-medium text-gh-fg-default mb-1.5">통화</label>
+                <input name="currency" defaultValue={editing.currency || "KRW"} className="w-full border border-gh-border-default bg-gh-canvas-inset rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gh-accent-emphasis" />
+              </div>
+              <div className="flex items-center gap-2 pt-6">
+                <input type="checkbox" name="is_active" defaultChecked={editing.is_active ?? true} className="rounded" />
+                <label className="text-sm text-gh-fg-default">활성</label>
+              </div>
             </div>
             <div>
-              <label className="block text-xs text-gh-fg-muted mb-1">통화</label>
-              <input name="currency" defaultValue={editing.currency || "KRW"} className="w-full border-gh-border-default bg-gh-canvas-default rounded-md px-3 py-1.5 focus:ring-2 focus:ring-gh-accent-emphasis" />
+              <label className="block text-sm font-medium text-gh-fg-default mb-1.5">asset_metadata (JSON)</label>
+              <textarea name="asset_metadata" defaultValue={editing.asset_metadata ? JSON.stringify(editing.asset_metadata, null, 2) : ""} className="w-full border border-gh-border-default bg-gh-canvas-inset rounded-md px-3 py-2 h-32 font-mono text-xs focus:outline-none focus:ring-2 focus:ring-gh-accent-emphasis" />
             </div>
-            <div className="flex items-center gap-2 pt-5">
-              <input type="checkbox" name="is_active" defaultChecked={editing.is_active ?? true} />
-              <span className="text-gh-fg-default">활성</span>
+            <div className="flex justify-end gap-2 pt-4">
+              <Button type="button" variant="default" onClick={cancelEdit}>취소</Button>
+              <Button type="submit">{editing.id ? "수정" : "생성"}</Button>
             </div>
-          </div>
-          <div>
-            <label className="block text-xs text-gh-fg-muted mb-1">asset_metadata (JSON)</label>
-            <textarea name="asset_metadata" defaultValue={editing.asset_metadata ? JSON.stringify(editing.asset_metadata, null, 2) : ""} className="w-full border-gh-border-default bg-gh-canvas-default rounded-md px-3 py-2 h-32 font-mono text-xs focus:ring-2 focus:ring-gh-accent-emphasis" />
-          </div>
-          <div className="flex gap-2">
-            <Button type="submit">{editing.id ? "수정" : "생성"}</Button>
-            <Button type="button" variant="default" onClick={cancelEdit}>취소</Button>
-          </div>
-        </form>
+          </form>
+        </Modal>
       )}
 
       {/* Table */}
