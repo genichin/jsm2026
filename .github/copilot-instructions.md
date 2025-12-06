@@ -46,7 +46,6 @@
 - 카테고리 흐름 타입: expense, income, transfer, investment, neutral. 시드 구조의 계층 유지.
 - 보안 미들웨어(HTTPSRedirect, TrustedHost, CORS)는 조건부 적용. 신규 미들웨어도 `settings.DEBUG`/허용 호스트 정책 준수.
 - 라우터 태그/설명은 `main.py`의 OpenAPI 태그 메타데이터와 정합 유지.
-- 손익 계산: Redis 구매 큐 조회 → 방식(FIFO/LIFO/AVG) 적용 → 필요한 경우 DB 모델 필드에 실현손익 기록 → 이후 Redis 업데이트.
 
 ## 새로운 도메인 추가 예시
 1. `app/models/` 모델 추가 + 마이그레이션 생성.
