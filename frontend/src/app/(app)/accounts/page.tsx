@@ -3,6 +3,7 @@ import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { DataTable } from "@/components/DataTable";
+import { Button } from "@/components/Button";
 import { ColumnDef } from "@tanstack/react-table";
 
 // Types aligned with backend schemas
@@ -205,19 +206,20 @@ export default function AccountsPage() {
   const columns: ColumnDef<Account>[] = [
     { accessorKey: "name", header: "이름" },
     { accessorKey: "account_type", header: "유형", cell: ({ getValue }) => typeOptions.find((t) => t.value === getValue())?.label ?? String(getValue()) },
-    { accessorKey: "provider", header: "기관", cell: ({ getValue }) => <span className="text-slate-600">{(getValue() as string) || "-"}</span> },
-    { accessorKey: "account_number", header: "계좌번호", cell: ({ getValue }) => <span className="text-slate-600">{(getValue() as string) || "-"}</span> },
+    { accessorKey: "provider", header: "기관", cell: ({ getValue }) => <span className="text-gh-fg-muted">{(getValue() as string) || "-"}</span> },
+    { accessorKey: "account_number", header: "계좌번호", cell: ({ getValue }) => <span className="text-gh-fg-muted">{(getValue() as string) || "-"}</span> },
     { accessorKey: "currency", header: "통화" },
     {
       accessorKey: "is_active",
       header: "활성",
       cell: ({ row }) => (
-        <button
+        <Button
+          size="sm"
+          variant={row.original.is_active ? "primary" : "default"}
           onClick={() => toggleActiveMut.mutate(row.original.id)}
-          className={`px-2 py-1 rounded text-xs ${row.original.is_active ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-600"}`}
         >
           {row.original.is_active ? "활성" : "비활성"}
-        </button>
+        </Button>
       ),
     },
     {
@@ -225,16 +227,17 @@ export default function AccountsPage() {
       header: "",
       cell: ({ row }) => (
         <div className="space-x-2">
-          <button className="px-2 py-1 text-xs rounded bg-slate-100" onClick={() => startEdit(row.original)}>편집</button>
-          <button className="px-2 py-1 text-xs rounded bg-amber-100 text-amber-800" onClick={() => setShareAccount(row.original)}>공유</button>
-          <button
-            className="px-2 py-1 text-xs rounded bg-rose-100 text-rose-700"
+          <Button size="sm" variant="default" onClick={() => startEdit(row.original)}>편집</Button>
+          <Button size="sm" variant="default" onClick={() => setShareAccount(row.original)}>공유</Button>
+          <Button
+            size="sm"
+            variant="danger"
             onClick={() => {
               if (confirm("정말 삭제하시겠습니까? 관련 거래도 삭제됩니다.")) deleteMut.mutate(row.original.id);
             }}
           >
             삭제
-          </button>
+          </Button>
         </div>
       ),
     },
@@ -243,26 +246,26 @@ export default function AccountsPage() {
   return (
     <div className="space-y-4">
       {/* Filters */}
-      <div className="flex flex-wrap gap-2 items-end">
+      <div className="flex flex-wrap gap-3 items-end pb-4">
         <div>
-          <label className="block text-xs text-slate-600 mb-1">검색</label>
-          <input value={qText} onChange={(e) => setQText(e.target.value)} className="border rounded px-2 py-1" placeholder="이름/기관/번호" />
+          <label className="block text-xs font-medium text-gh-fg-muted mb-1.5">검색</label>
+          <input value={qText} onChange={(e) => setQText(e.target.value)} className="border border-gh-border-default bg-gh-canvas-inset rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-gh-accent-emphasis" placeholder="이름/기관/번호" />
         </div>
         <div>
-          <label className="block text-xs text-slate-600 mb-1">유형</label>
-          <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value as any)} className="border rounded px-2 py-1">
+          <label className="block text-xs font-medium text-gh-fg-muted mb-1.5">유형</label>
+          <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value as any)} className="border border-gh-border-default bg-gh-canvas-inset rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-gh-accent-emphasis">
             <option value="">전체</option>
             {typeOptions.map((o) => (
               <option key={o.value} value={o.value}>{o.label}</option>
             ))}
           </select>
         </div>
-        <div className="flex items-center gap-2">
-          <label className="block text-xs text-slate-600 mb-1">활성만</label>
-          <input type="checkbox" checked={activeOnly === true} onChange={(e) => setActiveOnly(e.target.checked ? true : "")}/>
+        <div className="flex items-center gap-2 pt-6">
+          <input type="checkbox" checked={activeOnly === true} onChange={(e) => setActiveOnly(e.target.checked ? true : "")} className="rounded"/>
+          <label className="text-sm text-gh-fg-default">활성만</label>
         </div>
         <div className="flex-1" />
-        <button onClick={startCreate} className="px-3 py-2 rounded bg-emerald-600 text-white">새 계좌</button>
+        <Button variant="primary" onClick={startCreate}>새 계좌</Button>
       </div>
 
       {/* Table */}
@@ -274,57 +277,57 @@ export default function AccountsPage() {
 
       {/* Create/Edit Modal */}
       {showModal && editing && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center">
-          <div className="absolute inset-0 bg-black/30" onClick={cancelEdit} />
-          <div className="relative z-10 w-[95%] max-w-3xl rounded bg-white shadow-lg max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between border-b p-3 sticky top-0 bg-white">
-              <div className="font-semibold">{editing.id ? "계좌 수정" : "새 계좌"}</div>
-              <button className="rounded bg-slate-100 px-2 py-1" onClick={cancelEdit}>닫기</button>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/50" onClick={cancelEdit} />
+          <div className="relative z-10 w-full max-w-3xl rounded-md bg-gh-canvas-overlay border border-gh-border-default shadow-xl max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b border-gh-border-default p-4 sticky top-0 bg-gh-canvas-overlay">
+              <h2 className="text-lg font-semibold">{editing.id ? "계좌 수정" : "새 계좌"}</h2>
+              <Button size="sm" variant="invisible" onClick={cancelEdit}>닫기</Button>
             </div>
             <form onSubmit={submitForm} className="p-4 space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                 <div>
-                  <label className="block text-xs text-slate-600 mb-1">이름 *</label>
-                  <input name="name" defaultValue={editing.name || ""} className="w-full border rounded px-2 py-1" required />
+                  <label className="block text-xs font-medium text-gh-fg-muted mb-1.5">이름 *</label>
+                  <input name="name" defaultValue={editing.name || ""} className="w-full border border-gh-border-default bg-gh-canvas-inset rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-gh-accent-emphasis" required />
                 </div>
                 <div>
-                  <label className="block text-xs text-slate-600 mb-1">유형 *</label>
-                  <select name="account_type" defaultValue={(editing.account_type || "bank_account") as string} className="w-full border rounded px-2 py-1">
+                  <label className="block text-xs font-medium text-gh-fg-muted mb-1.5">유형 *</label>
+                  <select name="account_type" defaultValue={(editing.account_type || "bank_account") as string} className="w-full border border-gh-border-default bg-gh-canvas-inset rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-gh-accent-emphasis">
                     {typeOptions.map((o) => (
                       <option key={o.value} value={o.value}>{o.label}</option>
                     ))}
                   </select>
                 </div>
                 <div>
-                  <label className="block text-xs text-slate-600 mb-1">기관</label>
-                  <input name="provider" defaultValue={editing.provider || ""} className="w-full border rounded px-2 py-1" />
+                  <label className="block text-xs font-medium text-gh-fg-muted mb-1.5">기관</label>
+                  <input name="provider" defaultValue={editing.provider || ""} className="w-full border border-gh-border-default bg-gh-canvas-inset rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-gh-accent-emphasis" />
                 </div>
                 <div>
-                  <label className="block text-xs text-slate-600 mb-1">계좌번호</label>
-                  <input name="account_number" defaultValue={editing.account_number || ""} className="w-full border rounded px-2 py-1" />
+                  <label className="block text-xs font-medium text-gh-fg-muted mb-1.5">계좌번호</label>
+                  <input name="account_number" defaultValue={editing.account_number || ""} className="w-full border border-gh-border-default bg-gh-canvas-inset rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-gh-accent-emphasis" />
                 </div>
                 <div>
-                  <label className="block text-xs text-slate-600 mb-1">통화</label>
-                  <input name="currency" defaultValue={editing.currency || "KRW"} className="w-full border rounded px-2 py-1" />
+                  <label className="block text-xs font-medium text-gh-fg-muted mb-1.5">통화</label>
+                  <input name="currency" defaultValue={editing.currency || "KRW"} className="w-full border border-gh-border-default bg-gh-canvas-inset rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-gh-accent-emphasis" />
                 </div>
-                <div className="flex items-center gap-2 pt-5">
-                  <input type="checkbox" name="is_active" defaultChecked={editing.is_active ?? true} />
-                  <span className="text-sm">활성</span>
+                <div className="flex items-center gap-2 pt-7">
+                  <input type="checkbox" name="is_active" defaultChecked={editing.is_active ?? true} className="rounded" />
+                  <span className="text-sm text-gh-fg-default">활성</span>
                 </div>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs text-slate-600 mb-1">api_config (JSON)</label>
-                  <textarea name="api_config" defaultValue={editing.api_config ? JSON.stringify(editing.api_config, null, 2) : ""} className="w-full border rounded px-2 py-1 h-32 font-mono text-xs" />
+                  <label className="block text-xs font-medium text-gh-fg-muted mb-1.5">api_config (JSON)</label>
+                  <textarea name="api_config" defaultValue={editing.api_config ? JSON.stringify(editing.api_config, null, 2) : ""} className="w-full border border-gh-border-default bg-gh-canvas-inset rounded-md px-3 py-2 h-32 font-mono text-xs focus:outline-none focus:ring-2 focus:ring-gh-accent-emphasis" />
                 </div>
                 <div>
-                  <label className="block text-xs text-slate-600 mb-1">daemon_config (JSON)</label>
-                  <textarea name="daemon_config" defaultValue={editing.daemon_config ? JSON.stringify(editing.daemon_config, null, 2) : ""} className="w-full border rounded px-2 py-1 h-32 font-mono text-xs" />
+                  <label className="block text-xs font-medium text-gh-fg-muted mb-1.5">daemon_config (JSON)</label>
+                  <textarea name="daemon_config" defaultValue={editing.daemon_config ? JSON.stringify(editing.daemon_config, null, 2) : ""} className="w-full border border-gh-border-default bg-gh-canvas-inset rounded-md px-3 py-2 h-32 font-mono text-xs focus:outline-none focus:ring-2 focus:ring-gh-accent-emphasis" />
                 </div>
               </div>
-              <div className="flex gap-2 justify-end pt-2">
-                <button type="button" onClick={cancelEdit} className="px-4 py-2 rounded bg-slate-200 hover:bg-slate-300">취소</button>
-                <button type="submit" className="px-4 py-2 rounded bg-emerald-600 text-white hover:bg-emerald-700">{editing.id ? "수정" : "생성"}</button>
+              <div className="flex gap-2 justify-end pt-2 border-t border-gh-border-default">
+                <Button type="button" variant="default" onClick={cancelEdit}>취소</Button>
+                <Button type="submit" variant="primary">{editing.id ? "수정" : "생성"}</Button>
               </div>
             </form>
           </div>
@@ -333,28 +336,28 @@ export default function AccountsPage() {
 
       {/* Shares Modal */}
       {shareAccount && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center">
-          <div className="absolute inset-0 bg-black/30" onClick={() => setShareAccount(null)} />
-          <div className="relative z-10 w-[95%] max-w-2xl rounded bg-white shadow-lg">
-            <div className="flex items-center justify-between border-b p-3">
-              <div className="font-semibold">공유 설정 — {shareAccount.name}</div>
-              <button className="rounded bg-slate-100 px-2 py-1" onClick={() => setShareAccount(null)}>닫기</button>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/50" onClick={() => setShareAccount(null)} />
+          <div className="relative z-10 w-full max-w-2xl rounded-md bg-gh-canvas-overlay border border-gh-border-default shadow-xl">
+            <div className="flex items-center justify-between border-b border-gh-border-default p-4">
+              <h2 className="text-lg font-semibold">공유 설정 — {shareAccount.name}</h2>
+              <Button size="sm" variant="invisible" onClick={() => setShareAccount(null)}>닫기</Button>
             </div>
-            <div className="p-3 space-y-3">
-              <div className="flex flex-wrap items-end gap-2">
+            <div className="p-4 space-y-4">
+              <div className="flex flex-wrap items-end gap-3">
                 <div>
-                  <label className="block text-xs text-slate-600 mb-1">이메일</label>
-                  <input id="share_email" className="border rounded px-2 py-1" placeholder="user@example.com" />
+                  <label className="block text-xs font-medium text-gh-fg-muted mb-1.5">이메일</label>
+                  <input id="share_email" className="border border-gh-border-default bg-gh-canvas-inset rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-gh-accent-emphasis" placeholder="user@example.com" />
                 </div>
                 <div>
-                  <label className="block text-xs text-slate-600 mb-1">역할</label>
-                  <select id="share_role" className="border rounded px-2 py-1">
+                  <label className="block text-xs font-medium text-gh-fg-muted mb-1.5">역할</label>
+                  <select id="share_role" className="border border-gh-border-default bg-gh-canvas-inset rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-gh-accent-emphasis">
                     <option value="viewer">Viewer</option>
                     <option value="editor">Editor</option>
                   </select>
                 </div>
-                <button
-                  className="px-3 py-2 rounded bg-slate-800 text-white"
+                <Button
+                  variant="primary"
                   onClick={() => {
                     const email = (document.getElementById("share_email") as HTMLInputElement)?.value.trim();
                     const role = (document.getElementById("share_role") as HTMLSelectElement)?.value as ShareRole;
@@ -363,32 +366,32 @@ export default function AccountsPage() {
                   }}
                 >
                   추가
-                </button>
+                </Button>
               </div>
 
               {sharesQuery.isLoading ? (
-                <div>공유 정보 로딩...</div>
+                <div className="text-gh-fg-muted">공유 정보 로딩...</div>
               ) : (
-                <div className="overflow-x-auto border rounded">
-                  <table className="min-w-full divide-y divide-slate-200">
-                    <thead className="bg-slate-50">
-                      <tr>
-                        <th className="px-3 py-2 text-left text-xs font-medium uppercase tracking-wider text-slate-600">공유 ID</th>
-                        <th className="px-3 py-2 text-left text-xs font-medium uppercase tracking-wider text-slate-600">역할</th>
-                        <th className="px-3 py-2 text-left text-xs font-medium uppercase tracking-wider text-slate-600"></th>
+                <div className="overflow-x-auto border border-gh-border-default rounded-md">
+                  <table className="min-w-full">
+                    <thead className="bg-gh-canvas-subtle">
+                      <tr className="border-b border-gh-border-default">
+                        <th className="px-3 py-2 text-left text-xs font-semibold text-gh-fg-muted">공유 ID</th>
+                        <th className="px-3 py-2 text-left text-xs font-semibold text-gh-fg-muted">역할</th>
+                        <th className="px-3 py-2 text-left text-xs font-semibold text-gh-fg-muted"></th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-slate-100 bg-white">
+                    <tbody>
                       {(sharesQuery.data?.shares || []).map((s) => (
-                        <tr key={s.id}>
-                          <td className="px-3 py-2 text-sm text-slate-800">{s.id}</td>
-                          <td className="px-3 py-2 text-sm">
+                        <tr key={s.id} className="border-b border-gh-border-default">
+                          <td className="px-3 py-3 text-sm">{s.id}</td>
+                          <td className="px-3 py-3 text-sm">
                             {s.role === "owner" ? (
-                              <span className="text-slate-700">Owner</span>
+                              <span className="text-gh-fg-default font-medium">Owner</span>
                             ) : (
                               <select
                                 defaultValue={s.role}
-                                className="border rounded px-2 py-1 text-sm"
+                                className="border border-gh-border-default bg-gh-canvas-inset rounded-md px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-gh-accent-emphasis"
                                 onChange={(e) => updateShareMut.mutate({ share_id: s.id, role: e.target.value as ShareRole })}
                               >
                                 <option value="viewer">Viewer</option>
@@ -396,14 +399,15 @@ export default function AccountsPage() {
                               </select>
                             )}
                           </td>
-                          <td className="px-3 py-2 text-sm">
+                          <td className="px-3 py-3 text-sm">
                             {s.role === "owner" ? null : (
-                              <button
-                                className="px-2 py-1 text-xs rounded bg-rose-100 text-rose-700"
+                              <Button
+                                size="sm"
+                                variant="danger"
                                 onClick={() => deleteShareMut.mutate(s.id)}
                               >
                                 삭제
-                              </button>
+                              </Button>
                             )}
                           </td>
                         </tr>
