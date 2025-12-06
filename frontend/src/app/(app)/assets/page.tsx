@@ -260,8 +260,13 @@ export default function AssetsPage() {
       {/* Filters */}
       <div className="flex flex-wrap gap-2 items-end">
         <div>
-          <label className="block text-xs text-gh-fg-muted mb-1">검색</label>
-          <input value={qText} onChange={(e) => setQText(e.target.value)} className="border-gh-border-default bg-gh-canvas-inset rounded-md px-3 py-1.5 focus:ring-2 focus:ring-gh-accent-emphasis" placeholder="이름/심볼/계좌" />
+          <label className="block text-xs font-medium text-gh-fg-muted mb-1.5">검색</label>
+          <input
+            value={qText}
+            onChange={(e) => setQText(e.target.value)}
+            className="border border-gh-border-default bg-gh-canvas-inset rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-gh-accent-emphasis"
+            placeholder="이름/심볼/계좌"
+          />
         </div>
         <div>
           <label className="block text-xs text-gh-fg-muted mb-1">계좌</label>
