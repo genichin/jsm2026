@@ -74,9 +74,11 @@ export default function CategoriesPage() {
   const [testDescription, setTestDescription] = useState("");
 
   const listQuery = useQuery<ListResponse>({
-    queryKey: ["categories", { page, size, qText, flow, activeOnly, order }],
+    queryKey: ["categories", { qText, flow, activeOnly, order }],
     queryFn: async () => {
-      const params: any = { page, size, order };
+      // Fetch all categories without pagination for proper hierarchy display
+      // Backend limit is 200, which should be enough for most category lists
+      const params: any = { page: 1, size: 200, order };
       if (qText) params.q = qText;
       if (flow) params.flow_type = flow;
       if (activeOnly !== null) params.is_active = activeOnly;
@@ -403,12 +405,73 @@ export default function CategoriesPage() {
   }
 
   const items: Category[] = listQuery.data?.items ?? [];
+
+  // Build a map of all categories from tree to compute accurate depths
+  const allCategoriesMap = useMemo(() => {
+    const map: Record<string, { id: string; name: string; parent_id: string | null; depth: number }> = {};
+    const visit = (n: any, depth = 0, parent: string | null = null) => {
+      map[n.id] = { id: n.id, name: n.name, parent_id: parent, depth };
+      (n.children || []).forEach((c: any) => visit(c, depth + 1, n.id));
+    };
+    (treeQuery.data || []).forEach((r) => visit(r, 0, null));
+    return map;
+  }, [treeQuery.data]);
+
+  // Sort items to maintain hierarchical order: roots first, then children grouped under parents
+  const sortedItems = useMemo(() => {
+    const result: Category[] = [];
+    const itemMap = new Map(items.map(item => [item.id, item]));
+    const added = new Set<string>();
+
+    const addWithChildren = (id: string) => {
+      if (added.has(id)) return;
+      const item = itemMap.get(id);
+      if (!item) return;
+      
+      result.push(item);
+      added.add(id);
+      
+      // Add children of this item
+      items
+        .filter(c => c.parent_id === id)
+        .sort((a, b) => a.name.localeCompare(b.name))
+        .forEach(child => addWithChildren(child.id));
+    };
+
+    // First add all root items
+    items
+      .filter(item => !item.parent_id)
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .forEach(root => addWithChildren(root.id));
+    
+    // Then add any orphaned items (parent not in current list)
+    items.forEach(item => {
+      if (!added.has(item.id)) {
+        result.push(item);
+        added.add(item.id);
+      }
+    });
+
+    return result;
+  }, [items]);
+
+  // Client-side pagination of sorted items
+  const paginatedItems = useMemo(() => {
+    const startIdx = (page - 1) * size;
+    const endIdx = startIdx + size;
+    return sortedItems.slice(startIdx, endIdx);
+  }, [sortedItems, page, size]);
+
+  const totalPages = Math.ceil(sortedItems.length / size);
+
   const columns: ColumnDef<Category>[] = [
     {
       accessorKey: "name",
       header: "이름",
       cell: ({ row }) => {
-        const d = depthById[row.original.id] ?? 0;
+        // Use depth from the full tree map for accurate hierarchy display
+        const treeInfo = allCategoriesMap[row.original.id];
+        const d = treeInfo?.depth ?? (row.original.parent_id ? 1 : 0);
         return (
           <div className="flex items-center" style={{ paddingLeft: d * 16 }}>
             {d > 0 && <span className="mr-1 text-gh-fg-muted">└─</span>}
@@ -614,14 +677,14 @@ export default function CategoriesPage() {
       {listQuery.isLoading ? (
         <div>로딩 중...</div>
       ) : (
-        <DataTable columns={columns} data={items} />
+        <DataTable columns={columns} data={paginatedItems} />
       )}
 
       {/* Pagination */}
       <div className="flex items-center gap-3">
         <Button disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))} variant="default" size="sm">이전</Button>
-        <span className="text-sm text-gh-fg-muted">{listQuery.data?.page ?? page} / {listQuery.data?.pages ?? 1} (총 {listQuery.data?.total ?? 0})</span>
-        <Button disabled={(listQuery.data?.page ?? 1) >= (listQuery.data?.pages ?? 1)} onClick={() => setPage((p) => p + 1)} variant="default" size="sm">다음</Button>
+        <span className="text-sm text-gh-fg-muted">{page} / {totalPages} (총 {sortedItems.length}개)</span>
+        <Button disabled={page >= totalPages} onClick={() => setPage((p) => p + 1)} variant="default" size="sm">다음</Button>
       </div>
         </>
       )}
