@@ -5,6 +5,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { DataTable } from "@/components/DataTable";
 import { ColumnDef } from "@tanstack/react-table";
+import { Button } from "@/components/Button";
 
 // ==================== Types ====================
 
@@ -242,7 +243,7 @@ export default function TagsPage() {
               cell: ({ row }: { row: any }) => {
                 const tag = row.original as TagWithStats;
                 return (
-                  <div className="text-sm text-gray-600">
+                  <div className="text-sm text-gh-fg-muted">
                     자산 {tag.asset_count || 0} / 계좌 {tag.account_count || 0}{" "}
                     / 거래 {tag.transaction_count || 0}
                   </div>
@@ -263,18 +264,20 @@ export default function TagsPage() {
           const tag = row.original;
           return (
             <div className="flex gap-2">
-              <button
-                className="px-3 py-1 text-sm border rounded hover:bg-gray-50"
+              <Button
+                variant="default"
+                size="sm"
                 onClick={() => startEdit(tag)}
               >
                 수정
-              </button>
-              <button
-                className="px-3 py-1 text-sm bg-red-600 text-white rounded hover:bg-red-700"
+              </Button>
+              <Button
+                variant="danger"
+                size="sm"
                 onClick={() => setDeleteTagId(tag.id)}
               >
                 삭제
-              </button>
+              </Button>
             </div>
           );
         },
@@ -300,22 +303,21 @@ export default function TagsPage() {
             />
             <span>사용 통계 표시</span>
           </label>
-          <button
+          <Button
             onClick={() => {
               setIsCreating(true);
               setEditingTagId(null);
               resetForm();
             }}
-            className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
           >
             새 태그 추가
-          </button>
+          </Button>
         </div>
       </div>
 
       {/* Create/Edit Form */}
       {(isCreating || editingTagId) && (
-        <div className="mb-6 p-4 border rounded-lg bg-gray-50">
+        <div className="mb-6 p-4 border border-gh-border-default rounded-lg bg-gh-canvas-inset">
           <h2 className="text-lg font-semibold mb-4">
             {isCreating ? "새 태그 추가" : "태그 수정"}
           </h2>
@@ -332,7 +334,7 @@ export default function TagsPage() {
                   setFormData({ ...formData, name: e.target.value })
                 }
                 placeholder="예: 중요, 월급, 투자..."
-                className="w-full px-3 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-1.5 border-gh-border-default bg-gh-canvas-inset rounded-md focus:ring-2 focus:ring-gh-accent-emphasis"
               />
             </div>
             <div>
@@ -352,7 +354,7 @@ export default function TagsPage() {
                   }
                   placeholder="#FF5733"
                   pattern="^#[0-9A-Fa-f]{6}$"
-                  className="flex-1 px-3 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="flex-1 px-3 py-1.5 border-gh-border-default bg-gh-canvas-inset rounded-md focus:ring-2 focus:ring-gh-accent-emphasis"
                 />
                 <input
                   type="color"
@@ -360,7 +362,7 @@ export default function TagsPage() {
                   onChange={(e) =>
                     setFormData({ ...formData, color: e.target.value })
                   }
-                  className="w-20 h-10 border rounded cursor-pointer"
+                  className="w-20 h-10 border-gh-border-default rounded cursor-pointer"
                 />
               </div>
             </div>
@@ -379,7 +381,7 @@ export default function TagsPage() {
                 }
                 placeholder="태그에 대한 설명을 입력하세요."
                 rows={2}
-                className="w-full px-3 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-1.5 border-gh-border-default bg-gh-canvas-inset rounded-md focus:ring-2 focus:ring-gh-accent-emphasis"
               />
             </div>
             <div className="md:col-span-2">
@@ -404,19 +406,18 @@ export default function TagsPage() {
             </div>
           </div>
           <div className="flex gap-2 mt-4">
-            <button
+            <Button
               onClick={isCreating ? handleCreate : handleUpdate}
               disabled={createMut.isPending || updateMut.isPending}
-              className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
             >
               {isCreating ? "추가" : "수정"}
-            </button>
-            <button
+            </Button>
+            <Button
+              variant="default"
               onClick={cancelEdit}
-              className="px-4 py-2 border rounded hover:bg-gray-100"
             >
               취소
-            </button>
+            </Button>
           </div>
         </div>
       )}
@@ -430,7 +431,7 @@ export default function TagsPage() {
       )}
       {tagsQuery.isSuccess && (
         <div>
-          <p className="text-sm text-gray-600 mb-2">
+          <p className="text-sm text-gh-fg-muted mb-2">
             총 {tagsQuery.data.total}개의 태그
           </p>
           <DataTable columns={columns} data={tags} />
@@ -442,23 +443,23 @@ export default function TagsPage() {
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
             <h3 className="text-lg font-semibold mb-2">태그 삭제</h3>
-            <p className="text-gray-600 mb-4">
+            <p className="text-gh-fg-muted mb-4">
               정말로 이 태그를 삭제하시겠습니까? 해당 태그가 연결된 모든
               엔티티에서 태그가 제거됩니다.
             </p>
             <div className="flex gap-2 justify-end">
-              <button
+              <Button
+                variant="default"
                 onClick={() => setDeleteTagId(null)}
-                className="px-4 py-2 border rounded hover:bg-gray-100"
               >
                 취소
-              </button>
-              <button
+              </Button>
+              <Button
+                variant="danger"
                 onClick={() => deleteTagId && deleteMut.mutate(deleteTagId)}
-                className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700"
               >
                 삭제
-              </button>
+              </Button>
             </div>
           </div>
         </div>

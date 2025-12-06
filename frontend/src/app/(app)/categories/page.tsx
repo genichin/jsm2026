@@ -7,6 +7,7 @@ import { ColumnDef } from "@tanstack/react-table";
 import { z } from "zod";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
+import { Button } from "@/components/Button";
 
 type Category = { id: string; name: string; flow_type: FlowType; is_active: boolean; parent_id?: string | null };
 type ListResponse = { items: Category[]; total: number; page: number; size: number; pages: number };
@@ -410,7 +411,7 @@ export default function CategoriesPage() {
         const d = depthById[row.original.id] ?? 0;
         return (
           <div className="flex items-center" style={{ paddingLeft: d * 16 }}>
-            {d > 0 && <span className="mr-1 text-slate-400">└─</span>}
+            {d > 0 && <span className="mr-1 text-gh-fg-muted">└─</span>}
             <span>{row.original.name}</span>
           </div>
         );
@@ -420,17 +421,21 @@ export default function CategoriesPage() {
     {
       id: "parent",
       header: "상위",
-      cell: ({ row }) => <span className="text-slate-500 text-sm">{row.original.parent_id ? (nameById[row.original.parent_id] || "-") : "(루트)"}</span>,
+      cell: ({ row }) => <span className="text-gh-fg-muted text-sm">{row.original.parent_id ? (nameById[row.original.parent_id] || "-") : "(루트)"}</span>,
     },
     { accessorKey: "is_active", header: "활성", cell: ({ row }) => (
-      <button onClick={() => toggleActive(row.original)} className={`px-2 py-1 rounded text-xs ${row.original.is_active ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-600"}`}>
+      <Button
+        onClick={() => toggleActive(row.original)}
+        variant={row.original.is_active ? "primary" : "default"}
+        size="sm"
+      >
         {row.original.is_active ? "활성" : "비활성"}
-      </button>
+      </Button>
     ) },
     { id: "actions", header: "", cell: ({ row }) => (
       <div className="space-x-2">
-        <button className="px-2 py-1 text-xs rounded bg-slate-100" onClick={() => startEdit(row.original)}>편집</button>
-        <button className="px-2 py-1 text-xs rounded bg-rose-100 text-rose-700" onClick={() => { if (confirm("삭제하시겠습니까?")) deleteMut.mutate(row.original.id); }}>삭제</button>
+        <Button size="sm" variant="default" onClick={() => startEdit(row.original)}>편집</Button>
+        <Button size="sm" variant="danger" onClick={() => { if (confirm("삭제하시겠습니까?")) deleteMut.mutate(row.original.id); }}>삭제</Button>
       </div>
     ) },
   ];
@@ -447,13 +452,13 @@ export default function CategoriesPage() {
     {
       accessorKey: "category_id",
       header: "카테고리",
-      cell: ({ row }) => <span className="text-slate-700">{nameById[row.original.category_id] || "-"}</span>,
+      cell: ({ row }) => <span className="text-gh-fg-default">{nameById[row.original.category_id] || "-"}</span>,
     },
     {
       accessorKey: "is_active",
       header: "활성",
       cell: ({ row }) => (
-        <span className={`px-2 py-1 rounded text-xs ${row.original.is_active ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-600"}`}>
+        <span className={`px-2 py-1 rounded text-xs ${row.original.is_active ? "bg-gh-success-subtle text-gh-success-fg" : "bg-gh-neutral-subtle text-gh-fg-muted"}`}>
           {row.original.is_active ? "활성" : "비활성"}
         </span>
       ),
@@ -463,17 +468,18 @@ export default function CategoriesPage() {
       header: "",
       cell: ({ row }) => (
         <div className="space-x-2">
-          <button className="px-2 py-1 text-xs rounded bg-slate-100" onClick={() => startEditRule(row.original)}>
+          <Button size="sm" variant="default" onClick={() => startEditRule(row.original)}>
             편집
-          </button>
-          <button
-            className="px-2 py-1 text-xs rounded bg-rose-100 text-rose-700"
+          </Button>
+          <Button
+            size="sm"
+            variant="danger"
             onClick={() => {
               if (confirm("이 규칙을 삭제하시겠습니까?")) deleteRuleMut.mutate(row.original.id);
             }}
           >
             삭제
-          </button>
+          </Button>
         </div>
       ),
     },
@@ -485,9 +491,9 @@ export default function CategoriesPage() {
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">카테고리 관리</h1>
         <div className="flex gap-2">
-          <button onClick={onExportJSON} className="px-3 py-2 rounded bg-slate-200 text-sm">
+          <Button onClick={onExportJSON} variant="default">
             Export JSON
-          </button>
+          </Button>
           <input
             ref={fileInputRef}
             type="file"
@@ -498,24 +504,24 @@ export default function CategoriesPage() {
               if (f) onImportJSON(f);
             }}
           />
-          <button
+          <Button
             onClick={() => fileInputRef.current?.click()}
             disabled={importing}
-            className="px-3 py-2 rounded bg-slate-200 text-sm disabled:opacity-50"
+            variant="default"
           >
             {importing ? "Import 중..." : "Import JSON"}
-          </button>
+          </Button>
         </div>
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-2 border-b">
+      <div className="flex gap-2 border-b border-gh-border-default">
         <button
           onClick={() => setActiveTab("categories")}
           className={`px-4 py-2 font-medium ${
             activeTab === "categories"
-              ? "border-b-2 border-emerald-600 text-emerald-600"
-              : "text-slate-600 hover:text-slate-900"
+              ? "border-b-2 border-gh-accent-emphasis text-gh-accent-fg"
+              : "text-gh-fg-muted hover:text-gh-fg-default"
           }`}
         >
           카테고리
@@ -524,8 +530,8 @@ export default function CategoriesPage() {
           onClick={() => setActiveTab("rules")}
           className={`px-4 py-2 font-medium ${
             activeTab === "rules"
-              ? "border-b-2 border-emerald-600 text-emerald-600"
-              : "text-slate-600 hover:text-slate-900"
+              ? "border-b-2 border-gh-accent-emphasis text-gh-accent-fg"
+              : "text-gh-fg-muted hover:text-gh-fg-default"
           }`}
         >
           자동 규칙
@@ -538,56 +544,56 @@ export default function CategoriesPage() {
           {/* Filters */}
           <div className="flex flex-wrap gap-2 items-end">
         <div>
-          <label className="block text-xs text-slate-600 mb-1">검색</label>
-          <input value={qText} onChange={(e) => setQText(e.target.value)} className="border rounded px-2 py-1" placeholder="이름 검색" />
+          <label className="block text-xs text-gh-fg-muted mb-1">검색</label>
+          <input value={qText} onChange={(e) => setQText(e.target.value)} className="border-gh-border-default bg-gh-canvas-inset rounded-md px-3 py-1.5 focus:ring-2 focus:ring-gh-accent-emphasis" placeholder="이름 검색" />
         </div>
         <div>
-          <label className="block text-xs text-slate-600 mb-1">흐름</label>
-          <select value={flow} onChange={(e) => { setFlow(e.target.value as any); setPage(1); }} className="border rounded px-2 py-1">
+          <label className="block text-xs text-gh-fg-muted mb-1">흐름</label>
+          <select value={flow} onChange={(e) => { setFlow(e.target.value as any); setPage(1); }} className="border-gh-border-default bg-gh-canvas-inset rounded-md px-3 py-1.5 focus:ring-2 focus:ring-gh-accent-emphasis">
             <option value="">전체</option>
             {flowOptions.map((o) => (<option key={o.value} value={o.value}>{o.label}</option>))}
           </select>
         </div>
         <div>
-          <label className="block text-xs text-slate-600 mb-1">활성만</label>
+          <label className="block text-xs text-gh-fg-muted mb-1">활성만</label>
           <input type="checkbox" checked={activeOnly} onChange={(e) => { setActiveOnly(e.target.checked); setPage(1); }} />
         </div>
         <div>
-          <label className="block text-xs text-slate-600 mb-1">정렬</label>
-          <select value={order} onChange={(e) => setOrder(e.target.value as any)} className="border rounded px-2 py-1">
+          <label className="block text-xs text-gh-fg-muted mb-1">정렬</label>
+          <select value={order} onChange={(e) => setOrder(e.target.value as any)} className="border-gh-border-default bg-gh-canvas-inset rounded-md px-3 py-1.5 focus:ring-2 focus:ring-gh-accent-emphasis">
             <option value="asc">이름 오름차순</option>
             <option value="desc">이름 내림차순</option>
           </select>
         </div>
         <div>
-          <label className="block text-xs text-slate-600 mb-1">페이지 크기</label>
-          <select value={size} onChange={(e) => { setSize(Number(e.target.value)); setPage(1); }} className="border rounded px-2 py-1">
+          <label className="block text-xs text-gh-fg-muted mb-1">페이지 크기</label>
+          <select value={size} onChange={(e) => { setSize(Number(e.target.value)); setPage(1); }} className="border-gh-border-default bg-gh-canvas-inset rounded-md px-3 py-1.5 focus:ring-2 focus:ring-gh-accent-emphasis">
             {[10,20,50,100].map((n) => (<option key={n} value={n}>{n}</option>))}
           </select>
         </div>
-        <button onClick={() => listQuery.refetch()} className="px-3 py-2 rounded bg-slate-800 text-white">검색</button>
+        <Button onClick={() => listQuery.refetch()}>검색</Button>
         <div className="flex-1" />
-        <button onClick={startCreate} className="px-3 py-2 rounded bg-emerald-600 text-white">새 카테고리</button>
+        <Button onClick={startCreate} variant="primary">새 카테고리</Button>
       </div>
 
       {/* Inline Form */}
       {editing && (
-        <form onSubmit={handleSubmit(onSubmit)} className="border rounded p-3 space-y-2 bg-slate-50">
+        <form onSubmit={handleSubmit(onSubmit)} className="border border-gh-border-default rounded p-3 space-y-2 bg-gh-canvas-inset">
           <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
             <div>
-              <label className="block text-xs text-slate-600 mb-1">이름</label>
-              <input {...register("name")} className="w-full border rounded px-2 py-1" />
-              {errors.name && <p className="text-xs text-rose-600 mt-1">{errors.name.message}</p>}
+              <label className="block text-xs text-gh-fg-muted mb-1">이름</label>
+              <input {...register("name")} className="w-full border-gh-border-default bg-gh-canvas-default rounded-md px-3 py-1.5 focus:ring-2 focus:ring-gh-accent-emphasis" />
+              {errors.name && <p className="text-xs text-gh-danger-fg mt-1">{errors.name.message}</p>}
             </div>
             <div>
-              <label className="block text-xs text-slate-600 mb-1">흐름</label>
-              <select {...register("flow_type")} className="w-full border rounded px-2 py-1">
+              <label className="block text-xs text-gh-fg-muted mb-1">흐름</label>
+              <select {...register("flow_type")} className="w-full border-gh-border-default bg-gh-canvas-default rounded-md px-3 py-1.5 focus:ring-2 focus:ring-gh-accent-emphasis">
                 {flowOptions.map((o) => (<option key={o.value} value={o.value}>{o.label}</option>))}
               </select>
             </div>
             <div>
-              <label className="block text-xs text-slate-600 mb-1">상위 카테고리</label>
-              <select {...register("parent_id")} className="w-full border rounded px-2 py-1">
+              <label className="block text-xs text-gh-fg-muted mb-1">상위 카테고리</label>
+              <select {...register("parent_id")} className="w-full border-gh-border-default bg-gh-canvas-default rounded-md px-3 py-1.5 focus:ring-2 focus:ring-gh-accent-emphasis">
                 <option value="">(루트)</option>
                 {parentOptionsFlat.map((p) => (<option key={p.id} value={p.id}>{p.name}</option>))}
               </select>
@@ -598,8 +604,8 @@ export default function CategoriesPage() {
             </div>
           </div>
           <div className="flex gap-2">
-            <button type="submit" disabled={isSubmitting || createMut.isPending || updateMut.isPending} className="px-3 py-2 rounded bg-slate-800 text-white">{editing.id ? "수정" : "생성"}</button>
-            <button type="button" onClick={cancelEdit} className="px-3 py-2 rounded bg-slate-200">취소</button>
+            <Button type="submit" disabled={isSubmitting || createMut.isPending || updateMut.isPending}>{editing.id ? "수정" : "생성"}</Button>
+            <Button type="button" onClick={cancelEdit} variant="default">취소</Button>
           </div>
         </form>
       )}
@@ -613,9 +619,9 @@ export default function CategoriesPage() {
 
       {/* Pagination */}
       <div className="flex items-center gap-3">
-        <button disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))} className="px-3 py-1 rounded bg-slate-100">이전</button>
-        <span className="text-sm text-slate-600">{listQuery.data?.page ?? page} / {listQuery.data?.pages ?? 1} (총 {listQuery.data?.total ?? 0})</span>
-        <button disabled={(listQuery.data?.page ?? 1) >= (listQuery.data?.pages ?? 1)} onClick={() => setPage((p) => p + 1)} className="px-3 py-1 rounded bg-slate-100">다음</button>
+        <Button disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))} variant="default" size="sm">이전</Button>
+        <span className="text-sm text-gh-fg-muted">{listQuery.data?.page ?? page} / {listQuery.data?.pages ?? 1} (총 {listQuery.data?.total ?? 0})</span>
+        <Button disabled={(listQuery.data?.page ?? 1) >= (listQuery.data?.pages ?? 1)} onClick={() => setPage((p) => p + 1)} variant="default" size="sm">다음</Button>
       </div>
         </>
       )}
@@ -625,37 +631,37 @@ export default function CategoriesPage() {
         <>
           {/* Rule Form */}
           {(editingRule || showRuleForm) && (
-            <form onSubmit={handleRuleSubmit(onRuleSubmit)} className="p-4 border rounded space-y-3 bg-slate-50">
+            <form onSubmit={handleRuleSubmit(onRuleSubmit)} className="p-4 border border-gh-border-default rounded space-y-3 bg-gh-canvas-inset">
               <h3 className="font-semibold">{editingRule ? "규칙 수정" : "규칙 추가"}</h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-sm font-medium mb-1">카테고리</label>
-                  <select {...registerRule("category_id")} className="w-full px-3 py-2 border rounded">
+                  <select {...registerRule("category_id")} className="w-full px-3 py-2 border-gh-border-default bg-gh-canvas-default rounded-md focus:ring-2 focus:ring-gh-accent-emphasis">
                     <option value="">선택</option>
                     {parentOptionsFlat.map((c) => (
                       <option key={c.id} value={c.id}>{c.name}</option>
                     ))}
                   </select>
-                  {ruleFormErrors.category_id && <span className="text-xs text-rose-600">{ruleFormErrors.category_id.message}</span>}
+                  {ruleFormErrors.category_id && <span className="text-xs text-gh-danger-fg">{ruleFormErrors.category_id.message}</span>}
                 </div>
                 <div>
                   <label className="block text-sm font-medium mb-1">패턴 타입</label>
-                  <select {...registerRule("pattern_type")} className="w-full px-3 py-2 border rounded">
+                  <select {...registerRule("pattern_type")} className="w-full px-3 py-2 border-gh-border-default bg-gh-canvas-default rounded-md focus:ring-2 focus:ring-gh-accent-emphasis">
                     {patternTypeOptions.map((opt) => (
                       <option key={opt.value} value={opt.value}>{opt.label}</option>
                     ))}
                   </select>
-                  {ruleFormErrors.pattern_type && <span className="text-xs text-rose-600">{ruleFormErrors.pattern_type.message}</span>}
+                  {ruleFormErrors.pattern_type && <span className="text-xs text-gh-danger-fg">{ruleFormErrors.pattern_type.message}</span>}
                 </div>
                 <div>
                   <label className="block text-sm font-medium mb-1">패턴 텍스트</label>
-                  <input {...registerRule("pattern_text")} className="w-full px-3 py-2 border rounded" placeholder="예: 스타벅스" />
-                  {ruleFormErrors.pattern_text && <span className="text-xs text-rose-600">{ruleFormErrors.pattern_text.message}</span>}
+                  <input {...registerRule("pattern_text")} className="w-full px-3 py-2 border-gh-border-default bg-gh-canvas-default rounded-md focus:ring-2 focus:ring-gh-accent-emphasis" placeholder="예: 스타벅스" />
+                  {ruleFormErrors.pattern_text && <span className="text-xs text-gh-danger-fg">{ruleFormErrors.pattern_text.message}</span>}
                 </div>
                 <div>
                   <label className="block text-sm font-medium mb-1">우선순위 (0-100000)</label>
-                  <input type="number" {...registerRule("priority", { valueAsNumber: true })} className="w-full px-3 py-2 border rounded" />
-                  {ruleFormErrors.priority && <span className="text-xs text-rose-600">{ruleFormErrors.priority.message}</span>}
+                  <input type="number" {...registerRule("priority", { valueAsNumber: true })} className="w-full px-3 py-2 border-gh-border-default bg-gh-canvas-default rounded-md focus:ring-2 focus:ring-gh-accent-emphasis" />
+                  {ruleFormErrors.priority && <span className="text-xs text-gh-danger-fg">{ruleFormErrors.priority.message}</span>}
                 </div>
                 <div className="flex items-center gap-2">
                   <input type="checkbox" {...registerRule("is_active")} />
@@ -663,19 +669,19 @@ export default function CategoriesPage() {
                 </div>
               </div>
               <div className="flex gap-2">
-                <button type="submit" disabled={createRuleMut.isPending || updateRuleMut.isPending} className="px-3 py-2 rounded bg-slate-800 text-white">
+                <Button type="submit" disabled={createRuleMut.isPending || updateRuleMut.isPending}>
                   {editingRule ? "수정" : "생성"}
-                </button>
-                <button type="button" onClick={cancelRuleEdit} className="px-3 py-2 rounded bg-slate-200">취소</button>
+                </Button>
+                <Button type="button" onClick={cancelRuleEdit} variant="default">취소</Button>
               </div>
             </form>
           )}
 
           {/* Add Rule Button */}
           {!editingRule && !showRuleForm && (
-            <button onClick={() => setShowRuleForm(true)} className="px-4 py-2 rounded bg-emerald-600 text-white">
+            <Button onClick={() => setShowRuleForm(true)} variant="primary">
               + 규칙 추가
-            </button>
+            </Button>
           )}
 
           {/* Rules Table */}
@@ -686,7 +692,7 @@ export default function CategoriesPage() {
           )}
 
           {/* Test Simulation */}
-          <div className="p-4 border rounded space-y-3 bg-blue-50">
+          <div className="p-4 border border-gh-border-default rounded space-y-3 bg-gh-accent-subtle">
             <h3 className="font-semibold">테스트 시뮬레이션</h3>
             <div className="flex gap-2">
               <input
@@ -694,26 +700,26 @@ export default function CategoriesPage() {
                 value={testDescription}
                 onChange={(e) => setTestDescription(e.target.value)}
                 placeholder="거래 설명을 입력하세요 (예: 스타벅스 강남점)"
-                className="flex-1 px-3 py-2 border rounded"
+                className="flex-1 px-3 py-2 border-gh-border-default bg-gh-canvas-default rounded-md focus:ring-2 focus:ring-gh-accent-emphasis"
               />
-              <button
+              <Button
                 onClick={() => testRuleMut.mutate({ description: testDescription })}
                 disabled={testRuleMut.isPending || !testDescription.trim()}
-                className="px-4 py-2 rounded bg-blue-600 text-white"
+                variant="primary"
               >
                 테스트
-              </button>
+              </Button>
             </div>
             {testRuleMut.data && (
-              <div className="p-3 bg-white rounded">
+              <div className="p-3 bg-gh-canvas-default rounded">
                 {testRuleMut.data.matched ? (
                   <div className="text-sm">
-                    <span className="font-medium text-emerald-600">✓ 매칭됨</span>
+                    <span className="font-medium text-gh-success-fg">✓ 매칭됨</span>
                     <div className="mt-1">카테고리: <span className="font-mono">{nameById[testRuleMut.data.category_id!] || testRuleMut.data.category_id}</span></div>
-                    <div className="text-xs text-slate-600 mt-1">규칙 ID: {testRuleMut.data.rule_id}</div>
+                    <div className="text-xs text-gh-fg-muted mt-1">규칙 ID: {testRuleMut.data.rule_id}</div>
                   </div>
                 ) : (
-                  <span className="text-sm text-slate-600">매칭되는 규칙이 없습니다.</span>
+                  <span className="text-sm text-gh-fg-muted">매칭되는 규칙이 없습니다.</span>
                 )}
               </div>
             )}

@@ -6,6 +6,7 @@ import { ColumnDef } from "@tanstack/react-table";
 import { useEffect } from "react";
 import { getToken } from "@/lib/auth";
 import { useRouter } from "next/navigation";
+import { Button } from "@/components/Button";
 
 type Reminder = { id: string; title: string; reminder_type: string; remind_at: string; is_active: boolean };
 
