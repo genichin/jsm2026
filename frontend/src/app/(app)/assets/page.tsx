@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { DataTable } from "@/components/DataTable";
+import { Button } from "@/components/Button";
 import { ColumnDef } from "@tanstack/react-table";
 import { useRouter } from "next/navigation";
 
@@ -200,7 +201,7 @@ export default function AssetsPage() {
       cell: ({ row }) => (
         <button
           onClick={() => router.push(`/assets/${row.original.id}`)}
-          className="text-blue-600 hover:underline text-left"
+          className="text-gh-accent-fg hover:underline text-left font-medium"
         >
           {row.original.name}
         </button>
@@ -211,7 +212,7 @@ export default function AssetsPage() {
       header: "유형",
       cell: ({ getValue }) => assetTypeOptions.find((t) => t.value === getValue())?.label ?? String(getValue()),
     },
-    { accessorKey: "symbol", header: "심볼", cell: ({ getValue }) => <span className="text-slate-600">{(getValue() as string) || "-"}</span> },
+    { accessorKey: "symbol", header: "심볼", cell: ({ getValue }) => <span className="text-gh-fg-muted">{(getValue() as string) || "-"}</span> },
     { accessorKey: "currency", header: "통화" },
     { accessorKey: "balance", header: "수량", cell: ({ getValue }) => <span className="font-mono">{(getValue() as number ?? 0).toLocaleString()}</span> },
     { accessorKey: "price", header: "가격", cell: ({ getValue }) => <span className="font-mono">{(getValue() as number ?? 0).toLocaleString()}</span> },
@@ -224,12 +225,13 @@ export default function AssetsPage() {
       accessorKey: "is_active",
       header: "활성",
       cell: ({ row }) => (
-        <button
+        <Button
+          size="sm"
+          variant={row.original.is_active ? "primary" : "default"}
           onClick={() => updateMut.mutate({ id: row.original.id, payload: { is_active: !row.original.is_active } })}
-          className={`px-2 py-1 rounded text-xs ${row.original.is_active ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-600"}`}
         >
           {row.original.is_active ? "활성" : "비활성"}
-        </button>
+        </Button>
       ),
     },
     {
@@ -237,16 +239,17 @@ export default function AssetsPage() {
       header: "",
       cell: ({ row }) => (
         <div className="space-x-2">
-          <button className="px-2 py-1 text-xs rounded bg-slate-100" onClick={() => startEdit(row.original)}>편집</button>
-          <button className="px-2 py-1 text-xs rounded bg-indigo-100 text-indigo-800" onClick={() => recalcMut.mutate(row.original.id)}>잔고재계산</button>
-          <button
-            className="px-2 py-1 text-xs rounded bg-rose-100 text-rose-700"
+          <Button size="sm" variant="default" onClick={() => startEdit(row.original)}>편집</Button>
+          <Button size="sm" variant="default" onClick={() => recalcMut.mutate(row.original.id)}>잔고재계산</Button>
+          <Button
+            size="sm"
+            variant="danger"
             onClick={() => {
               if (confirm("정말 삭제하시겠습니까? 거래 내역이 있는 자산은 삭제할 수 없습니다.")) deleteMut.mutate(row.original.id);
             }}
           >
             삭제
-          </button>
+          </Button>
         </div>
       ),
     },
@@ -261,8 +264,8 @@ export default function AssetsPage() {
           <input value={qText} onChange={(e) => setQText(e.target.value)} className="border rounded px-2 py-1" placeholder="이름/심볼/계좌" />
         </div>
         <div>
-          <label className="block text-xs text-slate-600 mb-1">계좌</label>
-          <select value={accountFilter} onChange={(e) => { setAccountFilter(e.target.value); setPage(1); }} className="border rounded px-2 py-1 min-w-40">
+          <label className="block text-xs text-gh-fg-muted mb-1">계좌</label>
+          <select value={accountFilter} onChange={(e) => { setAccountFilter(e.target.value); setPage(1); }} className="border-gh-border-default bg-gh-canvas-inset rounded-md px-3 py-1.5 focus:ring-2 focus:ring-gh-accent-emphasis">
             <option value="">전체</option>
             {(accountsQuery.data?.accounts || []).map((a) => (
               <option key={a.id} value={a.id}>{a.name}</option>
@@ -270,8 +273,8 @@ export default function AssetsPage() {
           </select>
         </div>
         <div>
-          <label className="block text-xs text-slate-600 mb-1">유형</label>
-          <select value={typeFilter} onChange={(e) => { setTypeFilter(e.target.value as AssetType | ""); setPage(1); }} className="border rounded px-2 py-1">
+          <label className="block text-xs text-gh-fg-muted mb-1">유형</label>
+          <select value={typeFilter} onChange={(e) => { setTypeFilter(e.target.value as AssetType | ""); setPage(1); }} className="border-gh-border-default bg-gh-canvas-inset rounded-md px-3 py-1.5 focus:ring-2 focus:ring-gh-accent-emphasis">
             <option value="">전체</option>
             {assetTypeOptions.map((o) => (
               <option key={o.value} value={o.value}>{o.label}</option>
@@ -279,25 +282,25 @@ export default function AssetsPage() {
           </select>
         </div>
         <div className="flex items-center gap-2">
-          <label className="block text-xs text-slate-600 mb-1">활성만</label>
+          <label className="block text-xs text-gh-fg-muted mb-1">활성만</label>
           <input type="checkbox" checked={activeOnly === true} onChange={(e) => { setActiveOnly(e.target.checked ? true : ""); setPage(1); }} />
         </div>
         <div className="flex-1" />
-        <button onClick={startCreate} className="px-3 py-2 rounded bg-emerald-600 text-white">새 자산</button>
+        <Button onClick={startCreate}>새 자산</Button>
       </div>
 
       {/* Inline Form */}
       {editing && (
-        <form onSubmit={submitForm} className="border rounded p-3 space-y-2 bg-slate-50">
+        <form onSubmit={submitForm} className="border border-gh-border-default rounded-md p-4 space-y-3 bg-gh-canvas-inset">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
             <div>
-              <label className="block text-xs text-slate-600 mb-1">이름</label>
-              <input name="name" defaultValue={editing.name || ""} className="w-full border rounded px-2 py-1" required />
+              <label className="block text-xs text-gh-fg-muted mb-1">이름</label>
+              <input name="name" defaultValue={editing.name || ""} className="w-full border-gh-border-default bg-gh-canvas-default rounded-md px-3 py-1.5 focus:ring-2 focus:ring-gh-accent-emphasis" required />
             </div>
             {editing.id ? null : (
               <div>
-                <label className="block text-xs text-slate-600 mb-1">계좌</label>
-                <select name="account_id" defaultValue={editing.account_id || ""} className="w-full border rounded px-2 py-1">
+                <label className="block text-xs text-gh-fg-muted mb-1">계좌</label>
+                <select name="account_id" defaultValue={editing.account_id || ""} className="w-full border-gh-border-default bg-gh-canvas-default rounded-md px-3 py-1.5 focus:ring-2 focus:ring-gh-accent-emphasis">
                   <option value="">선택하세요</option>
                   {(accountsQuery.data?.accounts || []).map((a) => (
                     <option key={a.id} value={a.id}>{a.name}</option>
@@ -307,8 +310,8 @@ export default function AssetsPage() {
             )}
             {editing.id ? null : (
               <div>
-                <label className="block text-xs text-slate-600 mb-1">유형</label>
-                <select name="asset_type" defaultValue={(editing.asset_type || "stock") as string} className="w-full border rounded px-2 py-1">
+                <label className="block text-xs text-gh-fg-muted mb-1">유형</label>
+                <select name="asset_type" defaultValue={(editing.asset_type || "stock") as string} className="w-full border-gh-border-default bg-gh-canvas-default rounded-md px-3 py-1.5 focus:ring-2 focus:ring-gh-accent-emphasis">
                   {assetTypeOptions.map((o) => (
                     <option key={o.value} value={o.value}>{o.label}</option>
                   ))}
@@ -316,25 +319,25 @@ export default function AssetsPage() {
               </div>
             )}
             <div>
-              <label className="block text-xs text-slate-600 mb-1">심볼</label>
-              <input name="symbol" defaultValue={editing.symbol || ""} className="w-full border rounded px-2 py-1" />
+              <label className="block text-xs text-gh-fg-muted mb-1">심볼</label>
+              <input name="symbol" defaultValue={editing.symbol || ""} className="w-full border-gh-border-default bg-gh-canvas-default rounded-md px-3 py-1.5 focus:ring-2 focus:ring-gh-accent-emphasis" />
             </div>
             <div>
-              <label className="block text-xs text-slate-600 mb-1">통화</label>
-              <input name="currency" defaultValue={editing.currency || "KRW"} className="w-full border rounded px-2 py-1" />
+              <label className="block text-xs text-gh-fg-muted mb-1">통화</label>
+              <input name="currency" defaultValue={editing.currency || "KRW"} className="w-full border-gh-border-default bg-gh-canvas-default rounded-md px-3 py-1.5 focus:ring-2 focus:ring-gh-accent-emphasis" />
             </div>
             <div className="flex items-center gap-2 pt-5">
               <input type="checkbox" name="is_active" defaultChecked={editing.is_active ?? true} />
-              <span>활성</span>
+              <span className="text-gh-fg-default">활성</span>
             </div>
           </div>
           <div>
-            <label className="block text-xs text-slate-600 mb-1">asset_metadata (JSON)</label>
-            <textarea name="asset_metadata" defaultValue={editing.asset_metadata ? JSON.stringify(editing.asset_metadata, null, 2) : ""} className="w-full border rounded px-2 py-1 h-32 font-mono text-xs" />
+            <label className="block text-xs text-gh-fg-muted mb-1">asset_metadata (JSON)</label>
+            <textarea name="asset_metadata" defaultValue={editing.asset_metadata ? JSON.stringify(editing.asset_metadata, null, 2) : ""} className="w-full border-gh-border-default bg-gh-canvas-default rounded-md px-3 py-2 h-32 font-mono text-xs focus:ring-2 focus:ring-gh-accent-emphasis" />
           </div>
           <div className="flex gap-2">
-            <button type="submit" className="px-3 py-2 rounded bg-slate-800 text-white">{editing.id ? "수정" : "생성"}</button>
-            <button type="button" onClick={cancelEdit} className="px-3 py-2 rounded bg-slate-200">취소</button>
+            <Button type="submit">{editing.id ? "수정" : "생성"}</Button>
+            <Button type="button" variant="default" onClick={cancelEdit}>취소</Button>
           </div>
         </form>
       )}
@@ -348,19 +351,21 @@ export default function AssetsPage() {
 
       {/* Pagination */}
       <div className="flex items-center justify-between gap-2">
-        <div className="text-sm text-slate-600">
+        <div className="text-sm text-gh-fg-muted">
           총 {listQuery.data?.total ?? 0}개, 페이지 {listQuery.data?.page ?? page}/{listQuery.data?.pages ?? 1}
         </div>
         <div className="flex items-center gap-2">
-          <button
-            className="px-2 py-1 rounded bg-slate-100 disabled:opacity-50"
+          <Button
+            variant="default"
+            size="sm"
             disabled={page <= 1}
             onClick={() => setPage((p) => Math.max(1, p - 1))}
           >
             이전
-          </button>
-          <button
-            className="px-2 py-1 rounded bg-slate-100 disabled:opacity-50"
+          </Button>
+          <Button
+            variant="default"
+            size="sm"
             disabled={!!listQuery.data && page >= (listQuery.data.pages || 1)}
             onClick={() => setPage((p) => p + 1)}
           >

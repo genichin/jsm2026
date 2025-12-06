@@ -86,19 +86,19 @@ export default function DashboardPage() {
       {/* 계좌별 요약 카드 */}
       {!loading && accountSummaries.length > 0 && (
         <div className="space-y-4">
-          <h2 className="text-xl font-semibold text-gray-900">계좌 현황</h2>
+          <h2 className="text-xl font-semibold text-gh-fg-default">계좌 현황</h2>
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
             {accountSummaries.map((account: any) => (
-              <div key={account.id} className="bg-white rounded-lg border p-4 shadow hover:shadow-md transition-shadow">
+              <div key={account.id} className="bg-gh-canvas-default rounded-md border border-gh-border-default p-4 hover:border-gh-accent-emphasis transition-colors">
                 <div className="flex items-center justify-between mb-3">
                   <div>
-                    <h3 className="font-semibold text-lg text-gray-900">{account.name}</h3>
-                    <p className="text-sm text-gray-600">{account.provider || account.account_type}</p>
+                    <h3 className="font-semibold text-lg text-gh-fg-default">{account.name}</h3>
+                    <p className="text-sm text-gh-fg-muted">{account.provider || account.account_type}</p>
                   </div>
-                  <div className={`px-2 py-1 rounded-full text-xs font-medium ${
+                  <div className={`px-2 py-1 rounded-md text-xs font-medium ${
                     account.returnRate >= 0 
-                      ? 'bg-green-100 text-green-800' 
-                      : 'bg-red-100 text-red-800'
+                      ? 'bg-gh-success-subtle text-gh-success-fg' 
+                      : 'bg-gh-danger-subtle text-gh-danger-fg'
                   }`}>
                     {account.returnRate >= 0 ? '+' : ''}{account.returnRate.toFixed(2)}%
                   </div>
@@ -106,23 +106,23 @@ export default function DashboardPage() {
                 
                 <div className="space-y-3">
                   <div className="flex justify-between items-center">
-                    <span className="text-sm text-gray-600">잔고(평가금액)</span>
-                    <span className="font-semibold text-lg">
+                    <span className="text-sm text-gh-fg-muted">잔고(평가금액)</span>
+                    <span className="font-semibold text-lg text-gh-fg-default">
                       {account.totalValue.toLocaleString()}원
                     </span>
                   </div>
                   
                   <div className="flex justify-between items-center">
-                    <span className="text-sm text-gray-600">보유 자산</span>
-                    <span className="font-medium">
+                    <span className="text-sm text-gh-fg-muted">보유 자산</span>
+                    <span className="font-medium text-gh-fg-default">
                       {account.assetCount}개
                     </span>
                   </div>
                 </div>
                 
-                <div className="mt-4 pt-3 border-t border-gray-200">
+                <div className="mt-4 pt-3 border-t border-gh-border-default">
                   <button 
-                    className="w-full text-sm text-blue-600 hover:text-blue-800 font-medium"
+                    className="w-full text-sm text-gh-accent-fg hover:text-gh-accent-emphasis font-medium transition-colors"
                     onClick={() => window.location.href = `/accounts/${account.id}`}
                   >
                     자세히 보기 →

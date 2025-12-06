@@ -10,6 +10,7 @@ import { Modal } from "@/components/Modal";
 import { ColumnDef } from "@tanstack/react-table";
 import { TransactionType, transactionTypeOptions, transactionTypeLabels } from "@/lib/transactionTypes";
 import { DynamicTransactionForm, CategoryBrief as CategoryBriefType } from "@/components/TransactionForm";
+import { Button } from "@/components/Button";
 
 // Backend responses
 type AssetBrief = {
@@ -557,22 +558,23 @@ export default function TransactionsPage() {
     {
       accessorKey: "description",
       header: "설명",
-      cell: ({ getValue }) => <span className="text-sm text-slate-700 max-w-xs truncate">{(getValue() as string) || "-"}</span>,
+      cell: ({ getValue }) => <span className="text-sm text-gh-fg-muted max-w-xs truncate">{(getValue() as string) || "-"}</span>,
     },
     {
       id: "actions",
       header: "",
       cell: ({ row }) => (
         <div className="space-x-2">
-          <button className="px-2 py-1 text-xs rounded bg-slate-100" onClick={() => startEdit(row.original)}>편집</button>
-          <button
-            className="px-2 py-1 text-xs rounded bg-rose-100 text-rose-700"
+          <Button size="sm" variant="default" onClick={() => startEdit(row.original)}>편집</Button>
+          <Button
+            size="sm"
+            variant="danger"
             onClick={() => {
               if (confirm("정말 삭제하시겠습니까? 연관 거래와 잔고에 영향을 줄 수 있습니다.")) deleteMut.mutate(row.original.id);
             }}
           >
             삭제
-          </button>
+          </Button>
         </div>
       ),
     },
@@ -590,11 +592,11 @@ export default function TransactionsPage() {
       {/* Filters & Column Settings */}
       <div className="flex flex-wrap gap-2 items-end">
         <div>
-          <label className="block text-xs text-slate-600 mb-1">계좌</label>
+          <label className="block text-xs text-gh-fg-muted mb-1">계좌</label>
           <select 
             value={accountFilter} 
             onChange={(e) => { setAccountFilter(e.target.value); setPage(1); }} 
-            className={`border rounded px-2 py-1 min-w-40 ${searchParams.get('asset_id') ? 'bg-gray-100 cursor-not-allowed' : ''}`}
+            className={`border-gh-border-default bg-gh-canvas-inset rounded-md px-3 py-1.5 min-w-40 focus:ring-2 focus:ring-gh-accent-emphasis ${searchParams.get('asset_id') ? 'opacity-50 cursor-not-allowed' : ''}`}
             disabled={!!searchParams.get('asset_id')}
           >
             <option value="">전체</option>
@@ -604,11 +606,11 @@ export default function TransactionsPage() {
           </select>
         </div>
         <div>
-          <label className="block text-xs text-slate-600 mb-1">자산</label>
+          <label className="block text-xs text-gh-fg-muted mb-1">자산</label>
           <select 
             value={assetFilter} 
             onChange={(e) => { setAssetFilter(e.target.value); setPage(1); }} 
-            className={`border rounded px-2 py-1 min-w-40 ${searchParams.get('asset_id') ? 'bg-gray-100 cursor-not-allowed' : ''}`}
+            className={`border-gh-border-default bg-gh-canvas-inset rounded-md px-3 py-1.5 min-w-40 focus:ring-2 focus:ring-gh-accent-emphasis ${searchParams.get('asset_id') ? 'opacity-50 cursor-not-allowed' : ''}`}
             disabled={!!searchParams.get('asset_id')}
           >
             <option value="">전체</option>
@@ -618,8 +620,8 @@ export default function TransactionsPage() {
           </select>
         </div>
         <div>
-          <label className="block text-xs text-slate-600 mb-1">유형</label>
-          <select value={typeFilter} onChange={(e) => { setTypeFilter(e.target.value as TransactionType | ""); setPage(1); }} className="border rounded px-2 py-1">
+          <label className="block text-xs text-gh-fg-muted mb-1">유형</label>
+          <select value={typeFilter} onChange={(e) => { setTypeFilter(e.target.value as TransactionType | ""); setPage(1); }} className="border-gh-border-default bg-gh-canvas-inset rounded-md px-3 py-1.5 focus:ring-2 focus:ring-gh-accent-emphasis">
             <option value="">전체</option>
             {transactionTypeOptions.map((o) => (
               <option key={o.value} value={o.value}>{o.label}</option>
@@ -627,8 +629,8 @@ export default function TransactionsPage() {
           </select>
         </div>
         <div>
-          <label className="block text-xs text-slate-600 mb-1">카테고리</label>
-          <select value={categoryFilter} onChange={(e) => { setCategoryFilter(e.target.value); setPage(1); }} className="border rounded px-2 py-1 min-w-32">
+          <label className="block text-xs text-gh-fg-muted mb-1">카테고리</label>
+          <select value={categoryFilter} onChange={(e) => { setCategoryFilter(e.target.value); setPage(1); }} className="border-gh-border-default bg-gh-canvas-inset rounded-md px-3 py-1.5 min-w-32 focus:ring-2 focus:ring-gh-accent-emphasis">
             <option value="">전체</option>
             {(categoriesQuery.data || []).map((c) => (
               <option key={c.id} value={c.id}>{c.name}</option>
@@ -636,18 +638,18 @@ export default function TransactionsPage() {
           </select>
         </div>
         <div>
-          <label className="block text-xs text-slate-600 mb-1">확인 여부</label>
-          <select value={confirmedFilter} onChange={(e) => { setConfirmedFilter(e.target.value); setPage(1); }} className="border rounded px-2 py-1">
+          <label className="block text-xs text-gh-fg-muted mb-1">확인 여부</label>
+          <select value={confirmedFilter} onChange={(e) => { setConfirmedFilter(e.target.value); setPage(1); }} className="border-gh-border-default bg-gh-canvas-inset rounded-md px-3 py-1.5 focus:ring-2 focus:ring-gh-accent-emphasis">
             <option value="">전체</option>
             <option value="false">미확인</option>
             <option value="true">확인됨</option>
           </select>
         </div>
         <div className="flex-1" />
-        <button onClick={() => setIsUploadModalOpen(true)} className="px-3 py-2 rounded bg-blue-600 text-white hover:bg-blue-700">
+        <Button onClick={() => setIsUploadModalOpen(true)}>
           파일 업로드
-        </button>
-        <button onClick={startCreate} className="px-3 py-2 rounded bg-emerald-600 text-white hover:bg-emerald-700">새 거래</button>
+        </Button>
+        <Button onClick={startCreate}>새 거래</Button>
       </div>
 
       {/* Modal Form */}
@@ -695,9 +697,9 @@ export default function TransactionsPage() {
           }}
           className="space-y-4"
         >
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
-            <h3 className="text-sm font-semibold text-blue-900 mb-2">지원 형식</h3>
-            <ul className="text-xs text-blue-800 space-y-1">
+          <div className="bg-gh-accent-subtle border border-gh-accent-muted rounded-lg p-4 mb-4">
+            <h3 className="text-sm font-semibold text-gh-accent-fg mb-2">지원 형식</h3>
+            <ul className="text-xs text-gh-accent-fg space-y-1">
               <li>• <strong>토스뱅크</strong>: 암호화된 Excel 파일 (.xlsx) - 비밀번호 입력 필요</li>
               <li>• <strong>KB은행</strong>: HTML 형식 Excel 파일 (.xls)</li>
               <li>• <strong>KB증권</strong>: 거래내역 CSV/Excel</li>
@@ -776,24 +778,22 @@ export default function TransactionsPage() {
             <button
               type="button"
               onClick={() => setIsUploadModalOpen(false)}
-              className="px-4 py-2 rounded bg-slate-200 hover:bg-slate-300"
             >
               취소
-            </button>
-            <button
+            </Button>
+            <Button
               type="submit"
               disabled={uploadMut.isPending}
-              className="px-4 py-2 rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {uploadMut.isPending ? "업로드 중..." : "업로드"}
-            </button>
+            </Button>
           </div>
         </form>
 
         {uploadMut.isSuccess && uploadMut.data && (
-          <div className="mt-4 p-4 bg-green-50 border border-green-200 rounded">
-            <h4 className="font-semibold text-green-900 mb-2">업로드 완료</h4>
-            <div className="text-sm text-green-800 space-y-1">
+          <div className="mt-4 p-4 bg-gh-success-subtle border border-gh-success-muted rounded-md">
+            <h4 className="font-semibold text-gh-success-fg mb-2">업로드 완료</h4>
+            <div className="text-sm text-gh-success-fg space-y-1">
               <p>• 생성된 거래: {uploadMut.data.created || 0}개</p>
               {uploadMut.data.skipped > 0 && (
                 <p>• 중복 스킵: {uploadMut.data.skipped}개</p>
@@ -818,21 +818,23 @@ export default function TransactionsPage() {
 
       {/* View Mode Toggle */}
       <div className="flex items-center justify-between mb-2">
-        <div className="flex items-center gap-2 text-xs text-slate-600">
+        <div className="flex items-center gap-2 text-xs text-gh-fg-muted">
           <span>보기:</span>
-          <button
+          <Button
+            size="sm"
+            variant={viewMode === "card" ? "primary" : "default"}
             onClick={() => { setViewMode("card"); if (typeof window !== "undefined") window.localStorage.setItem("txViewMode", "card"); }}
-            className={`px-2 py-1 rounded ${viewMode === "card" ? "bg-slate-800 text-white" : "bg-slate-100 text-slate-700"}`}
-          >카드</button>
-          <button
+          >카드</Button>
+          <Button
+            size="sm"
+            variant={viewMode === "table" ? "primary" : "default"}
             onClick={() => { setViewMode("table"); if (typeof window !== "undefined") window.localStorage.setItem("txViewMode", "table"); }}
-            className={`px-2 py-1 rounded ${viewMode === "table" ? "bg-slate-800 text-white" : "bg-slate-100 text-slate-700"}`}
-          >테이블</button>
+          >테이블</Button>
         </div>
         <div className="flex items-center gap-2 ml-auto">
           <details className="relative">
-            <summary className="cursor-pointer px-3 py-2 rounded bg-slate-100 text-xs">컬럼 설정</summary>
-            <div className="absolute z-10 mt-2 w-52 p-3 rounded border bg-white shadow space-y-2">
+            <summary className="cursor-pointer px-3 py-2 rounded-md bg-gh-canvas-subtle border border-gh-border-default text-xs text-gh-fg-default">컬럼 설정</summary>
+            <div className="absolute z-10 mt-2 w-52 p-3 rounded-md border border-gh-border-default bg-gh-canvas-overlay shadow-lg space-y-2">
               {[
                 { key: "fee", label: "수수료" },
                 { key: "tax", label: "세금" },
@@ -840,7 +842,7 @@ export default function TransactionsPage() {
                 { key: "realized_profit", label: "실현손익" },
                 { key: "amount", label: "금액" },
               ].map(opt => (
-                <label key={opt.key} className="flex items-center gap-2 text-xs">
+                <label key={opt.key} className="flex items-center gap-2 text-xs text-gh-fg-default">
                   <input
                     type="checkbox"
                     checked={!hiddenCols[opt.key]}
@@ -849,11 +851,13 @@ export default function TransactionsPage() {
                   <span>{opt.label}</span>
                 </label>
               ))}
-              <button
+              <Button
                 type="button"
+                size="sm"
+                variant="default"
                 onClick={() => setHiddenCols({})}
-                className="w-full mt-1 text-xs px-2 py-1 rounded bg-slate-200"
-              >초기화</button>
+                className="w-full mt-1"
+              >초기화</Button>
             </div>
           </details>
         </div>
@@ -909,26 +913,28 @@ export default function TransactionsPage() {
 
       {/* Pagination */}
       <div className="flex items-center justify-between gap-2">
-        <div className="text-sm text-slate-600">
+        <div className="text-sm text-gh-fg-muted">
           총 {transactions.length}개, 페이지 {listQuery.data?.page ?? page}/{listQuery.data?.pages ?? 1}
         </div>
         <div className="flex items-center gap-2">
-          <button
-            className="px-2 py-1 rounded bg-slate-100 disabled:opacity-50"
+          <Button
+            variant="default"
+            size="sm"
             disabled={page <= 1}
             onClick={() => setPage((p) => Math.max(1, p - 1))}
           >
             이전
-          </button>
-          <button
-            className="px-2 py-1 rounded bg-slate-100 disabled:opacity-50"
+          </Button>
+          <Button
+            variant="default"
+            size="sm"
             disabled={!!listQuery.data && page >= (listQuery.data.pages || 1)}
             onClick={() => setPage((p) => p + 1)}
           >
             다음
-          </button>
+          </Button>
           <select
-            className="border rounded px-2 py-1"
+            className="border-gh-border-default bg-gh-canvas-inset rounded-md px-3 py-1.5 focus:ring-2 focus:ring-gh-accent-emphasis"
             value={size}
             onChange={(e) => { setSize(parseInt(e.target.value, 10)); setPage(1); }}
           >
