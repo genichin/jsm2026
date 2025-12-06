@@ -115,7 +115,8 @@ export default function AccountsPage() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["accounts"] }),
   });
 
-  // Inline create/edit state
+  // Create/edit modal state
+  const [showModal, setShowModal] = useState(false);
   const [editing, setEditing] = useState<Partial<Account> | null>(null);
 
   function startCreate() {
@@ -129,14 +130,17 @@ export default function AccountsPage() {
       api_config: null,
       daemon_config: null,
     });
+    setShowModal(true);
   }
 
   function startEdit(row: Account) {
     setEditing({ ...row });
+    setShowModal(true);
   }
 
   function cancelEdit() {
     setEditing(null);
+    setShowModal(false);
   }
 
   async function submitForm(e: React.FormEvent<HTMLFormElement>) {
@@ -173,6 +177,7 @@ export default function AccountsPage() {
       await createMut.mutateAsync(payload);
     }
     setEditing(null);
+    setShowModal(false);
   }
 
   // Shares modal state
@@ -260,61 +265,70 @@ export default function AccountsPage() {
         <button onClick={startCreate} className="px-3 py-2 rounded bg-emerald-600 text-white">새 계좌</button>
       </div>
 
-      {/* Inline Form */}
-      {editing && (
-        <form onSubmit={submitForm} className="border rounded p-3 space-y-2 bg-slate-50">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-            <div>
-              <label className="block text-xs text-slate-600 mb-1">이름</label>
-              <input name="name" defaultValue={editing.name || ""} className="w-full border rounded px-2 py-1" required />
-            </div>
-            <div>
-              <label className="block text-xs text-slate-600 mb-1">유형</label>
-              <select name="account_type" defaultValue={(editing.account_type || "bank_account") as string} className="w-full border rounded px-2 py-1">
-                {typeOptions.map((o) => (
-                  <option key={o.value} value={o.value}>{o.label}</option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="block text-xs text-slate-600 mb-1">기관</label>
-              <input name="provider" defaultValue={editing.provider || ""} className="w-full border rounded px-2 py-1" />
-            </div>
-            <div>
-              <label className="block text-xs text-slate-600 mb-1">계좌번호</label>
-              <input name="account_number" defaultValue={editing.account_number || ""} className="w-full border rounded px-2 py-1" />
-            </div>
-            <div>
-              <label className="block text-xs text-slate-600 mb-1">통화</label>
-              <input name="currency" defaultValue={editing.currency || "KRW"} className="w-full border rounded px-2 py-1" />
-            </div>
-            <div className="flex items-center gap-2 pt-5">
-              <input type="checkbox" name="is_active" defaultChecked={editing.is_active ?? true} />
-              <span>활성</span>
-            </div>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs text-slate-600 mb-1">api_config (JSON)</label>
-              <textarea name="api_config" defaultValue={editing.api_config ? JSON.stringify(editing.api_config, null, 2) : ""} className="w-full border rounded px-2 py-1 h-32 font-mono text-xs" />
-            </div>
-            <div>
-              <label className="block text-xs text-slate-600 mb-1">daemon_config (JSON)</label>
-              <textarea name="daemon_config" defaultValue={editing.daemon_config ? JSON.stringify(editing.daemon_config, null, 2) : ""} className="w-full border rounded px-2 py-1 h-32 font-mono text-xs" />
-            </div>
-          </div>
-          <div className="flex gap-2">
-            <button type="submit" className="px-3 py-2 rounded bg-slate-800 text-white">{editing.id ? "수정" : "생성"}</button>
-            <button type="button" onClick={cancelEdit} className="px-3 py-2 rounded bg-slate-200">취소</button>
-          </div>
-        </form>
-      )}
-
       {/* Table */}
       {listQuery.isLoading ? (
         <div>로딩 중...</div>
       ) : (
         <DataTable columns={columns} data={accounts} />
+      )}
+
+      {/* Create/Edit Modal */}
+      {showModal && editing && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/30" onClick={cancelEdit} />
+          <div className="relative z-10 w-[95%] max-w-3xl rounded bg-white shadow-lg max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b p-3 sticky top-0 bg-white">
+              <div className="font-semibold">{editing.id ? "계좌 수정" : "새 계좌"}</div>
+              <button className="rounded bg-slate-100 px-2 py-1" onClick={cancelEdit}>닫기</button>
+            </div>
+            <form onSubmit={submitForm} className="p-4 space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <div>
+                  <label className="block text-xs text-slate-600 mb-1">이름 *</label>
+                  <input name="name" defaultValue={editing.name || ""} className="w-full border rounded px-2 py-1" required />
+                </div>
+                <div>
+                  <label className="block text-xs text-slate-600 mb-1">유형 *</label>
+                  <select name="account_type" defaultValue={(editing.account_type || "bank_account") as string} className="w-full border rounded px-2 py-1">
+                    {typeOptions.map((o) => (
+                      <option key={o.value} value={o.value}>{o.label}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs text-slate-600 mb-1">기관</label>
+                  <input name="provider" defaultValue={editing.provider || ""} className="w-full border rounded px-2 py-1" />
+                </div>
+                <div>
+                  <label className="block text-xs text-slate-600 mb-1">계좌번호</label>
+                  <input name="account_number" defaultValue={editing.account_number || ""} className="w-full border rounded px-2 py-1" />
+                </div>
+                <div>
+                  <label className="block text-xs text-slate-600 mb-1">통화</label>
+                  <input name="currency" defaultValue={editing.currency || "KRW"} className="w-full border rounded px-2 py-1" />
+                </div>
+                <div className="flex items-center gap-2 pt-5">
+                  <input type="checkbox" name="is_active" defaultChecked={editing.is_active ?? true} />
+                  <span className="text-sm">활성</span>
+                </div>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs text-slate-600 mb-1">api_config (JSON)</label>
+                  <textarea name="api_config" defaultValue={editing.api_config ? JSON.stringify(editing.api_config, null, 2) : ""} className="w-full border rounded px-2 py-1 h-32 font-mono text-xs" />
+                </div>
+                <div>
+                  <label className="block text-xs text-slate-600 mb-1">daemon_config (JSON)</label>
+                  <textarea name="daemon_config" defaultValue={editing.daemon_config ? JSON.stringify(editing.daemon_config, null, 2) : ""} className="w-full border rounded px-2 py-1 h-32 font-mono text-xs" />
+                </div>
+              </div>
+              <div className="flex gap-2 justify-end pt-2">
+                <button type="button" onClick={cancelEdit} className="px-4 py-2 rounded bg-slate-200 hover:bg-slate-300">취소</button>
+                <button type="submit" className="px-4 py-2 rounded bg-emerald-600 text-white hover:bg-emerald-700">{editing.id ? "수정" : "생성"}</button>
+              </div>
+            </form>
+          </div>
+        </div>
       )}
 
       {/* Shares Modal */}
