@@ -80,6 +80,7 @@ frontend/.turbo/
 frontend/.cache/
 
 ### Test/coverage reports
+coverage/
 coverage.xml
 test-results/
 junit.xml
