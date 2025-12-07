@@ -18,6 +18,8 @@ class AssetType(str, Enum):
     FUND = "fund"
     ETF = "etf"
     CASH = "cash"
+    SAVINGS = "savings"    # 예금
+    DEPOSIT = "deposit"    # 적금
 
 
 class TransactionType(str, Enum):

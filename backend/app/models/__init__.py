@@ -171,6 +171,8 @@ class AssetType(str, Enum):
     FUND = "fund"          # 펀드
     ETF = "etf"            # ETF
     CASH = "cash"          # 현금 (예수금, 잔고 등)
+    SAVINGS = "savings"    # 예금
+    DEPOSIT = "deposit"    # 적금
 
 
 class TransactionType(str, Enum):

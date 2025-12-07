@@ -987,7 +987,7 @@ CREATE TABLE assets (
     account_id UUID NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
     
     -- 자산 기본 정보
-    name VARCHAR(100) NOT NULL,         -- 사용자 지정 이름 (예: "삼성전자", "비트코인")
+    name VARCHAR(100) NOT NULL,         -- 사용자 지정 이름 (예: "삼성전자", "비트코인", "정기예금")
     asset_type VARCHAR(50) NOT NULL,    -- AssetType Enum 값
     symbol VARCHAR(20),                 -- 거래 심볼 (예: "005930", "BTC")
     
@@ -1012,7 +1012,7 @@ CREATE INDEX idx_assets_is_active ON assets(is_active);
 **필드 설명**:
 - `user_id`: 자산 소유자
 - `account_id`: 자산이 속한 계좌
-- `asset_type`: AssetType Enum 값 (stock, crypto, bond 등)
+- `asset_type`: AssetType Enum 값 (stock, crypto, bond, fund, etf, cash, savings, deposit)
 - `symbol`: 외부 API 연동용 식별자 (티커, 코드 등)
 - `metadata`: 확장 가능한 추가 정보 (ISIN, 상장국가 등)
 
@@ -1453,6 +1453,8 @@ class AssetType(str, Enum):
     FUND = "fund"          # 펀드
     ETF = "etf"            # ETF
     CASH = "cash"          # 현금 (예수금, 잔고 등)
+    SAVINGS = "savings"    # 예금
+    DEPOSIT = "deposit"    # 적금
 
 # 유형별 속성 매핑
 ASSET_TYPE_INFO = {
@@ -1462,6 +1464,8 @@ ASSET_TYPE_INFO = {
     AssetType.FUND: {"name": "펀드", "tradable": True},
     AssetType.ETF: {"name": "ETF", "tradable": True},
     AssetType.CASH: {"name": "현금", "tradable": False},
+    AssetType.SAVINGS: {"name": "예금", "tradable": False},
+    AssetType.DEPOSIT: {"name": "적금", "tradable": False},
 }
 ```
 
@@ -1474,6 +1478,8 @@ export enum AssetType {
   FUND = 'fund',
   ETF = 'etf',
   CASH = 'cash',
+  SAVINGS = 'savings',
+  DEPOSIT = 'deposit',
 }
 
 // 유형별 표시명 매핑
@@ -1484,6 +1490,8 @@ export const ASSET_TYPE_LABELS: Record<AssetType, string> = {
   [AssetType.FUND]: '펀드',
   [AssetType.ETF]: 'ETF',
   [AssetType.CASH]: '현금',
+  [AssetType.SAVINGS]: '예금',
+  [AssetType.DEPOSIT]: '적금',
 };
 
 // 거래 가능 여부
@@ -1494,6 +1502,8 @@ export const ASSET_TYPE_TRADABLE: Record<AssetType, boolean> = {
   [AssetType.FUND]: true,
   [AssetType.ETF]: true,
   [AssetType.CASH]: false,  // 현금은 직접 거래 불가 (입출금만)
+  [AssetType.SAVINGS]: false,  // 예금은 직접 거래 불가
+  [AssetType.DEPOSIT]: false,  // 적금은 직접 거래 불가
 };
 ```
 

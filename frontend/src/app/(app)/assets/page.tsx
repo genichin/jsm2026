@@ -10,7 +10,7 @@ import { ColumnDef } from "@tanstack/react-table";
 import { useRouter } from "next/navigation";
 
 // Backend enums
-export type AssetType = "stock" | "crypto" | "bond" | "fund" | "etf" | "cash";
+export type AssetType = "stock" | "crypto" | "bond" | "fund" | "etf" | "cash" | "savings" | "deposit";
 
 // Backend responses
 type AccountBrief = { id: string; name: string; account_type: string };
@@ -49,6 +49,8 @@ const assetTypeOptions: { value: AssetType; label: string }[] = [
   { value: "fund", label: "펀드" },
   { value: "etf", label: "ETF" },
   { value: "cash", label: "현금" },
+  { value: "savings", label: "예금" },
+  { value: "deposit", label: "적금" },
 ];
 
 export default function AssetsPage() {

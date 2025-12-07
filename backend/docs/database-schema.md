@@ -57,7 +57,7 @@ transactions (거래)
 
 ### 주요 Enum 타입
 - **AccountType**: bank_account, securities, cash, crypto_wallet 등
-- **AssetType**: stock, crypto, bond, fund, etf, cash
+- **AssetType**: stock, crypto, bond, fund, etf, cash, savings, deposit
 - **TransactionType**: buy, sell, deposit, withdraw, dividend, interest, fee, transfer_in, transfer_out, adjustment, invest, redeem, internal_transfer, card_payment, promotion_deposit, auto_transfer, remittance, exchange, out_asset, in_asset
 
 ### 보조 시스템

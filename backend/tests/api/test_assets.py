@@ -272,6 +272,92 @@ class TestUpdateAsset:
         assert response.status_code == 404
 
 
+class TestAssetTypes:
+    """자산 유형별 테스트"""
+    
+    def test_create_savings_asset(self, client: TestClient, auth_header: dict, test_account: Account):
+        """예금 자산 생성"""
+        response = client.post(
+            "/api/v1/assets",
+            headers=auth_header,
+            json={
+                "account_id": test_account.id,
+                "name": "정기예금",
+                "asset_type": "savings",
+                "currency": "KRW"
+            }
+        )
+        
+        assert response.status_code == 201
+        data = response.json()
+        assert data["name"] == "정기예금"
+        assert data["asset_type"] == "savings"
+        assert data["currency"] == "KRW"
+    
+    def test_create_deposit_asset(self, client: TestClient, auth_header: dict, test_account: Account):
+        """적금 자산 생성"""
+        response = client.post(
+            "/api/v1/assets",
+            headers=auth_header,
+            json={
+                "account_id": test_account.id,
+                "name": "정기적금",
+                "asset_type": "deposit",
+                "currency": "KRW"
+            }
+        )
+        
+        assert response.status_code == 201
+        data = response.json()
+        assert data["name"] == "정기적금"
+        assert data["asset_type"] == "deposit"
+        assert data["currency"] == "KRW"
+    
+    def test_list_assets_with_savings_deposit(
+        self, 
+        client: TestClient, 
+        auth_header: dict, 
+        test_account: Account,
+        test_asset: Asset
+    ):
+        """예적금 포함 자산 목록 조회"""
+        # 예금 생성
+        client.post(
+            "/api/v1/assets",
+            headers=auth_header,
+            json={
+                "account_id": test_account.id,
+                "name": "NH농협 정기예금",
+                "asset_type": "savings",
+                "currency": "KRW"
+            }
+        )
+        
+        # 적금 생성
+        client.post(
+            "/api/v1/assets",
+            headers=auth_header,
+            json={
+                "account_id": test_account.id,
+                "name": "KB국민 정기적금",
+                "asset_type": "deposit",
+                "currency": "KRW"
+            }
+        )
+        
+        # 목록 조회
+        response = client.get("/api/v1/assets", headers=auth_header)
+        assert response.status_code == 200
+        
+        data = response.json()
+        asset_types = [item["asset_type"] for item in data["items"]]
+        
+        # stock(test_asset), savings, deposit 모두 포함되어야 함
+        assert "stock" in asset_types
+        assert "savings" in asset_types
+        assert "deposit" in asset_types
+
+
 class TestDeleteAsset:
     """자산 삭제 테스트"""
     
