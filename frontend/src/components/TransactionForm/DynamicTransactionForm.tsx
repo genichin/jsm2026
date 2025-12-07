@@ -485,102 +485,123 @@ export function DynamicTransactionForm({
               </div>
             )}
 
-            {/* 연결 거래 (out_asset, in_asset) */}
+            {/* 연결 거래 (out_asset, in_asset, payment_cancel) */}
             {showRelatedTransaction && (
               <div className="col-span-1 md:col-span-2">
-                <div className="flex items-center justify-between mb-2">
-                  <label className="block text-sm font-medium text-slate-700">
-                    연결 거래
-                  </label>
-                  <div className="flex gap-1 border rounded">
-                    <button
-                      type="button"
-                      onClick={() => setRelatedMode('create')}
-                      className={`px-3 py-1 text-xs rounded transition-colors ${
-                        relatedMode === 'create'
-                          ? 'bg-blue-600 text-white'
-                          : 'bg-white text-slate-600 hover:bg-slate-50'
-                      }`}
-                    >
-                      새로 생성
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setRelatedMode('select')}
-                      className={`px-3 py-1 text-xs rounded transition-colors ${
-                        relatedMode === 'select'
-                          ? 'bg-blue-600 text-white'
-                          : 'bg-white text-slate-600 hover:bg-slate-50'
-                      }`}
-                    >
-                      기존 선택
-                    </button>
-                  </div>
-                </div>
-
-                {relatedMode === 'select' ? (
+                {transactionType === 'payment_cancel' ? (
                   <>
+                    <label className="block text-sm font-medium text-slate-700 mb-2">
+                      연결 거래 (선택사항)
+                    </label>
                     <Fields.RelatedTransactionField
                       value={relatedTransactionId}
                       onChange={(e) => setRelatedTransactionId(e.target.value)}
                       transactionDate={transactionDate}
                       selectedAsset={selectedAsset}
                       assets={assets}
-                      onCreateNew={handleCreateRelatedTransaction}
+                      currentQuantity={cashAmount}
+                      transactionType={transactionType}
                     />
                     <input type="hidden" name="related_transaction_id" value={relatedTransactionId} />
                   </>
                 ) : (
                   <>
-                    <input type="hidden" name="related_transaction_id" value={relatedTransactionId} />
-                  <div className="border rounded p-3 bg-slate-50">
-                    <div className="text-sm font-medium text-slate-700 mb-2">
-                      연결 거래 생성: { (transactionType === 'out_asset' ? '매수' : '매도') }
-                    </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                      <div>
-                        <label className="block text-sm font-medium text-slate-700 mb-1">자산 *</label>
-                        <select
-                          value={relatedAssetId}
-                          onChange={(e) => setRelatedAssetId(e.target.value)}
-                          className="w-full border rounded px-3 py-2"
+                    <div className="flex items-center justify-between mb-2">
+                      <label className="block text-sm font-medium text-slate-700">
+                        연결 거래
+                      </label>
+                      <div className="flex gap-1 border rounded">
+                        <button
+                          type="button"
+                          onClick={() => setRelatedMode('create')}
+                          className={`px-3 py-1 text-xs rounded transition-colors ${
+                            relatedMode === 'create'
+                              ? 'bg-blue-600 text-white'
+                              : 'bg-white text-slate-600 hover:bg-slate-50'
+                          }`}
                         >
-                          <option value="">선택하세요</option>
-                          {assets
-                            .filter(a => a.account_id === selectedAsset?.account_id)
-                            .map(a => (
-                              <option key={a.id} value={a.id}>{a.name}</option>
-                            ))}
-                        </select>
+                          새로 생성
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setRelatedMode('select')}
+                          className={`px-3 py-1 text-xs rounded transition-colors ${
+                            relatedMode === 'select'
+                              ? 'bg-blue-600 text-white'
+                              : 'bg-white text-slate-600 hover:bg-slate-50'
+                          }`}
+                        >
+                          기존 선택
+                        </button>
                       </div>
-                      <div>
-                        <label className="block text-sm font-medium text-slate-700 mb-1">가격 *</label>
-                        <input
-                          type="number"
-                          step="any"
-                          value={relatedPrice || ''}
-                          onChange={(e) => setRelatedPrice(parseFloat(e.target.value) || 0)}
-                          className="w-full border rounded px-3 py-2"
-                          placeholder="예: 10350"
+                    </div>
+
+                    {relatedMode === 'select' ? (
+                      <>
+                        <Fields.RelatedTransactionField
+                          value={relatedTransactionId}
+                          onChange={(e) => setRelatedTransactionId(e.target.value)}
+                          transactionDate={transactionDate}
+                          selectedAsset={selectedAsset}
+                          assets={assets}
+                          onCreateNew={handleCreateRelatedTransaction}
+                          transactionType={transactionType}
                         />
-                      </div>
-                      <div className="md:col-span-2">
-                        <div className="text-xs text-slate-600">
-                          현금 금액: {cashAmount?.toLocaleString() || 0} → 수량: {relatedPrice > 0 ? (cashAmount / relatedPrice).toFixed(6) : '-'}
+                        <input type="hidden" name="related_transaction_id" value={relatedTransactionId} />
+                      </>
+                    ) : (
+                      <>
+                        <input type="hidden" name="related_transaction_id" value={relatedTransactionId} />
+                      <div className="border rounded p-3 bg-slate-50">
+                        <div className="text-sm font-medium text-slate-700 mb-2">
+                          연결 거래 생성: { (transactionType === 'out_asset' ? '매수' : '매도') }
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                          <div>
+                            <label className="block text-sm font-medium text-slate-700 mb-1">자산 *</label>
+                            <select
+                              value={relatedAssetId}
+                              onChange={(e) => setRelatedAssetId(e.target.value)}
+                              className="w-full border rounded px-3 py-2"
+                            >
+                              <option value="">선택하세요</option>
+                              {assets
+                                .filter(a => a.account_id === selectedAsset?.account_id)
+                                .map(a => (
+                                  <option key={a.id} value={a.id}>{a.name}</option>
+                                ))}
+                            </select>
+                          </div>
+                          <div>
+                            <label className="block text-sm font-medium text-slate-700 mb-1">가격 *</label>
+                            <input
+                              type="number"
+                              step="any"
+                              value={relatedPrice || ''}
+                              onChange={(e) => setRelatedPrice(parseFloat(e.target.value) || 0)}
+                              className="w-full border rounded px-3 py-2"
+                              placeholder="예: 10350"
+                            />
+                          </div>
+                          <div className="md:col-span-2">
+                            <div className="text-xs text-slate-600">
+                              현금 금액: {cashAmount?.toLocaleString() || 0} → 수량: {relatedPrice > 0 ? (cashAmount / relatedPrice).toFixed(6) : '-'}
+                            </div>
+                          </div>
+                        </div>
+                        <div className="flex justify-end gap-2 mt-3">
+                          <button
+                            type="button"
+                            className="px-3 py-1.5 rounded bg-blue-600 text-white hover:bg-blue-700 text-sm disabled:opacity-50"
+                            disabled={!relatedAssetId || !relatedPrice}
+                            onClick={handleCreateRelatedConfirm}
+                          >
+                            생성 및 연결
+                          </button>
                         </div>
                       </div>
-                    </div>
-                    <div className="flex justify-end gap-2 mt-3">
-                      <button
-                        type="button"
-                        className="px-3 py-1.5 rounded bg-blue-600 text-white hover:bg-blue-700 text-sm disabled:opacity-50"
-                        disabled={!relatedAssetId || !relatedPrice}
-                        onClick={handleCreateRelatedConfirm}
-                      >
-                        생성 및 연결
-                      </button>
-                    </div>
-                  </div>
+                      </>
+                    )}
                   </>
                 )}
               </div>

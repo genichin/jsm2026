@@ -198,6 +198,7 @@ class TransactionType(str, Enum):
     EXCHANGE = "exchange"  # 환전
     OUT_ASSET = "out_asset"   # 자산매수출금
     IN_ASSET = "in_asset"     # 자산매도입금
+    PAYMENT_CANCEL = "payment_cancel"  # 결제취소
 
 
 # 유형별 속성 매핑

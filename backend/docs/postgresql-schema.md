@@ -1081,7 +1081,7 @@ CREATE TABLE transactions (
        type IN ('buy', 'sell', 'deposit', 'withdraw', 'cash_dividend', 'stock_dividend', 'interest', 'fee', 
                 'transfer_in', 'transfer_out', 'adjustment', 'invest', 'redeem', 
                 'internal_transfer', 'card_payment', 'promotion_deposit', 'auto_transfer', 'remittance', 'exchange',
-                'out_asset', 'in_asset')
+                'out_asset', 'in_asset', 'payment_cancel')
     )
 );
 
@@ -1140,6 +1140,7 @@ CREATE INDEX idx_transactions_confirmed ON transactions(confirmed);
 | `exchange`          | 환전                | **±** (양방향)                    | KRW↔USD, 통화간 교환 |
 | `out_asset`         | 자산매수출금                | **-** (음수 필수)                    | 자산매수를 위한 출금 |
 | `in_asset`          | 자산매도입금                | **+** (양수 필수)                    | 자산매도에 의한 입금 |
+| `payment_cancel`    | 결제취소            | **+** (양수 필수)                    | 카드 결제 취소 환급 |
 
 **특수 거래 패턴**:
 - **현금 배당**: 현금 자산에 cash_dividend 타입으로 기록 (quantity=배당금, extras에 'asset':{asset_id})
@@ -1337,6 +1338,7 @@ class TransactionType(str, Enum):
     EXCHANGE = "exchange"  # 환전
     OUT_ASSET = "out_asset"  # 자산매수출금
     IN_ASSET = "in_asset"  # 자산매도입금
+    PAYMENT_CANCEL = "payment_cancel"  # 결제취소
 ```
 
 **TypeScript Frontend Enum**
@@ -1363,6 +1365,7 @@ export enum TransactionType {
   EXCHANGE = 'exchange',
   OUT_ASSET = 'out_asset',
   IN_ASSET = 'in_asset',
+  PAYMENT_CANCEL = 'payment_cancel',
 }
 ```
 

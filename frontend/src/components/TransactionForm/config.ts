@@ -24,6 +24,7 @@ export const FIELD_LABELS: Record<TransactionType, Partial<Record<string, string
   exchange: { quantity: "환전 금액" },
   out_asset: { quantity: "출금 금액" },
   in_asset: { quantity: "입금 금액" },
+  payment_cancel: { quantity: "취소 금액" },
 };
 
 export const TRANSACTION_TYPE_CONFIGS: Record<TransactionType, TransactionTypeConfig> = {
@@ -175,6 +176,13 @@ export const TRANSACTION_TYPE_CONFIGS: Record<TransactionType, TransactionTypeCo
   in_asset: {
     type: 'in_asset',
     label: '자산매도입금',
+    fields: ['asset', 'quantity', 'date', 'related_transaction', 'category', 'description', 'memo'],
+    requiredFields: ['asset', 'quantity', 'date'],
+    specialBehavior: ['relatedTransaction'],
+  },
+  payment_cancel: {
+    type: 'payment_cancel',
+    label: '결제취소',
     fields: ['asset', 'quantity', 'date', 'related_transaction', 'category', 'description', 'memo'],
     requiredFields: ['asset', 'quantity', 'date'],
     specialBehavior: ['relatedTransaction'],

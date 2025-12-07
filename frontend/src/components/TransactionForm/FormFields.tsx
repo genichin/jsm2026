@@ -581,11 +581,15 @@ export function RelatedTransactionField({
   selectedAsset,
   assets,
   onCreateNew,
+  currentQuantity,
+  transactionType,
 }: FormFieldProps & {
   transactionDate?: string;
   selectedAsset?: AssetBrief;
   assets: AssetBrief[];
   onCreateNew?: () => void;
+  currentQuantity?: number;
+  transactionType?: TransactionType;
 }) {
   const [searchTerm, setSearchTerm] = useState("");
   const [isOpen, setIsOpen] = useState(false);
@@ -594,22 +598,31 @@ export function RelatedTransactionField({
   const [isLoading, setIsLoading] = useState(false);
   const inputRef = useRef<HTMLDivElement>(null);
 
-  // 같은 계좌, 같은 날짜의 거래 조회
+  // 거래 조회 (결제취소는 동일 자산만, 다른 타입은 계좌 전체)
   useEffect(() => {
-    if (!selectedAsset || !transactionDate) return;
+    if (!selectedAsset || !transactionDate) {
+      return;
+    }
 
     const fetchTransactions = async () => {
       setIsLoading(true);
       try {
-        const dateOnly = transactionDate.split('T')[0];
-        const params = new URLSearchParams({
-          account_id: selectedAsset.account_id || '',
-          start_date: `${dateOnly}T00:00:00`,
-          end_date: `${dateOnly}T23:59:59`,
-          size: '100'
-        });
+        const params = new URLSearchParams({ size: '100' });
+        
+        // 결제취소는 동일 자산의 거래만 조회
+        if (transactionType === 'payment_cancel') {
+          params.append('asset_id', selectedAsset.id);
+        } else {
+          // 다른 타입은 계좌 전체 조회
+          params.append('account_id', selectedAsset.account_id || '');
+        }
+        
         const response = await api.get(`/transactions?${params.toString()}`);
-        setTransactions(response.data.items || []);
+        const items = response.data.items || [];
+        
+        // 결제취소 거래는 필터링 (결제취소끼리는 연결 불가)
+        const filtered = items.filter((t: any) => t.type !== 'payment_cancel');
+        setTransactions(filtered);
       } catch (error) {
         console.error('Failed to fetch transactions:', error);
         setTransactions([]);
@@ -619,31 +632,49 @@ export function RelatedTransactionField({
     };
 
     fetchTransactions();
-  }, [selectedAsset, transactionDate]);
+  }, [selectedAsset, transactionDate, transactionType]);
 
   const filteredTransactions = useMemo(() => {
-    if (!searchTerm) return transactions;
-    const term = searchTerm.toLowerCase();
-    return transactions.filter((t) =>
-      t.description?.toLowerCase().includes(term) ||
-      t.memo?.toLowerCase().includes(term) ||
-      t.type?.toLowerCase().includes(term)
-    );
-  }, [transactions, searchTerm]);
+    let filtered = transactions;
+    
+    // 결제취소는 금액이 일치하는 거래만 (절댓값 같고 부호 반대)
+    if (transactionType === 'payment_cancel' && currentQuantity !== undefined) {
+      filtered = filtered.filter((t) => 
+        Math.abs(t.quantity) === Math.abs(currentQuantity) &&
+        Math.sign(t.quantity) !== Math.sign(currentQuantity)
+      );
+    }
+    
+    // 검색어 필터링
+    if (searchTerm) {
+      const term = searchTerm.toLowerCase();
+      filtered = filtered.filter((t) =>
+        t.description?.toLowerCase().includes(term) ||
+        t.memo?.toLowerCase().includes(term) ||
+        t.type?.toLowerCase().includes(term)
+      );
+    }
+    
+    return filtered;
+  }, [transactions, searchTerm, transactionType, currentQuantity]);
 
   const selectedTransaction = transactions.find((t) => t.id === value);
 
-  // 드롭다운 위치 계산
-  useEffect(() => {
-    if (isOpen && inputRef.current) {
+  // 드롭다운 열기 및 위치 계산
+  const handleToggleOpen = () => {
+    if (disabled) return;
+    
+    if (!isOpen && inputRef.current) {
+      // fixed 포지션은 viewport 기준이므로 scroll을 더하지 않음
       const rect = inputRef.current.getBoundingClientRect();
       setDropdownPosition({
-        top: rect.bottom + window.scrollY,
-        left: rect.left + window.scrollX,
+        top: rect.bottom,
+        left: rect.left,
         width: rect.width,
       });
     }
-  }, [isOpen]);
+    setIsOpen(!isOpen);
+  };
 
   const handleSelect = (transactionId: string) => {
     if (onChange) {
@@ -665,104 +696,139 @@ export function RelatedTransactionField({
   };
 
   return (
-    <div className="relative" ref={inputRef}>
+    <div className="relative">
       {/* Hidden input for form submission */}
       <input type="hidden" name="related_transaction_id" value={value || ""} />
       
-      <div className="relative">
-        <div
-          className={`w-full px-3 py-2 border rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${
-            disabled ? "bg-gray-100 cursor-not-allowed" : "bg-white cursor-pointer"
+      <label className="block text-sm font-medium text-slate-700 mb-1">
+        연결 거래 (선택사항)
+        {!isLoading && transactions.length > 0 && (
+          <span className="ml-2 text-xs text-gray-500">({transactions.length}개)</span>
+        )}
+      </label>
+      
+      {/* 선택 버튼 */}
+      <div className="relative" ref={inputRef}>
+        <button
+          type="button"
+          onClick={handleToggleOpen}
+          disabled={disabled}
+          className={`w-full text-left px-3 py-2 border rounded-md shadow-sm ${
+            disabled ? "bg-gray-100 cursor-not-allowed" : "bg-white hover:border-blue-500"
           }`}
-          onClick={() => !disabled && setIsOpen(!isOpen)}
         >
           {selectedTransaction ? (
             <div className="flex justify-between items-center">
               <div>
-                <span className="font-medium">{selectedTransaction.description || '설명 없음'}</span>
-                <span className="text-sm text-gray-500 ml-2">
+                <span className="font-medium text-sm">{selectedTransaction.description || '설명 없음'}</span>
+                <span className="text-xs text-gray-500 ml-2">
                   ({selectedTransaction.type}) {selectedTransaction.quantity?.toLocaleString()}
                 </span>
               </div>
-              <button
-                type="button"
+              <span
                 onClick={(e) => {
                   e.stopPropagation();
                   handleClear();
                 }}
-                className="text-gray-400 hover:text-gray-600"
+                className="text-gray-400 hover:text-gray-600 ml-2 cursor-pointer"
               >
                 ✕
-              </button>
+              </span>
             </div>
           ) : (
-            <span className="text-gray-400">
-              {isLoading ? "로딩 중..." : "연결할 거래 선택 (선택사항)"}
+            <span className="text-gray-400 text-sm">
+              {isLoading ? "로딩 중..." : "연결할 거래 선택"}
             </span>
           )}
-        </div>
-
-        {isOpen &&
-          createPortal(
-            <div
-              className="fixed bg-white border rounded-md shadow-lg z-[9999] max-h-80 overflow-y-auto"
-              style={{
-                top: `${dropdownPosition.top}px`,
-                left: `${dropdownPosition.left}px`,
-                width: `${dropdownPosition.width}px`,
-              }}
-            >
-              <div className="sticky top-0 bg-white border-b p-2">
-                <input
-                  type="text"
-                  className="w-full px-3 py-1.5 border rounded-md text-sm"
-                  placeholder="거래 검색..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  onClick={(e) => e.stopPropagation()}
-                  autoFocus
-                />
-              </div>
-              <div className="py-1">
-                {filteredTransactions.length === 0 ? (
-                  <div className="px-3 py-2 text-sm text-gray-500">
-                    {isLoading ? "로딩 중..." : "해당 날짜에 거래가 없습니다"}
-                  </div>
-                ) : (
-                  filteredTransactions.map((transaction) => {
-                    const txAsset = getTransactionAsset(transaction);
-                    return (
-                      <div
-                        key={transaction.id}
-                        className="px-3 py-2 hover:bg-gray-100 cursor-pointer"
-                        onClick={() => handleSelect(transaction.id)}
-                      >
-                        <div className="flex justify-between items-start">
-                          <div className="flex-1">
-                            <p className="text-sm font-medium">
-                              {transaction.description || '설명 없음'}
-                            </p>
-                            <p className="text-xs text-gray-500">
-                              {txAsset?.name} · {transaction.type}
-                            </p>
-                          </div>
-                          <span
-                            className={`text-sm font-medium ${
-                              transaction.quantity >= 0 ? "text-green-600" : "text-red-600"
-                            }`}
-                          >
-                            {transaction.quantity?.toLocaleString()}
-                          </span>
-                        </div>
-                      </div>
-                    );
-                  })
-                )}
-              </div>
-            </div>,
-            document.body
-          )}
+        </button>
       </div>
+
+      {/* Portal로 드롭다운 렌더링 */}
+      {typeof window !== 'undefined' && isOpen && !disabled && createPortal(
+        <>
+          {/* 백드롭 */}
+          <div 
+            className="fixed inset-0 z-[100]" 
+            onClick={() => setIsOpen(false)}
+          />
+          
+          {/* 드롭다운 */}
+          <div 
+            className="fixed bg-white border rounded-lg shadow-xl max-h-96 overflow-y-auto z-[101]"
+            style={{
+              top: `${dropdownPosition.top}px`,
+              left: `${dropdownPosition.left}px`,
+              width: `${dropdownPosition.width}px`,
+              minWidth: '300px',
+            }}
+          >
+            <div className="sticky top-0 bg-white border-b p-2">
+              <input
+                type="text"
+                className="w-full px-3 py-1.5 border rounded-md text-sm"
+                placeholder="거래 검색..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                onClick={(e) => e.stopPropagation()}
+                autoFocus
+              />
+            </div>
+            <div className="py-1">
+              {filteredTransactions.length === 0 ? (
+                <div className="px-3 py-2 text-sm text-gray-500">
+                  {isLoading ? "로딩 중..." : 
+                   transactionType === 'payment_cancel' 
+                     ? "해당 자산에 연결 가능한 거래가 없습니다"
+                     : "거래가 없습니다"}
+                </div>
+              ) : (
+                filteredTransactions.map((transaction) => {
+                  const txAsset = getTransactionAsset(transaction);
+                  // 결제취소는 원래 거래의 반대 방향이므로 부호가 반대여야 함
+                  const isMatchingAmount = currentQuantity && transactionType === 'payment_cancel' &&
+                    Math.abs(transaction.quantity) === Math.abs(currentQuantity) &&
+                    Math.sign(transaction.quantity) !== Math.sign(currentQuantity);
+                  
+                  return (
+                    <button
+                      key={transaction.id}
+                      type="button"
+                      onClick={() => handleSelect(transaction.id)}
+                      className={`w-full text-left px-3 py-2 hover:bg-slate-50 border-b last:border-b-0 ${
+                        isMatchingAmount ? 'bg-blue-50 border-l-4 border-blue-500' : ''
+                      }`}
+                    >
+                      <div className="flex justify-between items-start">
+                        <div className="flex-1">
+                          <p className="text-sm font-medium">
+                            {transaction.description || '설명 없음'}
+                          </p>
+                          <p className="text-xs text-gray-500">
+                            {txAsset?.name} · {transaction.type}
+                            {isMatchingAmount && (
+                              <span className="ml-2 text-blue-600 font-semibold">
+                                ✓ 금액 일치
+                              </span>
+                            )}
+                          </p>
+                        </div>
+                        <span
+                          className={`text-sm font-medium ${
+                            transaction.quantity >= 0 ? "text-green-600" : "text-red-600"
+                          }`}
+                        >
+                          {transaction.quantity?.toLocaleString()}
+                        </span>
+                      </div>
+                    </button>
+                  );
+                })
+              )}
+            </div>
+          </div>
+        </>,
+        document.body
+      )}
       {!selectedAsset && (
         <p className="text-xs text-gray-500 mt-1">
           먼저 자산을 선택하세요

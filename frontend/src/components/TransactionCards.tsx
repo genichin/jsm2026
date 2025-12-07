@@ -56,6 +56,7 @@ const typeColor: Partial<Record<TransactionType, string>> = {
   auto_transfer: "bg-fuchsia-100 text-fuchsia-700",
   remittance: "bg-amber-100 text-amber-700",
   exchange: "bg-sky-100 text-sky-700",
+  payment_cancel: "bg-green-100 text-green-700",
 };
 
 const DEFAULT_TYPE_COLOR = "bg-slate-100 text-slate-600";

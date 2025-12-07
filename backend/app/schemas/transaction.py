@@ -45,6 +45,7 @@ class TransactionType(str, Enum):
     EXCHANGE = "exchange"  # 환전
     OUT_ASSET = "out_asset"   # 자산매수출금
     IN_ASSET = "in_asset"     # 자산매도입금
+    PAYMENT_CANCEL = "payment_cancel"  # 결제취소
 
 
 # Asset Schemas
@@ -178,6 +179,9 @@ class TransactionCreate(TransactionBase):
         elif self.type == TransactionType.IN_ASSET:
             if self.quantity <= 0:
                 raise ValueError("자산매도입금(IN_ASSET) 거래의 수량은 양수여야 합니다.")
+        elif self.type == TransactionType.PAYMENT_CANCEL:
+            if self.quantity <= 0:
+                raise ValueError("결제취소(PAYMENT_CANCEL) 거래의 수량은 양수여야 합니다.")
         # ADJUSTMENT는 양수/음수 모두 허용 (수량 조정)
         return self
 

@@ -261,12 +261,13 @@ def allowed_category_flow_types_for(tx_type: str) -> set:
     - withdraw/fee: 지출, (출금은 이체도 가능), 중립
     - transfer_in/out: 이체, 중립
     - adjustment: 중립
+    - payment_cancel: 수입, 중립 (환급)
     기타: 제한 없음 (모든 타입 허용)
     """
     tx_type = (tx_type or "").lower()
     if tx_type in {"buy", "sell"}:
         return {"investment", "neutral"}
-    if tx_type in {"deposit", "interest", "cash_dividend", "stock_dividend"}:
+    if tx_type in {"deposit", "interest", "cash_dividend", "stock_dividend", "payment_cancel"}:
         return {"income", "transfer", "neutral"}
     if tx_type in {"withdraw", "fee"}:
         return {"expense", "transfer", "neutral"}
@@ -448,6 +449,25 @@ async def create_transaction(
     
     # 사용자 캐시 무효화
     invalidate_user_cache(current_user.id)
+    
+    # 결제취소의 경우 연결된 거래도 함께 payment_cancel로 변경
+    if transaction.type.value == 'payment_cancel' and transaction.related_transaction_id:
+        related_tx = db.query(Transaction).filter(
+            Transaction.id == transaction.related_transaction_id
+        ).first()
+        
+        if related_tx and related_tx.type != 'payment_cancel':
+            # 연결된 거래도 결제취소로 변경
+            related_tx.type = 'payment_cancel'
+            # 양방향 연결 설정
+            related_tx.related_transaction_id = db_transaction.id
+            db_transaction.related_transaction_id = related_tx.id
+            
+            db.commit()
+            db.refresh(related_tx)
+            
+            # 연결된 거래의 자산 잔고도 업데이트
+            calculate_and_update_balance(db, related_tx.asset_id)
     
     # 매수/매도의 경우 현금 자산과 연결된 거래 자동 생성
     # skip_auto_cash_transaction=True이면 자동 생성 건너뛰기 (out_asset/in_asset 수동 생성 시)
@@ -948,6 +968,29 @@ async def update_transaction(
     
     # 사용자 캐시 무효화
     invalidate_user_cache(current_user.id)
+    
+    # 결제취소로 변경된 경우 처리
+    if transaction.type == 'payment_cancel':
+        # 연결된 거래도 결제취소로 변경
+        if transaction.related_transaction_id:
+            related_tx = db.query(Transaction).filter(
+                Transaction.id == transaction.related_transaction_id
+            ).first()
+            
+            if related_tx and related_tx.type != 'payment_cancel':
+                # 연결된 거래도 결제취소로 변경
+                related_tx.type = 'payment_cancel'
+                # 양방향 연결 설정
+                related_tx.related_transaction_id = transaction.id
+                
+                db.commit()
+                db.refresh(related_tx)
+                
+                # 연결된 거래의 자산 잔고도 업데이트
+                calculate_and_update_balance(db, related_tx.asset_id)
+    
+    # 거래 정보 새로고침
+    db.refresh(transaction)
     
     # 직렬화하여 응답 (category를 dict로 보장)
     return TransactionResponse.model_validate(serialize_transaction(transaction, db))

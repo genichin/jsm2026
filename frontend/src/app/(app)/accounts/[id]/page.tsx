@@ -13,7 +13,7 @@ type TransactionType =
   | "cash_dividend" | "stock_dividend" | "interest" | "fee" | "adjustment"
   | "invest" | "redeem" | "internal_transfer" | "card_payment" 
   | "promotion_deposit" | "auto_transfer" | "remittance" | "exchange"
-  | "out_asset" | "in_asset";
+  | "out_asset" | "in_asset" | "payment_cancel";
 
 type AccountType =
   | "bank_account"

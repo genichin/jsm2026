@@ -226,6 +226,52 @@ class TestCreateTransaction:
         )
         
         assert response.status_code == 422  # Validation error
+    
+    def test_create_payment_cancel_success(self, client: TestClient, auth_header: dict, test_cash_asset: Asset):
+        """결제취소 거래 생성 성공"""
+        response = client.post(
+            "/api/v1/transactions",
+            headers=auth_header,
+            json={
+                "asset_id": test_cash_asset.id,
+                "type": "payment_cancel",
+                "quantity": 30000,  # 결제취소는 양수 (환급)
+                "extras": {
+                    "price": 1.0,
+                    "fee": 0,
+                    "tax": 0
+                },
+                "transaction_date": "2025-12-07T14:00:00",
+                "description": "카드 결제 취소 환급"
+            }
+        )
+        
+        assert response.status_code == 201
+        data = response.json()
+        assert data["type"] == "payment_cancel"
+        assert data["quantity"] == 30000
+        assert data["description"] == "카드 결제 취소 환급"
+    
+    def test_create_payment_cancel_invalid_quantity(self, client: TestClient, auth_header: dict, test_cash_asset: Asset):
+        """결제취소 거래 생성 실패 - 음수 수량"""
+        response = client.post(
+            "/api/v1/transactions",
+            headers=auth_header,
+            json={
+                "asset_id": test_cash_asset.id,
+                "type": "payment_cancel",
+                "quantity": -30000,  # 결제취소는 양수여야 함
+                "extras": {
+                    "price": 1.0,
+                    "fee": 0,
+                    "tax": 0
+                },
+                "transaction_date": "2025-12-07T14:00:00",
+                "description": "카드 결제 취소 환급"
+            }
+        )
+        
+        assert response.status_code == 422  # Validation error
 
 
 class TestListTransactions:
