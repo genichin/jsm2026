@@ -36,12 +36,15 @@ type Transaction = {
   transaction_date: string;
   description?: string | null;
   memo?: string | null;
-  confirmed: boolean;
+  flow_type: string;
+  confirmed?: boolean;
   extras?: Record<string, any> | null;
   created_at: string;
   updated_at: string;
   asset?: AssetBrief | null;
 };
+
+type FlowType = "expense" | "income" | "transfer" | "investment" | "neutral" | "undefined";
 
 type TransactionListResponse = {
   items: Transaction[];
@@ -64,7 +67,7 @@ export default function TransactionsPage() {
   const [accountFilter, setAccountFilter] = useState<string | "">("")
   const [typeFilter, setTypeFilter] = useState<TransactionType | "">("")
   const [categoryFilter, setCategoryFilter] = useState<string | "">("")
-  const [confirmedFilter, setConfirmedFilter] = useState<string>("")  // "", "true", "false"
+  const [flowTypeFilter, setFlowTypeFilter] = useState<string>("")  // "", expense|income|transfer|investment|neutral|undefined
   const [page, setPage] = useState(1);
   const [size, setSize] = useState(20);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -122,14 +125,14 @@ export default function TransactionsPage() {
 
   // List transactions
   const listQuery = useQuery<TransactionListResponse>({
-    queryKey: ["transactions", { assetFilter, accountFilter, typeFilter, categoryFilter, confirmedFilter, page, size }],
+    queryKey: ["transactions", { assetFilter, accountFilter, typeFilter, categoryFilter, flowTypeFilter, page, size }],
     queryFn: async () => {
       const params: any = { page, size };
       if (assetFilter) params.asset_id = assetFilter;
       if (accountFilter) params.account_id = accountFilter;
       if (typeFilter) params.type = typeFilter;
       if (categoryFilter) params.category_id = categoryFilter;
-      if (confirmedFilter) params.confirmed = confirmedFilter === "true";
+      if (flowTypeFilter) params.flow_type = flowTypeFilter;
     
       const res = await api.get("/transactions/recent", { params });
       return res.data as TransactionListResponse;
@@ -211,19 +214,6 @@ export default function TransactionsPage() {
     },
     onError: (err: any) => {
       const msg = err?.response?.data?.detail || "거래 삭제 중 오류가 발생했습니다.";
-      alert(msg);
-    },
-  });
-
-  const confirmToggleMut = useMutation({
-    mutationFn: async (id: string) =>
-      (await api.put(`/transactions/${id}/confirmed`)).data as Transaction,
-    onSuccess: () => {
-      // 단순하게 쿼리를 무효화해서 새로 로드
-      qc.invalidateQueries({ queryKey: ["transactions"] });
-    },
-    onError: (err: any) => {
-      const msg = err?.response?.data?.detail || "거래 확인 상태 변경 중 오류가 발생했습니다.";
       alert(msg);
     },
   });
@@ -393,6 +383,12 @@ export default function TransactionsPage() {
         payload.related_transaction_id = null;
       }
       
+      // flow_type 처리
+      const flowTypeValue = fd.get("flow_type")?.toString();
+      if (flowTypeValue) {
+        payload.flow_type = flowTypeValue;
+      }
+      
       // 현금배당 업데이트 시 extras 및 quantity 처리
       if (editing.type === "cash_dividend") {
         const dividend_asset_id = fd.get("dividend_asset_id")?.toString();
@@ -556,6 +552,34 @@ export default function TransactionsPage() {
       cell: ({ row }) => <span className="text-xs text-slate-600">{row.original.category?.name || "-"}</span>,
     },
     {
+      accessorKey: "flow_type",
+      header: "흐름",
+      cell: ({ getValue }) => {
+        const labelMap: Record<string, string> = {
+          expense: "지출",
+          income: "수입",
+          transfer: "이체",
+          investment: "투자",
+          neutral: "중립",
+          undefined: "미분류",
+        };
+        const v = getValue() as string;
+        return <span className="text-xs text-slate-600">{labelMap[v] || v || "-"}</span>;
+      },
+    },
+    {
+      accessorKey: "confirmed",
+      header: "확정",
+      cell: ({ row }) => {
+        const confirmed = row.original.confirmed ?? false;
+        return (
+          <span className={`text-xs px-2 py-0.5 rounded ${confirmed ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
+            {confirmed ? '확정' : '미확정'}
+          </span>
+        );
+      },
+    },
+    {
       accessorKey: "description",
       header: "설명",
       cell: ({ getValue }) => <span className="text-sm text-gh-fg-muted max-w-xs truncate">{(getValue() as string) || "-"}</span>,
@@ -638,11 +662,15 @@ export default function TransactionsPage() {
           </select>
         </div>
         <div>
-          <label className="block text-xs text-gh-fg-muted mb-1">확인 여부</label>
-          <select value={confirmedFilter} onChange={(e) => { setConfirmedFilter(e.target.value); setPage(1); }} className="border-gh-border-default bg-gh-canvas-inset rounded-md px-3 py-1.5 focus:ring-2 focus:ring-gh-accent-emphasis">
+          <label className="block text-xs text-gh-fg-muted mb-1">흐름 타입</label>
+          <select value={flowTypeFilter} onChange={(e) => { setFlowTypeFilter(e.target.value); setPage(1); }} className="border-gh-border-default bg-gh-canvas-inset rounded-md px-3 py-1.5 focus:ring-2 focus:ring-gh-accent-emphasis">
             <option value="">전체</option>
-            <option value="false">미확인</option>
-            <option value="true">확인됨</option>
+            <option value="expense">지출</option>
+            <option value="income">수입</option>
+            <option value="transfer">이체</option>
+            <option value="investment">투자</option>
+            <option value="neutral">중립</option>
+            <option value="undefined">미분류</option>
           </select>
         </div>
         <div className="flex-1" />
@@ -894,7 +922,7 @@ export default function TransactionsPage() {
               extras: t.extras,
               dividend_asset_name: dividendAssetName,  // 배당 자산 이름 추가
               currency: t.asset?.currency,  // 통화 정보 추가
-              is_confirmed: t.confirmed,  // 거래 확인 상태 추가
+              flow_type: t.flow_type,
             };
           })}
           onEdit={(id) => {
@@ -905,9 +933,6 @@ export default function TransactionsPage() {
             if (confirm("정말 삭제하시겠습니까? 연관 거래와 잔고에 영향을 줄 수 있습니다.")) {
               deleteMut.mutate(id);
             }
-          }}
-          onConfirmToggle={(id) => {
-            confirmToggleMut.mutate(id);
           }}
         />
       )}

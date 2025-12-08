@@ -13,7 +13,7 @@ asset:{asset_id}:balance
 
 - **값**: 현재 보유 수량 (문자열 형태의 숫자)
 - **업데이트 시점**: 거래 생성/수정/삭제 시 자동
-- **계산 방식**: PostgreSQL의 모든 확정된 거래(`is_confirmed=true`)의 `quantity` 합계
+- **계산 방식**: PostgreSQL의 모든 거래 `quantity` 합계 (flow_type과 무관)
 
 ### 사용자 캐시
 ```
@@ -235,7 +235,7 @@ redis.exceptions.ConnectionError: Error connecting to Redis
 ### 잔고가 동기화되지 않음
 
 **해결 방법**:
-1. 거래가 `is_confirmed=true`인지 확인
+1. 해당 자산 거래가 정상적으로 커밋되었는지 확인 (flow_type과 무관하게 반영됨)
 2. Redis에서 수동으로 재계산:
    ```python
    from app.core.redis import calculate_and_update_balance

@@ -198,6 +198,13 @@ app.include_router(
     tags=["categories"]
 )
 
+# Backward-compat path for tests expecting /category-auto-rules
+app.include_router(
+    auto_rules.router,
+    prefix=f"{settings.API_V1_PREFIX}/category-auto-rules",
+    tags=["categories"]
+)
+
 app.include_router(
     tags.router,
     prefix=f"{settings.API_V1_PREFIX}/tags",

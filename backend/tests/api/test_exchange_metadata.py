@@ -55,7 +55,7 @@ def test_create_exchange_transaction_with_metadata(
         "tax": 0,
         "transaction_date": "2024-11-18T10:00:00",
         "description": "원화 → 달러 환전",
-        "is_confirmed": True,
+        "flow_type": "transfer",
         "target_asset_id": usd_asset_id,
         "target_amount": 1000,  # 달러 입금
         "extras": {
@@ -145,7 +145,7 @@ def test_exchange_rate_calculation(
         "tax": 0,
         "transaction_date": "2024-11-18T10:00:00",
         "description": "유로 → 엔화 환전",
-        "is_confirmed": True,
+        "flow_type": "transfer",
         "target_asset_id": jpy_asset_id,
         "target_amount": 16000,
         "extras": {

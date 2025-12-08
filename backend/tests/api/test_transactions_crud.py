@@ -446,7 +446,7 @@ class TestUpdateTransaction:
     def test_update_transaction_quantity(self, client: TestClient, auth_header: dict, test_transaction: Transaction):
         """거래 수량 수정 (수량은 변경 불가 - description/memo만 가능)"""
         # TransactionUpdate 스키마는 quantity를 지원하지 않음
-        # description, memo, is_confirmed, category_id만 변경 가능
+        # description, memo, flow_type, category_id만 변경 가능
         response = client.put(
             f"/api/v1/transactions/{test_transaction.id}",
             headers=auth_header,

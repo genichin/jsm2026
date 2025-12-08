@@ -194,7 +194,7 @@ curl -X GET "https://jsfamily2.myds.me:40041/api/v1/users/me" \
 - `account_id`: 계좌 ID로 필터링
 - `type`: 거래 유형 (buy, sell, deposit, withdraw 등)
 - `category_id`: 카테고리 ID로 필터링
-- `confirmed`: 확인 여부 필터 (true: 확인된 거래만, false: 미확인 거래만, 생략: 전체)
+- `flow_type`: 거래 흐름 필터 (expense, income, transfer, investment, neutral, undefined)
 - `start_date`: 시작일 (YYYY-MM-DD)
 - `end_date`: 종료일 (YYYY-MM-DD)
 - `page`: 페이지 번호 (기본값: 1)
@@ -212,7 +212,7 @@ curl -X GET "https://jsfamily2.myds.me:40041/api/v1/users/me" \
       "transaction_date": "2025-10-25T09:30:00Z",
       "description": "삼성전자 매수",
       "memo": "장기 투자",
-      "confirmed": false,
+      "flow_type": "investment",
       "category_id": "uuid",
       "category": {
         "id": "uuid",
@@ -242,8 +242,12 @@ curl -X GET "https://jsfamily2.myds.me:40041/api/v1/users/me" \
 
 #### POST /api/v1/transactions
 새 거래 기록
+
 **요구 사항**
 - 거래 생성/업로드 시 transactions.description(또는 memo 등)을 검사하여 특정 문자열(키워드)이 포함되면 자동으로 해당 카테고리(category_id)를 지정한다.
+- 카테고리 지정 시 자동으로 해당 카테고리의 flow_type이 거래에 할당된다. (사용자 확인 불필요)
+- flow_type이 명시적으로 제공되지 않으면 카테고리의 flow_type으로 설정되며, 카테고리 미지정 시 'undefined'로 설정된다.
+
 **요청:**
 ```json
 {

@@ -102,7 +102,7 @@ def portfolio_transactions(
             realized_profit=0,
             transaction_date=datetime(2025, 11, 1, 10, 0, 0),
             description="초기 입금",
-            is_confirmed=True
+            flow_type="income"
         ),
         Transaction(
             asset_id=test_cash_asset.id,
@@ -114,7 +114,7 @@ def portfolio_transactions(
             realized_profit=0,
             transaction_date=datetime(2025, 11, 5, 10, 0, 0),
             description="주식 매수를 위한 출금",
-            is_confirmed=True
+            flow_type="expense"
         ),
     ]
     
@@ -130,7 +130,7 @@ def portfolio_transactions(
             realized_profit=0,
             transaction_date=datetime(2025, 11, 5, 11, 0, 0),
             description="삼성전자 매수",
-            is_confirmed=True
+            flow_type="investment"
         ),
         Transaction(
             asset_id=test_stock_asset_samsung.id,
@@ -142,7 +142,7 @@ def portfolio_transactions(
             realized_profit=95000,  # (75000-70000)*20 - 300 - 100 = 99600 (대략 95000)
             transaction_date=datetime(2025, 11, 10, 14, 0, 0),
             description="삼성전자 일부 매도",
-            is_confirmed=True
+            flow_type="investment"
         ),
     ]
     
@@ -158,7 +158,7 @@ def portfolio_transactions(
             realized_profit=0,
             transaction_date=datetime(2025, 11, 7, 10, 0, 0),
             description="카카오 매수",
-            is_confirmed=True
+            flow_type="investment"
         ),
     ]
     
@@ -384,8 +384,8 @@ class TestPortfolioFiltering:
         test_cash_asset: Asset,
         db_session: Session
     ):
-        """확정된 거래만 포함"""
-        # 확정된 거래
+        """flow_type가 다른 거래가 모두 합산되는지 확인"""
+        # 확정(수입) 거래
         confirmed_tx = Transaction(
             asset_id=test_cash_asset.id,
             type="deposit",
@@ -396,10 +396,10 @@ class TestPortfolioFiltering:
             realized_profit=0,
             transaction_date=datetime(2025, 11, 1, 10, 0, 0),
             description="확정 거래",
-            is_confirmed=True
+            flow_type="income"
         )
         
-        # 미확정 거래
+        # 미확정(분류되지 않은) 거래
         unconfirmed_tx = Transaction(
             asset_id=test_cash_asset.id,
             type="deposit",
@@ -410,7 +410,7 @@ class TestPortfolioFiltering:
             realized_profit=0,
             transaction_date=datetime(2025, 11, 2, 10, 0, 0),
             description="미확정 거래",
-            is_confirmed=False
+            flow_type="undefined"
         )
         
         db_session.add_all([confirmed_tx, unconfirmed_tx])
@@ -425,9 +425,8 @@ class TestPortfolioFiltering:
         assert response.status_code == 200
         data = response.json()
         
-        # 확정된 거래만 반영 (1,000,000)
-        # 미확정 거래는 제외 (500,000 제외)
-        assert float(data["total_cash"]) == 1000000.0
+        # 모든 거래 합산 (1,500,000)
+        assert float(data["total_cash"]) == 1500000.0
     
     def test_portfolio_only_active_assets(
         self,
@@ -448,7 +447,7 @@ class TestPortfolioFiltering:
             realized_profit=0,
             transaction_date=datetime(2025, 11, 1, 10, 0, 0),
             description="입금",
-            is_confirmed=True
+            flow_type="income"
         )
         db_session.add(tx)
         db_session.commit()
@@ -501,7 +500,7 @@ class TestPortfolioEdgeCases:
             realized_profit=0,
             transaction_date=datetime(2025, 11, 1, 10, 0, 0),
             description="매수",
-            is_confirmed=True
+            flow_type="investment"
         )
         
         # 전량 매도
@@ -515,7 +514,7 @@ class TestPortfolioEdgeCases:
             realized_profit=49700,  # (75000-70000)*10 - 100 - 50
             transaction_date=datetime(2025, 11, 5, 14, 0, 0),
             description="전량 매도",
-            is_confirmed=True
+            flow_type="investment"
         )
         
         db_session.add_all([buy_tx, sell_tx])
@@ -559,7 +558,7 @@ class TestPortfolioEdgeCases:
                 realized_profit=0,
                 transaction_date=datetime(2025, 11, 1, 10, 0, 0),
                 description="입금",
-                is_confirmed=True
+                flow_type="income"
             ),
             Transaction(
                 asset_id=test_cash_asset.id,
@@ -571,7 +570,7 @@ class TestPortfolioEdgeCases:
                 realized_profit=0,
                 transaction_date=datetime(2025, 11, 2, 10, 0, 0),
                 description="출금",
-                is_confirmed=True
+                flow_type="expense"
             ),
         ]
         
@@ -608,7 +607,7 @@ class TestPortfolioEdgeCases:
             realized_profit=0,
             transaction_date=datetime(2025, 11, 1, 10, 0, 0),
             description="대량 입금",
-            is_confirmed=True
+            flow_type="income"
         )
         
         db_session.add(tx)
@@ -693,7 +692,7 @@ class TestPortfolioResponseStructure:
             realized_profit=0,
             transaction_date=datetime(2025, 11, 1, 10, 0, 0),
             description="소수점 입금",
-            is_confirmed=True
+            flow_type="income"
         )
         
         db_session.add(tx)

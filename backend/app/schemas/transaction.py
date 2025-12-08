@@ -48,6 +48,16 @@ class TransactionType(str, Enum):
     PAYMENT_CANCEL = "payment_cancel"  # 결제취소
 
 
+class FlowType(str, Enum):
+    """거래 흐름 타입"""
+    EXPENSE = "expense"
+    INCOME = "income"
+    TRANSFER = "transfer"
+    INVESTMENT = "investment"
+    NEUTRAL = "neutral"
+    UNDEFINED = "undefined"
+
+
 # Asset Schemas
 class AssetBase(BaseModel):
     """자산 기본 스키마"""
@@ -118,11 +128,15 @@ class TransactionBase(BaseModel):
     type: TransactionType = Field(..., description="거래 유형")
     category_id: Optional[str] = Field(None, description="카테고리 ID")
     quantity: float = Field(..., description="수량 변화 (양수=증가, 음수=감소)")
+    price: Optional[float] = Field(None, description="거래 단가")
+    fee: Optional[float] = Field(None, ge=0, description="수수료 (음수 불가)")
+    tax: Optional[float] = Field(None, ge=0, description="세금 (음수 불가)")
+    realized_profit: Optional[float] = Field(None, description="실현 손익")
     extras: Optional[dict] = Field(None, description="추가 정보 (price, fee, tax, rate, balance_after 등)")
     transaction_date: datetime = Field(..., description="거래 일시")
     description: Optional[str] = Field(None, description="거래 설명")
     memo: Optional[str] = Field(None, description="사용자 메모")
-    confirmed: bool = Field(default=False, description="사용자 확인 여부 (거래 유형, 카테고리 등)")
+    flow_type: FlowType = Field(default=FlowType.UNDEFINED, description="거래 흐름 타입")
 
     model_config = {
         "from_attributes": True
@@ -142,6 +156,28 @@ class TransactionCreate(TransactionBase):
     @model_validator(mode='after')
     def validate_type_quantity_consistency(self):
         """거래 타입과 수량 방향 일관성 검증"""
+        extras_dict = self.extras or {}
+        # extras 기반 값 채우기
+        if self.price is None and extras_dict.get("price") is not None:
+            try:
+                self.price = float(extras_dict.get("price"))
+            except (TypeError, ValueError):
+                raise ValueError("price는 숫자여야 합니다.")
+        if self.fee is None and extras_dict.get("fee") is not None:
+            try:
+                self.fee = float(extras_dict.get("fee"))
+            except (TypeError, ValueError):
+                raise ValueError("fee는 숫자여야 합니다.")
+        if self.tax is None and extras_dict.get("tax") is not None:
+            try:
+                self.tax = float(extras_dict.get("tax"))
+            except (TypeError, ValueError):
+                raise ValueError("tax는 숫자여야 합니다.")
+        if self.realized_profit is None and extras_dict.get("realized_profit") is not None:
+            try:
+                self.realized_profit = float(extras_dict.get("realized_profit"))
+            except (TypeError, ValueError):
+                raise ValueError("realized_profit는 숫자여야 합니다.")
         if self.type == TransactionType.BUY:
             if self.quantity <= 0:
                 raise ValueError("매수(BUY) 거래의 수량은 양수여야 합니다.")
@@ -183,6 +219,14 @@ class TransactionCreate(TransactionBase):
             if self.quantity <= 0:
                 raise ValueError("결제취소(PAYMENT_CANCEL) 거래의 수량은 양수여야 합니다.")
         # ADJUSTMENT는 양수/음수 모두 허용 (수량 조정)
+
+        # 가격 필수/부호 검증
+        if self.price is not None and self.price < 0:
+            raise ValueError("price는 0 이상이어야 합니다.")
+        if self.fee is not None and self.fee < 0:
+            raise ValueError("fee는 0 이상이어야 합니다.")
+        if self.tax is not None and self.tax < 0:
+            raise ValueError("tax는 0 이상이어야 합니다.")
         return self
 
     model_config = {
@@ -211,7 +255,7 @@ class TransactionUpdate(BaseModel):
     quantity: Optional[float] = Field(None, description="수량 변화 (수정 가능)")
     description: Optional[str] = None
     memo: Optional[str] = None
-    confirmed: Optional[bool] = Field(None, description="사용자 확인 여부")
+    flow_type: Optional[FlowType] = Field(None, description="거래 흐름 타입")
     transaction_date: Optional[datetime] = Field(None, description="거래 일시 (수정 가능)")
     extras: Optional[dict] = Field(None, description="추가 정보 (예: 환율, 외부 시스템 데이터 등)")
     category_id: Optional[str] = Field(None, description="카테고리 ID (변경/해제)")
@@ -226,6 +270,11 @@ class TransactionResponse(TransactionBase):
     created_at: datetime
     updated_at: datetime
     category_id: Optional[str] = Field(None, description="카테고리 ID")
+    confirmed: bool = Field(False, description="확정 여부")
+    price: Optional[float] = None
+    fee: Optional[float] = None
+    tax: Optional[float] = None
+    realized_profit: Optional[float] = None
 
     # 선택: 응답에 카테고리 요약 포함
     category: Optional[dict] = None  # {id, name, flow_type}
@@ -281,7 +330,7 @@ class TransactionFilter(BaseModel):
     type: Optional[TransactionType] = None
     start_date: Optional[datetime] = None
     end_date: Optional[datetime] = None
-    confirmed: Optional[bool] = Field(None, description="확인 여부 필터")
+    flow_type: Optional[FlowType] = Field(None, description="거래 흐름 타입 필터")
     min_amount: Optional[Decimal] = None
     max_amount: Optional[Decimal] = None
     category_id: Optional[str] = None
@@ -366,7 +415,7 @@ class ExchangeCreate(BaseModel):
     transaction_date: datetime = Field(..., description="거래 일시")
     description: Optional[str] = Field(None, description="설명")
     memo: Optional[str] = Field(None, description="메모")
-    is_confirmed: bool = Field(default=True, description="거래 확정 여부")
+    flow_type: FlowType = Field(default=FlowType.TRANSFER, description="거래 흐름 타입")
     external_id: Optional[str] = Field(None, max_length=100, description="외부 ID")
 
 

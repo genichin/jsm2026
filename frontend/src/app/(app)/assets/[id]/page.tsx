@@ -59,7 +59,7 @@ interface Transaction {
   tax: number;
   description: string | null;
   memo: string | null;
-  is_confirmed: boolean;
+  flow_type: string;
   category_id: string | null;
   related_transaction_id: string | null;
   realized_profit: number | null;
@@ -511,9 +511,9 @@ export default function AssetDetailPage({ params }: { params: { id: string } }) 
         },
       },
       {
-        accessorKey: "is_confirmed",
-        header: "확정",
-        cell: ({ row }) => (row.original.is_confirmed ? "✓" : "-"),
+        accessorKey: "flow_type",
+        header: "흐름",
+        cell: ({ row }) => row.original.flow_type || "-",
       },
     ],
     []

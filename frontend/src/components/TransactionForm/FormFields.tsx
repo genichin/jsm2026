@@ -318,6 +318,7 @@ export function DateField({
 // 카테고리 선택 필드
 export function CategoryField({
   defaultValue,
+  onChange,
   categories,
   suggestedCategoryId,
   onSuggestClick,
@@ -339,6 +340,7 @@ export function CategoryField({
       <select
         name="category_id"
         defaultValue={defaultValue || ""}
+        onChange={onChange}
         className="w-full border rounded px-3 py-2"
       >
         <option value="">없음</option>
@@ -839,6 +841,48 @@ export function RelatedTransactionField({
           먼저 거래 날짜를 선택하세요
         </p>
       )}
+    </div>
+  );
+}
+
+// 흐름 타입 선택 필드
+export function FlowTypeField({
+  value,
+  onChange,
+  disabled,
+  required,
+}: FormFieldProps) {
+  const flowTypeOptions = [
+    { value: 'expense', label: '지출' },
+    { value: 'income', label: '수입' },
+    { value: 'transfer', label: '이체' },
+    { value: 'investment', label: '투자' },
+    { value: 'neutral', label: '중립' },
+    { value: 'undefined', label: '미분류' },
+  ];
+
+  return (
+    <div>
+      <label className="block text-sm font-medium text-slate-700 mb-1">
+        흐름 타입 {required && <span className="text-red-500">*</span>}
+      </label>
+      <select
+        name="flow_type"
+        value={value || 'undefined'}
+        onChange={onChange}
+        disabled={disabled}
+        required={required}
+        className="w-full border rounded px-3 py-2 bg-white disabled:bg-gray-100"
+      >
+        {flowTypeOptions.map((option) => (
+          <option key={option.value} value={option.value}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+      <p className="text-xs text-slate-500 mt-1">
+        카테고리를 선택하면 자동으로 설정되며, 수동으로 변경할 수 있습니다.
+      </p>
     </div>
   );
 }

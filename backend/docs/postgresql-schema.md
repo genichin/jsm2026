@@ -1058,6 +1058,11 @@ CREATE TABLE transactions (
     type VARCHAR(20) NOT NULL,          -- 거래 유형(TransactionType Enum 값)
     category_id UUID REFERENCES categories(id) ON DELETE SET NULL,  -- (옵션) 카테고리
     
+    -- 거래 분류 상태 (flow_type으로 통합)
+    flow_type VARCHAR(20) NOT NULL DEFAULT 'undefined' CHECK (
+        flow_type IN ('expense', 'income', 'transfer', 'investment', 'neutral', 'undefined')
+    ),
+    
     -- 자산 수량 변화 (핵심)
     quantity NUMERIC(20, 8) NOT NULL,   -- 양수=증가, 음수=감소
     extras JSONB,                       -- 거래 추가 정보 저장
@@ -1070,9 +1075,8 @@ CREATE TABLE transactions (
     description TEXT,                   -- 거래 설명
     memo TEXT,                          -- 사용자 메모
     
-    -- 연결 및 확인
+    -- 연결
     related_transaction_id UUID REFERENCES transactions(id) ON DELETE SET NULL,  -- 쌍 거래 ID
-    confirmed BOOLEAN NOT NULL DEFAULT false,  -- 사용자 확인 여부 (거래 유형, 카테고리 등)
     
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
@@ -1089,7 +1093,7 @@ CREATE INDEX idx_transactions_asset ON transactions(asset_id);
 CREATE INDEX idx_transactions_date ON transactions(transaction_date DESC);
 CREATE INDEX idx_transactions_type ON transactions(type);
 CREATE INDEX idx_transactions_category ON transactions(category_id);
-CREATE INDEX idx_transactions_confirmed ON transactions(confirmed);
+CREATE INDEX idx_transactions_flow_type ON transactions(flow_type);
 
 ```
 
@@ -1102,8 +1106,13 @@ CREATE INDEX idx_transactions_confirmed ON transactions(confirmed);
   - `fee`: 수수료
   - `tax`: 세금
   - `balance_after`: 거래 후 잔액
+- `flow_type`: 거래의 분류 상태 (expense, income, transfer, investment, neutral, undefined)
+  - `undefined`: 아직 분류되지 않은 거래 (사용자 확인 필요)
+  - 나머지: 자동/수동으로 분류된 거래
+  - 카테고리 선택 시 자동으로 해당 카테고리의 flow_type으로 결정됨
+- `category_id`: 카테고리 (선택사항, NULL 가능)
+  - flow_type이 'undefined'가 아니면, 같은 flow_type의 카테고리만 변경 가능
 - `related_transaction_id`: 복식부기 연결 (교환 거래 시 쌍)
-- `confirmed`: 사용자 확인 여부 (거래 유형, 카테고리 등 확인 완료)
 - `transaction_date`: 거래 발생 일시
 - `description`: 거래 설명 (자동 생성 또는 파싱)
 - `memo`: 사용자 메모

@@ -51,6 +51,9 @@ export function DynamicTransactionForm({
   const [exchangeSourceAmount, setExchangeSourceAmount] = useState(0);
   const [exchangeTargetAmount, setExchangeTargetAmount] = useState(0);
   const [exchangeRate, setExchangeRate] = useState<number | null>(null);
+  
+  // 흐름 타입 상태 (카테고리 변경 시 자동 업데이트)
+  const [flowType, setFlowType] = useState<string>((editing as any)?.flow_type || 'undefined');
 
   // datetime-local용 로컬 시간 포맷터
   const toLocalDateTimeInput = (d: Date) => {
@@ -471,9 +474,27 @@ export function DynamicTransactionForm({
                   suggestedCategoryId={suggestedCategoryId}
                   onSuggestClick={onSuggestCategory}
                   isSuggesting={isSuggesting}
+                  onChange={(e) => {
+                    // 카테고리 변경 시 해당 카테고리의 flow_type으로 자동 업데이트
+                    const selectedCategory = categories.find(c => c.id === e.target.value);
+                    if (selectedCategory?.flow_type) {
+                      setFlowType(selectedCategory.flow_type);
+                    }
+                  }}
                 />
               </div>
             )}
+            
+            {/* 흐름 타입 */}
+            {shouldShowField('flow_type', transactionType) && (
+              <div className="col-span-1">
+                <Fields.FlowTypeField
+                  value={flowType}
+                  onChange={(e) => setFlowType(e.target.value)}
+                />
+              </div>
+            )}
+            
             {showDescription && (
               <div className="col-span-1">
                 <Fields.DescriptionField

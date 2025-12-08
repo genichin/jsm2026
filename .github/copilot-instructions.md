@@ -4,8 +4,12 @@
 
 ## 아키텍처 핵심
 - 스택: FastAPI + SQLAlchemy 2.x + Alembic + PostgreSQL + Redis(실시간) + JWT 인증.
-- 자산 중심 & 복식부기(double-entry): 모든 교환 거래는 반드시 2개의 `asset_transactions` 레코드이며 `related_transaction_id`로 연결합니다(현금 감소/자산 증가 등). 하나로 합치지 않습니다.
+- 자산 중심 & 복식부기(double-entry): 모든 교환 거래는 반드시 2개의 `transactions` 레코드이며 `related_transaction_id`로 연결합니다(현금 감소/자산 증가 등). 하나로 합치지 않습니다.
 - 수량 규칙: `quantity > 0` 증가, `< 0` 감소, `= 0` 마커(예: 배당). 서비스/파서 전반에서 일관 유지.
+- 거래 분류: `flow_type` 필드로 통합 관리 (expense, income, transfer, investment, neutral, undefined)
+  - undefined = 아직 분류 안됨 (자동인식 실패 또는 카테고리 미지정)
+  - 자동 분류 성공 → flow_type 자동 결정 (사용자 확인 불필요)
+  - 카테고리 변경 → flow_type도 함께 변경 (같은 flow_type의 카테고리만 변경 가능)
 - 하이브리드 저장소: PostgreSQL=권위 이력, Redis=실시간 잔고/평단/매수 큐(FIFO/LIFO/AVG). 쓰기 순서: DB 커밋 → Redis 반영(실패 시 복구 큐 등록 TODO 주석 남김).
 - 다형 시스템: 태그, 리마인더, 액티비티는 동일 패턴(엔티티 타입 + 엔티티 ID). 기존 헬퍼/서비스 재사용, 중복 구현 금지.
 
@@ -60,10 +64,16 @@
 - Redis 영향 여부 → DB 커밋과 Redis 업데이트 모두 보장, 실패 시 롤백/복구 처리.
 - 신규 엔드포인트 → 테스트 추가 + 라우터 등록 + OpenAPI 태그 정합성 확인.
 - 민감 로직(손익/잔고) → 수량 부호 규칙 및 복식부기 페어링 준수.
+- **flow_type 관련 변경**:
+  - 거래 생성 시 항상 올바른 flow_type 할당 (카테고리 기반 자동 인식 활용).
+  - 카테고리 변경 시 동일 flow_type 범주 내에서만 허용 (예: expense→expense 카테고리만).
+  - undefined 상태 → 자동 인식 실패 또는 카테고리 미지정 상태만 (사용자 편의 선택 아님).
+  - 마이그레이션 필요: confirmed=true 거래는 category.flow_type으로, confirmed=false는 'undefined'로 전환.
 
 피드백: 누락된 패턴/더 깊은 예제가 필요하면 알려주세요. 이 가이드는 의도적으로 간결합니다.
 
 ## 데이터베이스가 수정되는 경우 작업 리스트
+
 데이터베이스 스키마가 수정되는 경우, 다음 작업들을 수행해야 합니다:
 1. **모델 수정**: `app/models/` 디렉터리 내 관련 모델 파일을 수정합니다.
 2. **마이그레이션 생성**: 터미널에서 다음 명령어를 실행하여 Alembic 마이그레이션 파일을 생성합니다:

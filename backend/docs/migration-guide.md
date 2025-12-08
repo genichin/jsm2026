@@ -229,13 +229,14 @@ def upgrade():
         sa.Column('description', sa.Text()),
         sa.Column('memo', sa.Text()),
         sa.Column('related_transaction_id', postgresql.UUID(as_uuid=True)),
-        sa.Column('is_confirmed', sa.Boolean(), server_default=sa.text('true')),
+        sa.Column('flow_type', sa.String(20), server_default='undefined', nullable=False),
         sa.Column('external_id', sa.String(100)),
         sa.Column('created_at', sa.TIMESTAMP(timezone=True), server_default=sa.func.now()),
         sa.Column('updated_at', sa.TIMESTAMP(timezone=True), server_default=sa.func.now()),
         sa.ForeignKeyConstraint(['asset_id'], ['assets.id'], ondelete='CASCADE'),
         sa.ForeignKeyConstraint(['related_transaction_id'], ['transactions.id'], ondelete='SET NULL'),
         sa.CheckConstraint("type IN ('buy', 'sell', 'deposit', 'withdraw', 'cash_dividend', 'stock_dividend', 'interest', 'fee', 'transfer_in', 'transfer_out', 'adjustment', 'invest', 'redeem', 'internal_transfer', 'card_payment', 'promotion_deposit', 'auto_transfer', 'remittance', 'exchange', 'out_asset', 'in_asset')", name='valid_transaction_type'),
+        sa.CheckConstraint("flow_type IN ('expense','income','transfer','investment','neutral','undefined')", name='valid_flow_type'),
         sa.CheckConstraint('fee >= 0 AND tax >= 0', name='non_negative_fees')
     )
     
@@ -963,3 +964,110 @@ sudo systemctl start jsmoney-api
 # 5. 상태 확인
 python scripts/health_check.py
 ```
+
+---
+
+## Flow Type 마이그레이션 (Confirmed → Flow Type)
+
+### 개요
+
+기존의 `confirmed` 필드(Boolean)를 `flow_type` 필드(Enum)로 전환합니다.
+- `confirmed=true`: 기존 카테고리의 flow_type 값으로 매핑
+- `confirmed=false`: `undefined` (미분류 거래)로 설정
+
+### 마이그레이션 실행
+
+#### 1. 사전 백업
+```bash
+# 데이터베이스 백업
+pg_dump -U jsmoney_user jsmoney | gzip > jsmoney_backup_$(date +%Y%m%d_%H%M%S).sql.gz
+
+# Redis 백업
+redis-cli --rdb /path/to/redis_dump_$(date +%Y%m%d_%H%M%S).rdb
+```
+
+#### 2. Alembic 마이그레이션 적용
+```bash
+cd /path/to/backend
+
+# 마이그레이션 상태 확인
+.venv/bin/alembic current
+.venv/bin/alembic upgrade head
+
+# 마이그레이션 이력 확인
+.venv/bin/alembic history
+```
+
+#### 3. 데이터 검증
+```python
+# scripts/validate_flow_type.py (신규 작성 권장)
+from app.models import Transaction
+from app.core.database import get_db
+from sqlalchemy import func
+
+def validate_migration():
+    """flow_type 마이그레이션 검증"""
+    db = next(get_db())
+    
+    # 1. flow_type이 NULL인 거래 확인
+    null_flow_type = db.query(Transaction).filter(
+        Transaction.flow_type == None
+    ).count()
+    print(f"❌ Null flow_type: {null_flow_type}")
+    
+    # 2. flow_type 분포
+    flow_type_dist = db.query(
+        Transaction.flow_type, 
+        func.count(Transaction.id)
+    ).group_by(Transaction.flow_type).all()
+    print("✅ Flow type distribution:")
+    for ft, count in flow_type_dist:
+        print(f"   {ft}: {count}")
+    
+    # 3. undefined 상태 거래 확인 (선택적 리뷰)
+    undefined = db.query(Transaction).filter(
+        Transaction.flow_type == 'undefined'
+    ).count()
+    print(f"⚠️  Undefined transactions: {undefined} (사용자 분류 필요)")
+
+if __name__ == '__main__':
+    validate_migration()
+```
+
+실행:
+```bash
+python -m scripts.validate_flow_type
+```
+
+#### 4. 프론트엔드 재배포
+- 모든 `confirmed` 필터 → `flow_type` 필터로 변경
+- undefined 상태 거래 표시 (사용자 분류 유도)
+
+### 마이그레이션 체크리스트
+
+- [ ] 사전 백업 완료
+- [ ] Alembic 마이그레이션 적용
+- [ ] 데이터 검증 스크립트 실행
+- [ ] 결과 검토 (특히 undefined 거래 수)
+- [ ] 프론트엔드 배포 준비
+- [ ] 자동 분류 규칙 테스트
+- [ ] 카테고리 변경 시 flow_type 검증 테스트
+- [ ] 운영 환경 적용 전 스테이징 테스트
+
+### 롤백 절차 (필요 시)
+
+```bash
+# 마이그레이션 이전 상태로 되돌림
+.venv/bin/alembic downgrade -1
+
+# 또는 백업에서 복구
+gunzip -c jsmoney_backup_YYYYMMDD_HHMMSS.sql.gz | \
+    psql -U jsmoney_user jsmoney
+```
+
+### 주의사항
+
+1. **자동 분류 검증**: 마이그레이션 후 자동 분류 규칙이 정상 작동하는지 확인
+2. **undefined 거래 리뷰**: 분류되지 않은 거래(undefined)의 수가 예상 범위인지 확인
+3. **카테고리 변경 정책**: flow_type이 동일한 카테고리로만 변경 가능 (API에서 강제)
+4. **API 호환성**: 기존 클라이언트에서 flow_type 필터 미지원 시 undefined 포함되어 반환

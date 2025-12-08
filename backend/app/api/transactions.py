@@ -20,7 +20,7 @@ from app.services.auto_category import auto_assign_category
 from app.schemas.transaction import (
     TransactionCreate, TransactionUpdate, TransactionResponse, TransactionWithAsset,
     TransactionListResponse, TransactionFilter, BulkTransactionCreate, BulkTransactionResponse,
-    PortfolioSummary, AssetSummary, AssetType, TransactionType,
+    PortfolioSummary, AssetSummary, AssetType, TransactionType, FlowType,
     FileUploadError, FileUploadResponse
 )
 from app.schemas.transaction import ExchangeCreate, BulkTransactionResponse as ExchangeResponse
@@ -50,9 +50,9 @@ def create_linked_cash_transaction(db: Session, asset_transaction: Transaction, 
     
     # extras에서 거래 금액 정보 추출
     extras = asset_transaction.extras or {}
-    price = float(extras.get('price', 0))
-    fee = float(extras.get('fee', 0))
-    tax = float(extras.get('tax', 0))
+    price = float(extras.get('price', asset_transaction.price or 0) or 0)
+    fee = float(extras.get('fee', asset_transaction.fee or 0) or 0)
+    tax = float(extras.get('tax', asset_transaction.tax or 0) or 0)
         
     # 거래 금액 계산 (Decimal을 float로 변환)
     trade_amount = float(abs(asset_transaction.quantity)) * price
@@ -148,6 +148,8 @@ def serialize_transaction(tx: Transaction, db: Session = None):
         except Exception:
             pass
     
+    extras_out = tx.extras
+
     return {
         "id": tx.id,
         "asset_id": tx.asset_id,
@@ -158,11 +160,16 @@ def serialize_transaction(tx: Transaction, db: Session = None):
         "category": category_summary,
         "type": tx.type,
         "quantity": tx.quantity,
+        "price": tx.price,
+        "fee": tx.fee,
+        "tax": tx.tax,
+        "realized_profit": tx.realized_profit,
         "transaction_date": tx.transaction_date,
         "description": tx.description,
         "memo": tx.memo,
-        "confirmed": tx.confirmed,
-        "extras": tx.extras or {},  # 항상 빈 dict라도 포함
+        "flow_type": tx.flow_type,
+        "confirmed": getattr(tx, 'confirmed', False),
+        "extras": extras_out,
         "created_at": tx.created_at,
         "updated_at": tx.updated_at,
     }
@@ -201,8 +208,10 @@ async def create_exchange(
 
     # extras 준비
     source_extras = {}
+    fee_value = 0
     if payload.fee and float(payload.fee) > 0:
         source_extras['fee'] = float(payload.fee)
+        fee_value = float(payload.fee)
     
     # 거래 생성
     source_tx = Transaction(
@@ -212,7 +221,10 @@ async def create_exchange(
         transaction_date=payload.transaction_date,
         description=payload.description or f"환전 출발 ({source_asset.currency}→{target_asset.currency})",
         memo=payload.memo,
-        extras=source_extras
+        extras=source_extras,
+        fee=fee_value,
+        flow_type=FlowType.TRANSFER.value,
+        confirmed=False,
     )
 
     target_tx = Transaction(
@@ -222,7 +234,10 @@ async def create_exchange(
         transaction_date=payload.transaction_date,
         description=payload.description or f"환전 유입 ({source_asset.currency}→{target_asset.currency})",
         memo=payload.memo,
-        extras={}
+        extras={},
+        fee=0,
+        flow_type=FlowType.TRANSFER.value,
+        confirmed=False,
     )
 
     db.add(source_tx)
@@ -338,6 +353,14 @@ async def create_transaction(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="환전은 같은 계좌 내에서만 가능합니다"
             )
+
+        exchange_flow_type = transaction.flow_type or FlowType.TRANSFER
+        allowed_exchange_flows = allowed_category_flow_types_for('exchange') | {FlowType.UNDEFINED.value}
+        if exchange_flow_type.value not in allowed_exchange_flows:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"환전 거래는 flow_type '{exchange_flow_type.value}' 를 지원하지 않습니다. 허용: {', '.join(sorted(allowed_exchange_flows))}"
+            )
         
         # 출발 거래 생성 (fee는 extras에서 읽어 저장)
         source_extras = dict(transaction.extras or {})
@@ -355,7 +378,13 @@ async def create_transaction(
             transaction_date=transaction.transaction_date,
             description=transaction.description or f"환전 출발 ({source_asset.currency}→{target_asset.currency})",
             memo=transaction.memo,
-            extras=source_extras
+            extras=source_extras,
+            flow_type=exchange_flow_type.value,
+            fee=fee_value,
+            price=None,
+            tax=None,
+            realized_profit=None,
+            confirmed=False,
         )
         
         # 도착 거래 생성
@@ -366,9 +395,14 @@ async def create_transaction(
             transaction_date=transaction.transaction_date,
             description=transaction.description or f"환전 유입 ({source_asset.currency}→{target_asset.currency})",
             memo=transaction.memo,
-            extras=transaction.extras or {}
+            extras=transaction.extras or {},
+            flow_type=exchange_flow_type.value,
+            fee=0,
+            price=None,
+            tax=None,
+            realized_profit=None,
+            confirmed=False,
         )
-        
         db.add(source_tx)
         db.add(target_tx)
         db.flush()  # flush 먼저 (ID 생성)
@@ -403,6 +437,14 @@ async def create_transaction(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="자산을 찾을 수 없습니다"
         )
+
+    extras_dict = transaction.extras or {}
+    effective_price = transaction.price if transaction.price is not None else extras_dict.get('price')
+    if transaction.type.value in {'buy', 'sell'} and effective_price is None:
+        raise HTTPException(status_code=422, detail="매수/매도 거래는 price가 필요합니다")
+    if transaction.type.value in {'deposit', 'withdraw', 'transfer_in', 'transfer_out', 'remittance', 'auto_transfer', 'payment_cancel'}:
+        if asset.asset_type != 'cash' and effective_price is None:
+            raise HTTPException(status_code=422, detail="해당 거래 유형은 price가 필요합니다")
     
     # 기본 비즈니스 규칙 검증은 스키마 검증(부호 등)과 DB 제약으로 처리
     
@@ -420,8 +462,24 @@ async def create_transaction(
             raise HTTPException(status_code=404, detail="카테고리를 찾을 수 없습니다")
         validate_category_flow_type_compatibility(transaction.type.value, cat)
 
-    # 거래 생성에 사용할 extras (이미 payload.extras에 포함된 값 사용)
-    extras = dict(transaction.extras or {})
+    allowed_flow_types = allowed_category_flow_types_for(transaction.type.value)
+    chosen_flow_type = transaction.flow_type or FlowType.UNDEFINED
+
+    if chosen_category_id:
+        chosen_flow_type = FlowType(cat.flow_type)
+
+    if chosen_flow_type.value not in (allowed_flow_types | {FlowType.UNDEFINED.value}):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"거래 유형 '{transaction.type.value}' 은 flow_type '{chosen_flow_type.value}' 를 지원하지 않습니다. 허용: {', '.join(sorted(allowed_flow_types | {FlowType.UNDEFINED.value}))}"
+        )
+
+    extras_raw = transaction.extras if transaction.extras is not None else None
+    extras_dict = transaction.extras or {}
+    price_val = transaction.price if transaction.price is not None else extras_dict.get('price')
+    fee_val = transaction.fee if transaction.fee is not None else extras_dict.get('fee')
+    tax_val = transaction.tax if transaction.tax is not None else extras_dict.get('tax')
+    rp_val = transaction.realized_profit if transaction.realized_profit is not None else extras_dict.get('realized_profit')
     
     db_transaction = Transaction(
         asset_id=transaction.asset_id,
@@ -431,8 +489,14 @@ async def create_transaction(
         description=transaction.description,
         memo=transaction.memo,
         related_transaction_id=transaction.related_transaction_id,
-        extras=extras,
-        category_id=chosen_category_id
+        extras=extras_raw,
+        category_id=chosen_category_id,
+        flow_type=chosen_flow_type.value,
+        price=price_val,
+        fee=fee_val,
+        tax=tax_val,
+        realized_profit=rp_val,
+        confirmed=False,
     )
     
     db.add(db_transaction)
@@ -548,7 +612,8 @@ async def list_transactions(
     start_date: Optional[datetime] = Query(None),
     end_date: Optional[datetime] = Query(None),
     category_id: Optional[str] = Query(None, description="카테고리 ID 필터"),
-    confirmed: Optional[bool] = Query(None, description="확인 여부 필터"),
+    flow_type: Optional[FlowType] = Query(None, description="거래 흐름 타입 필터"),
+    confirmed: Optional[bool] = Query(None, description="확정 여부 필터"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -574,6 +639,8 @@ async def list_transactions(
         query = query.filter(Transaction.transaction_date <= end_date)
     if category_id:
         query = query.filter(Transaction.category_id == category_id)
+    if flow_type:
+        query = query.filter(Transaction.flow_type == flow_type.value)
     if confirmed is not None:
         query = query.filter(Transaction.confirmed == confirmed)
     
@@ -616,11 +683,16 @@ async def list_transactions(
             "category": category_summary,
             "type": tx.type,
             "quantity": tx.quantity,
+            "price": tx.price,
+            "fee": tx.fee,
+            "tax": tx.tax,
+            "realized_profit": tx.realized_profit,
             "transaction_date": tx.transaction_date,
             "description": tx.description,
             "memo": tx.memo,
-            "confirmed": tx.confirmed,
-            "extras": tx.extras or {},  # 항상 빈 dict라도 포함
+            "flow_type": tx.flow_type,
+            "confirmed": getattr(tx, 'confirmed', False),
+            "extras": tx.extras,
             "created_at": tx.created_at,
             "updated_at": tx.updated_at,
             "asset": {
@@ -664,21 +736,20 @@ async def get_portfolio_summary(
     total_realized_profit = 0
     
     for asset in assets:
-        # 각 자산별 거래 집계
+        # 각 자산별 거래 집계 (확정/미확정 모두 포함)
         from sqlalchemy import func
         summary_query = db.query(
-            func.sum(Transaction.quantity).label('total_quantity')
+            func.coalesce(func.sum(Transaction.quantity), 0).label('total_quantity'),
+            func.coalesce(func.sum(Transaction.realized_profit), 0).label('realized_profit')
         ).filter(
             Transaction.asset_id == asset.id
         ).first()
         
         current_quantity = summary_query.total_quantity or 0
-        realized_profit = 0  # TODO: Calculate from extras if needed
+        realized_profit = summary_query.realized_profit or 0
         
-        # 취득원가 계산 (매수 거래만) - TODO: Calculate from extras if needed
+        # 취득원가, 현재가, 미실현손익은 별도 계산 대상이 없어 0으로 반환
         total_cost = 0
-        
-        # 현재가는 외부 API에서 가져와야 하므로 임시로 0 설정
         current_value = 0
         unrealized_profit = 0
         
@@ -720,7 +791,8 @@ async def get_recent_transactions(
     page: int = Query(1, ge=1, description="페이지 번호 (1부터 시작)"),
     size: int = Query(20, ge=1, le=100, description="페이지당 항목 수"),
     asset_id: Optional[str] = Query(None, description="자산 ID로 필터링"),
-    confirmed: Optional[bool] = Query(None, description="확인 여부 필터링"),
+    flow_type: Optional[FlowType] = Query(None, description="거래 흐름 타입 필터링"),
+    confirmed: Optional[bool] = Query(None, description="확정 여부 필터"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -730,7 +802,7 @@ async def get_recent_transactions(
     - **page**: 페이지 번호 (1부터 시작)
     - **size**: 페이지당 항목 수 (기본 20, 최대 100)
     - **asset_id**: 특정 자산으로 필터링
-    - **confirmed**: 확인 여부 필터링 (true/false)
+    - **flow_type**: 거래 흐름 타입 필터링
     """
     try:
         # 사용자 소유 자산 ID 목록 조회
@@ -769,7 +841,9 @@ async def get_recent_transactions(
                 )
             query = query.filter(Transaction.asset_id == asset_id)
         
-        # confirmed 필터 적용
+        # flow_type 필터 적용
+        if flow_type:
+            query = query.filter(Transaction.flow_type == flow_type.value)
         if confirmed is not None:
             query = query.filter(Transaction.confirmed == confirmed)
         
@@ -809,10 +883,15 @@ async def get_recent_transactions(
                 "category_id": getattr(tx, "category_id", None),
                 "type": tx.type,
                 "quantity": tx.quantity,
+                "price": tx.price,
+                "fee": tx.fee,
+                "tax": tx.tax,
+                "realized_profit": tx.realized_profit,
                 "transaction_date": tx.transaction_date,
                 "description": tx.description,
                 "memo": tx.memo,
-                "confirmed": tx.confirmed,
+                "flow_type": tx.flow_type,
+                "confirmed": getattr(tx, 'confirmed', False),
                 "extras": tx.extras or {},  # 항상 빈 dict라도 포함
                 "created_at": tx.created_at,
                 "updated_at": tx.updated_at,
@@ -884,9 +963,15 @@ async def get_transaction(
         "category": category_summary,
         "type": transaction.type,
         "quantity": transaction.quantity,
+        "price": transaction.price,
+        "fee": transaction.fee,
+        "tax": transaction.tax,
+        "realized_profit": transaction.realized_profit,
         "transaction_date": transaction.transaction_date,
         "description": transaction.description,
         "memo": transaction.memo,
+        "flow_type": transaction.flow_type,
+        "confirmed": getattr(transaction, 'confirmed', False),
         "extras": transaction.extras,
         "created_at": transaction.created_at,
         "updated_at": transaction.updated_at,
@@ -926,18 +1011,20 @@ async def update_transaction(
 
     # 거래 타입 변경 시 처리
     new_type = update_data.get('type')
-    if new_type and new_type != transaction.type:
+    if new_type and new_type.value != transaction.type:
         # 타입이 변경되면 기존 카테고리와 호환성 재검증
         if transaction.category_id:
             cat = db.query(Category).filter(Category.id == transaction.category_id).first()
             if cat:
                 try:
-                    validate_category_flow_type_compatibility(new_type, cat)
+                    validate_category_flow_type_compatibility(new_type.value, cat)
                 except HTTPException:
                     # 호환되지 않으면 카테고리 자동 해제
                     transaction.category_id = None
-        transaction.type = new_type
+        transaction.type = new_type.value
         update_data.pop('type', None)
+
+    allowed_flow_types = allowed_category_flow_types_for(transaction.type)
 
     # 카테고리 변경 검증 로직
     if 'category_id' in update_data:
@@ -949,11 +1036,37 @@ async def update_transaction(
             # 거래 타입과 카테고리 flow_type 호환성 재검증
             validate_category_flow_type_compatibility(transaction.type, cat)
             transaction.category_id = new_category_id
+            transaction.flow_type = cat.flow_type
         else:
             # 카테고리 해제 (None 지정)
             transaction.category_id = None
         # 이미 처리했으므로 일반 필드 적용에서 제거
         update_data.pop('category_id', None)
+
+    # flow_type 변경 검증 로직 (카테고리 미지정 시에만 직접 수정 가능)
+    if 'flow_type' in update_data:
+        new_flow_type = update_data.get('flow_type') or FlowType.UNDEFINED
+        if transaction.category_id:
+            # 카테고리가 있으면 flow_type은 카테고리와 동일해야 함
+            cat = db.query(Category).filter(Category.id == transaction.category_id).first()
+            if cat and cat.flow_type != new_flow_type:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="카테고리가 설정된 거래의 flow_type은 카테고리의 flow_type과 같아야 합니다"
+                )
+            if cat:
+                new_flow_type = FlowType(cat.flow_type)
+        if new_flow_type.value not in (allowed_flow_types | {FlowType.UNDEFINED.value}):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"거래 유형 '{transaction.type}' 은 flow_type '{new_flow_type.value}' 를 지원하지 않습니다. 허용: {', '.join(sorted(allowed_flow_types | {FlowType.UNDEFINED.value}))}"
+            )
+        transaction.flow_type = new_flow_type.value
+        update_data.pop('flow_type', None)
+
+    # 타입 변경 등으로 인해 현 flow_type이 허용되지 않는다면 undefined로 강등
+    if transaction.flow_type not in (allowed_flow_types | {FlowType.UNDEFINED.value}):
+        transaction.flow_type = FlowType.UNDEFINED.value
 
     # 나머지 일반 필드 적용
     for field, value in update_data.items():
@@ -997,42 +1110,26 @@ async def update_transaction(
 
 
 @router.put("/{transaction_id}/confirmed", response_model=TransactionResponse)
-async def toggle_transaction_confirmed(
+async def toggle_confirmed(
     transaction_id: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """거래 확인 상태 토글"""
-    
+    """거래 확정 상태 토글"""
     transaction = db.query(Transaction).join(Asset).filter(
         Transaction.id == transaction_id,
         Asset.user_id == current_user.id
-    ).first()
-    
+    ).options(joinedload(Transaction.category)).first()
     if not transaction:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="거래를 찾을 수 없습니다"
-        )
-    
-    # 확인 상태 토글
-    transaction.confirmed = not transaction.confirmed
-    
-    # 명시적으로 updated_at 갱신
-    transaction.updated_at = datetime.now(timezone.utc)
-    
-    db.flush()
+        raise HTTPException(status_code=404, detail="거래를 찾을 수 없습니다")
+
+    transaction.confirmed = not bool(getattr(transaction, 'confirmed', False))
     db.commit()
-    
-    # 최신 상태 재조회 (asset, category 포함)
-    transaction = db.query(Transaction).options(
-        joinedload(Transaction.asset),
-        joinedload(Transaction.category)
-    ).filter(Transaction.id == transaction_id).first()
-    
-    # 사용자 캐시 무효화
+    db.refresh(transaction)
+
+    calculate_and_update_balance(db, transaction.asset_id)
     invalidate_user_cache(current_user.id)
-    
+
     return TransactionResponse.model_validate(serialize_transaction(transaction, db))
 
 

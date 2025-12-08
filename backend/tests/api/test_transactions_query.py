@@ -81,6 +81,9 @@ def sample_transactions(
         tx_date = base_date + timedelta(days=i)
         tx_type = "deposit" if i % 2 == 0 else "withdraw"
         quantity = 10000 * (i + 1) if i % 2 == 0 else -5000 * (i + 1)
+        flow_type = "income" if tx_type == "deposit" else "expense"
+        if i >= 10:
+            flow_type = "undefined"  # 마지막 5건은 미분류 상태
         
         tx = Transaction(
             asset_id=test_cash_asset.id,
@@ -92,7 +95,7 @@ def sample_transactions(
             realized_profit=0,
             transaction_date=tx_date,
             description=f"현금 거래 #{i+1}",
-            is_confirmed=True if i < 10 else False  # 처음 10건만 확정
+            flow_type=flow_type
         )
         transactions.append(tx)
     
@@ -112,7 +115,7 @@ def sample_transactions(
             realized_profit=500 if tx_type == "sell" else 0,
             transaction_date=tx_date,
             description=f"주식 거래 #{i+1}",
-            is_confirmed=True
+            flow_type="investment"
         )
         transactions.append(tx)
     
@@ -321,25 +324,25 @@ class TestTransactionsFilter:
         # 11/5 이전 거래 (11/1 ~ 11/5, 5일 * 2건 = 10건)
         assert data["total"] == 10
     
-    def test_filter_by_is_confirmed(
+    def test_filter_by_flow_type(
         self,
         client: TestClient,
         auth_header: dict,
         sample_transactions: list
     ):
-        """확정 상태로 필터링"""
+        """flow_type로 필터링"""
         response = client.get(
-            "/api/v1/transactions?is_confirmed=false",
+            "/api/v1/transactions?flow_type=undefined",
             headers=auth_header
         )
         
         assert response.status_code == 200
         data = response.json()
         
-        # 미확정 거래만 (현금 거래 중 마지막 5건)
+        # undefined 거래만 (현금 거래 중 마지막 5건)
         assert data["total"] == 5
         for item in data["items"]:
-            assert item["is_confirmed"] is False
+            assert item["flow_type"] == "undefined"
     
     def test_filter_by_account_id(
         self,
@@ -369,19 +372,19 @@ class TestTransactionsFilter:
     ):
         """복합 필터 조건"""
         response = client.get(
-            f"/api/v1/transactions?asset_id={test_cash_asset.id}&type=deposit&is_confirmed=true",
+            f"/api/v1/transactions?asset_id={test_cash_asset.id}&type=deposit&flow_type=income",
             headers=auth_header
         )
         
         assert response.status_code == 200
         data = response.json()
         
-        # 현금 자산 + deposit + 확정 거래
-        assert data["total"] == 5  # 짝수 인덱스 중 처음 10건(0,2,4,6,8)
+        # 현금 자산 + deposit + income flow_type
+        assert data["total"] == 5  # 짝수 인덱스 중 flow_type=income
         for item in data["items"]:
             assert item["asset"]["id"] == test_cash_asset.id
             assert item["type"] == "deposit"
-            assert item["is_confirmed"] is True
+            assert item["flow_type"] == "income"
 
 
 class TestSingleTransaction:
@@ -625,9 +628,8 @@ class TestTransactionsResponseStructure:
         
         # 필수 필드 존재 확인
         required_fields = [
-            "id", "asset_id", "type", "quantity", "price",
-            "fee", "tax", "realized_profit", "transaction_date",
-            "description", "is_confirmed", "created_at", "updated_at", "asset"
+            "id", "asset_id", "type", "quantity", "transaction_date",
+            "description", "flow_type", "extras", "created_at", "updated_at", "asset"
         ]
         
         for field in required_fields:
@@ -667,21 +669,21 @@ class TestTransactionsResponseStructure:
         assert data["size"] == 10
         assert data["pages"] == 3
 
-    def test_filter_by_confirmed_status(
+    def test_filter_by_flow_type_status(
         self,
         client: TestClient,
         auth_header: dict,
         db_session: Session,
         test_stock_asset: Asset
     ):
-        """confirmed 필터링 테스트"""
-        # 확인된 거래와 미확인 거래 생성
+        """flow_type 필터링 테스트"""
+        # 분류된 거래와 미분류 거래 생성
         confirmed_tx = Transaction(
             asset_id=test_stock_asset.id,
             type="buy",
             quantity=10,
             transaction_date=datetime.now(),
-            confirmed=True,
+            flow_type="investment",
             extras={"price": 10000}
         )
         unconfirmed_tx = Transaction(
@@ -689,26 +691,26 @@ class TestTransactionsResponseStructure:
             type="sell",
             quantity=-5,
             transaction_date=datetime.now(),
-            confirmed=False,
+            flow_type="undefined",
             extras={"price": 11000}
         )
         db_session.add_all([confirmed_tx, unconfirmed_tx])
         db_session.commit()
         
-        # 확인된 거래만 조회
+        # 투자(flow_type) 거래만 조회
         response = client.get(
-            "/api/v1/transactions?confirmed=true",
+            "/api/v1/transactions?flow_type=investment",
             headers=auth_header
         )
         assert response.status_code == 200
         data = response.json()
-        assert all(item["confirmed"] == True for item in data["items"])
+        assert all(item["flow_type"] == "investment" for item in data["items"])
         
-        # 미확인 거래만 조회
+        # 미분류 거래만 조회
         response = client.get(
-            "/api/v1/transactions?confirmed=false",
+            "/api/v1/transactions?flow_type=undefined",
             headers=auth_header
         )
         assert response.status_code == 200
         data = response.json()
-        assert all(item["confirmed"] == False for item in data["items"])
+        assert all(item["flow_type"] == "undefined" for item in data["items"])

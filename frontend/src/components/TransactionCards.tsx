@@ -20,7 +20,8 @@ export interface TransactionCardItem {
   related_asset_name?: string | null; // 연결된 거래의 자산명 (out_asset/in_asset용)
   extras?: Record<string, any> | null;
   realized_profit?: number | null;
-  is_confirmed?: boolean;
+  flow_type?: string;
+  confirmed?: boolean;
   external_id?: string | null;
   // 현금배당용 추가 필드
   dividend_asset_name?: string | null;
@@ -31,7 +32,6 @@ interface Props {
   items: TransactionCardItem[];
   onEdit: (txId: string) => void;
   onDelete?: (txId: string) => void;
-  onConfirmToggle?: (txId: string) => void; // 거래 확인 상태 토글
   virtualizeThreshold?: number; // item 수가 임계값을 넘으면 가상 스크롤 적용
 }
 
@@ -121,7 +121,6 @@ interface TransactionCardProps {
   onToggle: () => void;
   onEdit: (txId: string) => void;
   onDelete?: (txId: string) => void;
-  onConfirmToggle?: (txId: string) => void;
 }
 
 // 거래 유형별 렌더러
@@ -319,7 +318,7 @@ function getTransactionRenderer(type: TransactionType): TransactionRenderer {
   return TRANSACTION_RENDERERS[type] || TRANSACTION_RENDERERS.default;
 }
 
-const TransactionCard: React.FC<TransactionCardProps> = ({ tx, expanded, onToggle, onEdit, onDelete, onConfirmToggle }) => {
+const TransactionCard: React.FC<TransactionCardProps> = ({ tx, expanded, onToggle, onEdit, onDelete }) => {
   const profit = tx.realized_profit;
   const panelId = `tx-panel-${tx.id}`;
   
@@ -349,8 +348,11 @@ const TransactionCard: React.FC<TransactionCardProps> = ({ tx, expanded, onToggl
           {shouldShowCategory(tx.type) && (
             <span className={`text-xs px-2 py-1 rounded bg-slate-100 text-slate-600 truncate ${CATEGORY_BADGE_MAX_WIDTH}`} title={tx.category_name ?? undefined}>{tx.category_name || "미분류"}</span>
           )}
-          {!tx.is_confirmed && (
-            <span className="text-xs px-2 py-1 rounded bg-amber-100 text-amber-700 font-medium shrink-0">미확인</span>
+          {tx.flow_type === 'undefined' && (
+            <span className="text-xs px-2 py-1 rounded bg-amber-100 text-amber-700 font-medium shrink-0">미분류</span>
+          )}
+          {tx.confirmed === false && (
+            <span className="text-xs px-2 py-1 rounded bg-orange-100 text-orange-700 font-medium shrink-0">미확정</span>
           )}
           <span className="text-xs text-slate-500" title={tx.asset_name || tx.asset_id}>{tx.asset_name || tx.asset_id}</span>
         </div>
@@ -391,7 +393,7 @@ const TransactionCard: React.FC<TransactionCardProps> = ({ tx, expanded, onToggl
             {tx.description && <div><span className="text-slate-500 block">설명 전체:</span><div className="mt-0.5 break-words text-slate-700">{tx.description}</div></div>}
             {tx.memo && <div><span className="text-slate-500 block">메모 전체:</span><div className="mt-0.5 break-words text-slate-500">{tx.memo}</div></div>}
             {renderer.renderExpandedExtraInfo && renderer.renderExpandedExtraInfo(tx)}
-            {/* 편집/확인/삭제 버튼 */}
+            {/* 편집/삭제 버튼 */}
             <div className="flex gap-2 pt-2 border-t">
               <button
                 onClick={(e) => {
@@ -400,17 +402,6 @@ const TransactionCard: React.FC<TransactionCardProps> = ({ tx, expanded, onToggl
                 }}
                 className="text-xs px-3 py-1 rounded bg-blue-100 text-blue-700 hover:bg-blue-200 focus:outline-none focus:ring focus:ring-blue-300"
               >편집</button>
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onConfirmToggle?.(tx.id);
-                }}
-                className={`text-xs px-3 py-1 rounded font-medium focus:outline-none focus:ring ${
-                  tx.is_confirmed
-                    ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200 focus:ring-emerald-300'
-                    : 'bg-amber-100 text-amber-700 hover:bg-amber-200 focus:ring-amber-300'
-                }`}
-              >{tx.is_confirmed ? '확인됨' : '미확인'}</button>
               {onDelete && (
                 <button
                   onClick={(e) => {
@@ -428,7 +419,7 @@ const TransactionCard: React.FC<TransactionCardProps> = ({ tx, expanded, onToggl
   );
 };
 
-export const TransactionCards: React.FC<Props> = ({ items, onEdit, onDelete, onConfirmToggle, virtualizeThreshold = 300 }) => {
+export const TransactionCards: React.FC<Props> = ({ items, onEdit, onDelete, virtualizeThreshold = 300 }) => {
   const [expandedMap, setExpandedMap] = useState<Record<string, boolean>>({});
   const toggle = (id: string) => setExpandedMap(m => ({ ...m, [id]: !m[id] }));
 
@@ -476,7 +467,6 @@ export const TransactionCards: React.FC<Props> = ({ items, onEdit, onDelete, onC
                   onToggle={() => toggle(tx.id)}
                   onEdit={onEdit}
                   onDelete={onDelete}
-                  onConfirmToggle={onConfirmToggle}
                 />
               </div>
             );
@@ -499,7 +489,6 @@ export const TransactionCards: React.FC<Props> = ({ items, onEdit, onDelete, onC
             onToggle={() => toggle(tx.id)}
             onEdit={onEdit}
             onDelete={onDelete}
-            onConfirmToggle={onConfirmToggle}
           />
         );
       })}

@@ -201,6 +201,16 @@ class TransactionType(str, Enum):
     PAYMENT_CANCEL = "payment_cancel"  # 결제취소
 
 
+class FlowType(str, Enum):
+    """거래 흐름 타입"""
+    EXPENSE = "expense"
+    INCOME = "income"
+    TRANSFER = "transfer"
+    INVESTMENT = "investment"
+    NEUTRAL = "neutral"
+    UNDEFINED = "undefined"
+
+
 # 유형별 속성 매핑
 ASSET_TYPE_INFO = {
     AssetType.STOCK: {"name": "주식", "tradable": True},
@@ -238,7 +248,7 @@ class Asset(Base):
     # Constraints
     __table_args__ = (
         CheckConstraint(
-            "asset_type IN ('stock', 'crypto', 'bond', 'fund', 'etf', 'cash')",
+            "asset_type IN ('stock', 'crypto', 'bond', 'fund', 'etf', 'cash', 'savings', 'deposit')",
             name='valid_asset_type'
         ),
     )
@@ -258,12 +268,17 @@ class Transaction(Base):
     type = Column(String(20), nullable=False)  # TransactionType enum 값
     category_id = Column(String(36), ForeignKey("categories.id", ondelete="SET NULL"))
     quantity = Column(Numeric(20, 8), nullable=False)  # 양수=증가, 음수=감소, 0=마커
+    confirmed = Column(Boolean, nullable=False, server_default='false')
+    price = Column(Numeric(20, 6))
+    fee = Column(Numeric(20, 6))
+    tax = Column(Numeric(20, 6))
+    realized_profit = Column(Numeric(20, 6))
     extras = Column(JSONB)  # 추가 정보: price, fee, tax, rate, balance_after, realized_profit 등
     transaction_date = Column(DateTime(timezone=True), nullable=False, index=True)
     description = Column(Text)
     memo = Column(Text)
     related_transaction_id = Column(String(36), ForeignKey("transactions.id", ondelete="SET NULL"))
-    confirmed = Column(Boolean, nullable=False, server_default='false')  # 사용자 확인 여부
+    flow_type = Column(String(20), nullable=False, server_default='undefined', index=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
     __table_args__ = (
@@ -271,8 +286,12 @@ class Transaction(Base):
             "type IN ('buy', 'sell', 'deposit', 'withdraw', 'cash_dividend', 'stock_dividend', 'interest', 'fee', "
             "'transfer_in', 'transfer_out', 'adjustment', 'invest', 'redeem', "
             "'internal_transfer', 'card_payment', 'promotion_deposit', 'auto_transfer', 'remittance', 'exchange', "
-            "'out_asset', 'in_asset')",
+            "'out_asset', 'in_asset', 'payment_cancel')",
             name='valid_transaction_type'
+        ),
+        CheckConstraint(
+            "flow_type IN ('expense','income','transfer','investment','neutral','undefined')",
+            name='valid_flow_type'
         ),
     )
 
