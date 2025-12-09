@@ -119,6 +119,17 @@ export function DynamicTransactionForm({
     );
   }, [assets, selectedAsset]);
 
+  // 현금배당: 동일 계좌/통화의 주식 또는 암호화폐만 선택 가능
+  const dividendAssets = useMemo(() => {
+    if (!selectedAsset) return [];
+    return assets.filter(
+      (a) =>
+        a.account_id === selectedAsset.account_id &&
+        a.currency === selectedAsset.currency &&
+        (a.asset_type === "stock" || a.asset_type === "crypto")
+    );
+  }, [assets, selectedAsset]);
+
   // 동일 계좌 내 다른 통화의 현금 자산 (exchange용)
   const cashAssetsInSameAccount = useMemo(() => {
     if (!selectedAsset) return [];
@@ -426,7 +437,7 @@ export function DynamicTransactionForm({
             {showDividendAsset && (
               <div className="col-span-1">
                 <Fields.DividendAssetField
-                  assets={assets.filter(a => a.asset_type !== 'cash')}
+                  assets={dividendAssets}
                   defaultValue={(editing as any)?.dividend_asset_id || ""}
                 />
               </div>
