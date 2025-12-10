@@ -4,6 +4,7 @@
 
 from typing import Dict, List
 import logging
+import requests
 from .base import BrokerConnector, OrderSide, OrderStatus, Order, Balance, PriceData
 
 logger = logging.getLogger(__name__)
@@ -187,62 +188,95 @@ class UpbitConnector(BrokerConnector):
                     normalized_map[normalized] = sym
                     normalized_symbols.append(normalized)
                 
-                # TODO: 실제 Upbit API 호출 (여러 심볼 한 번에)
-                # response = requests.get(f"{self.base_url}/ticker?markets={','.join(normalized_symbols)}")
-                # data = response.json()
-                
-                # 임시 데이터 (테스트용)
-                price_map = {
-                    "BTC-KRW": PriceData(symbol="BTC-KRW", current_price=45000000.0, change_percent=2.5),
-                    "ETH-KRW": PriceData(symbol="ETH-KRW", current_price=2500000.0, change_percent=-1.2),
-                    "XRP-KRW": PriceData(symbol="XRP-KRW", current_price=3000.0, change_percent=0.5),
-                }
-                
-                result = {}
-                for normalized_sym in normalized_symbols:
-                    original_sym = normalized_map[normalized_sym]
-                    if normalized_sym in price_map:
-                        # PriceData의 symbol은 원본 심볼로 유지
-                        price_data = price_map[normalized_sym]
-                        result[original_sym] = PriceData(
-                            symbol=original_sym,
-                            current_price=price_data.current_price,
-                            change_percent=price_data.change_percent
+                # 실제 Upbit API 호출 (여러 심볼 한 번에)
+                try:
+                    markets_param = ','.join(normalized_symbols)
+                    response = requests.get(
+                        f"{self.base_url}/ticker",
+                        params={"markets": markets_param},
+                        timeout=10
+                    )
+                    response.raise_for_status()
+                    data = response.json()
+                    
+                    # API 응답을 PriceData로 변환
+                    price_map = {}
+                    for item in data:
+                        market = item["market"]  # 예: "BTC-KRW"
+                        price_map[market] = PriceData(
+                            symbol=market,
+                            current_price=item["trade_price"],
+                            change_percent=item["signed_change_rate"] * 100,
+                            change_amount=item["signed_change_price"]
                         )
-                    else:
-                        result[original_sym] = PriceData(symbol=original_sym, current_price=0.0, change_percent=0.0)
-                
-                return result
+                    
+                    # 결과를 원본 심볼로 매핑
+                    result = {}
+                    for normalized_sym in normalized_symbols:
+                        original_sym = normalized_map[normalized_sym]
+                        if normalized_sym in price_map:
+                            # PriceData의 symbol은 원본 심볼로 유지
+                            price_data = price_map[normalized_sym]
+                            result[original_sym] = PriceData(
+                                symbol=original_sym,
+                                current_price=price_data.current_price,
+                                change_percent=price_data.change_percent,
+                                change_amount=price_data.change_amount
+                            )
+                        else:
+                            logger.warning(f"Upbit: No price data returned for {normalized_sym}")
+                            result[original_sym] = PriceData(symbol=original_sym, current_price=0.0, change_percent=0.0)
+                    
+                    return result
+                    
+                except requests.RequestException as e:
+                    logger.error(f"Upbit: API request failed: {str(e)}")
+                    # API 실패 시 빈 데이터 반환
+                    result = {}
+                    for sym in symbol:
+                        result[sym] = PriceData(symbol=sym, current_price=0.0, change_percent=0.0)
+                    return result
             
             # 단일 심볼 처리
             # symbol 정규화
+            original_symbol = symbol
             if "-" not in symbol:
-                symbol = f"{symbol}-KRW"
+                normalized_symbol = f"{symbol}-KRW"
+            else:
+                normalized_symbol = symbol
             
-            logger.info(f"Upbit: Getting price for {symbol}")
+            logger.info(f"Upbit: Getting price for {normalized_symbol}")
             
-            # TODO: 실제 Upbit API 호출 (인증 불필요)
-            # response = requests.get(f"{self.base_url}/ticker?markets={symbol}")
-            # data = response.json()[0]
-            # return PriceData(
-            #     symbol=symbol,
-            #     current_price=data["trade_price"],
-            #     change_percent=data["change_rate"] * 100
-            # )
-            
-            # 임시 데이터 (테스트용)
-            price_map = {
-                "BTC-KRW": PriceData(symbol="BTC-KRW", current_price=45000000.0, change_percent=2.5),
-                "ETH-KRW": PriceData(symbol="ETH-KRW", current_price=2500000.0, change_percent=-1.2),
-                "XRP-KRW": PriceData(symbol="XRP-KRW", current_price=3000.0, change_percent=0.5),
-            }
-            
-            if symbol in price_map:
-                return price_map[symbol]
-            
-            logger.warning(f"Upbit: Price data not found for {symbol}")
-            return PriceData(symbol=symbol, current_price=0.0, change_percent=0.0)
+            # 실제 Upbit API 호출 (인증 불필요)
+            try:
+                response = requests.get(
+                    f"{self.base_url}/ticker",
+                    params={"markets": normalized_symbol},
+                    timeout=10
+                )
+                response.raise_for_status()
+                data = response.json()
+                
+                if data and len(data) > 0:
+                    item = data[0]
+                    return PriceData(
+                        symbol=original_symbol,
+                        current_price=item["trade_price"],
+                        change_percent=item["signed_change_rate"] * 100,
+                        change_amount=item["signed_change_price"]
+                    )
+                else:
+                    logger.warning(f"Upbit: No price data returned for {normalized_symbol}")
+                    return PriceData(symbol=original_symbol, current_price=0.0, change_percent=0.0)
+                    
+            except requests.RequestException as e:
+                logger.error(f"Upbit: API request failed: {str(e)}")
+                return PriceData(symbol=original_symbol, current_price=0.0, change_percent=0.0)
             
         except Exception as e:
             logger.error(f"Upbit: Failed to get current price: {str(e)}")
-            return PriceData(symbol=symbol, current_price=0.0, change_percent=0.0)
+            # Return with original symbol if possible
+            if isinstance(symbol, list):
+                return {sym: PriceData(symbol=sym, current_price=0.0, change_percent=0.0) for sym in symbol}
+            else:
+                return PriceData(symbol=symbol, current_price=0.0, change_percent=0.0)
