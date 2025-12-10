@@ -9,7 +9,7 @@ export const FIELD_LABELS: Record<TransactionType, Partial<Record<string, string
   sell: { quantity: "매도 수량" },
   cash_dividend: { quantity: "배당금액", price: "배당 단가", fee: "수수료", tax: "세금" },
   stock_dividend: { quantity: "배당 주식 수" },
-  interest: { quantity: "이자 금액" },
+  interest: { quantity: "이자 금액", tax: "세금" },
   fee: { quantity: "수수료 금액" },
   transfer_in: { quantity: "이체 입금 금액" },
   transfer_out: { quantity: "이체 출금 금액" },
@@ -76,7 +76,7 @@ export const TRANSACTION_TYPE_CONFIGS: Record<TransactionType, TransactionTypeCo
   interest: {
     type: 'interest',
     label: '이자',
-    fields: ['asset', 'quantity', 'date', 'category', 'flow_type', 'description', 'memo'],
+    fields: ['asset', 'quantity', 'tax', 'date', 'category', 'flow_type', 'description', 'memo'],
     requiredFields: ['asset', 'quantity', 'date'],
     specialBehavior: [],
   },
