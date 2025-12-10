@@ -15,12 +15,9 @@ fi
 
 # shellcheck disable=SC1091
 source "$VENV/bin/activate"
-export ENV="${ENV:-local}"
 
-echo "[INFO] Running Alembic migrations (ENV=$ENV)..."
 alembic upgrade head
 
-echo "[INFO] Seeding admin/user data (ENV=$ENV)..."
 python scripts/init_db.py
 
 echo "[INFO] Starting FastAPI with uvicorn (reload)..."
