@@ -90,10 +90,13 @@ export default function TransactionsPage() {
       setAssetFilter(assetId || "");
       setPage(1); // 페이지를 1로 리셋
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchParams]); // assetFilter를 의존성에서 제거하여 순환 업데이트 방지
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- assetFilter를 의존성에서 제거하여 순환 업데이트 방지
+  }, [searchParams]);
 
-  // URL을 업데이트하는 헬퍼 함수
+  /**
+   * URL을 업데이트하는 헬퍼 함수
+   * Updates URL with the selected asset filter to keep state and URL in sync
+   */
   const updateUrlWithAssetFilter = (assetId: string) => {
     const params = new URLSearchParams(searchParams.toString());
     if (assetId) {
