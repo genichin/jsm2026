@@ -15,6 +15,8 @@ class Settings(BaseSettings):
     # 백엔드 API
     api_base_url: str = "http://localhost:8000/api/v1"
     api_token: str = ""
+    api_username: str = ""  # 토큰 자동 갱신용
+    api_password: str = ""  # 토큰 자동 갱신용
     
     # 스케줄러 (선택사항: None일 경우 해당 작업 실행 안함)
     schedule_balance_cron: Optional[str] = None

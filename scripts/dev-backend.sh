@@ -18,7 +18,7 @@ source "$VENV/bin/activate"
 
 alembic upgrade head
 
-python scripts/init_db.py
+#python scripts/init_db.py
 
 echo "[INFO] Starting FastAPI with uvicorn (reload)..."
 exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload

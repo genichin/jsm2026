@@ -4,7 +4,30 @@
 
 from typing import Dict, List
 import logging
-from .base import BrokerConnector, OrderSide, OrderStatus, Order, Balance, PriceData
+import sys
+from pathlib import Path
+import uuid
+import hashlib
+
+try:
+    import requests
+except ImportError:
+    requests = None
+
+try:
+    import jwt
+except ImportError:
+    jwt = None
+
+# 직접 실행 시 절대 import, 모듈로 import 시 상대 import
+if __name__ == "__main__":
+    # 프로젝트 루트를 sys.path에 추가
+    project_root = Path(__file__).parent.parent
+    if str(project_root) not in sys.path:
+        sys.path.insert(0, str(project_root))
+    from broker.base import BrokerConnector, OrderSide, OrderStatus, Order, Balance, PriceData
+else:
+    from .base import BrokerConnector, OrderSide, OrderStatus, Order, Balance, PriceData
 
 logger = logging.getLogger(__name__)
 
@@ -36,17 +59,46 @@ class UpbitConnector(BrokerConnector):
         """
         try:
             logger.info("Upbit: Getting balance")
-            # TODO: 실제 Upbit API 호출
-            # import requests
-            # response = requests.get(f"{self.base_url}/accounts", 
-            #     headers={"Authorization": f"Bearer {self.access_key}"})
-            
-            # 임시 반환 (테스트용)
-            return {
-                "KRW": Balance(symbol="KRW", quantity=5000000.0, avg_price=1.0),
-                "BTC": Balance(symbol="BTC", quantity=0.5, avg_price=40000000.0),
-                "ETH": Balance(symbol="ETH", quantity=5.0, avg_price=2000000.0),
+
+            # 필수 모듈 확인
+            if not requests or not jwt:
+                logger.warning("requests or jwt not available, returning dummy balance")
+                return {
+                    "KRW": Balance(symbol="KRW", quantity=5000000.0, avg_price=1.0),
+                    "BTC": Balance(symbol="BTC", quantity=0.5, avg_price=40000000.0),
+                    "ETH": Balance(symbol="ETH", quantity=5.0, avg_price=2000000.0),
+                }
+
+            # Upbit API 인증 토큰 생성 (JWT)
+            query_hash = hashlib.sha512(b"").hexdigest()
+            payload = {
+                "access_key": self.access_key,
+                "nonce": str(uuid.uuid4()),
+                "query_hash": query_hash,
+                "query_hash_alg": "SHA512",
             }
+
+            token = jwt.encode(payload, self.secret_key, algorithm="HS256")
+            if isinstance(token, bytes):
+                token = token.decode("utf-8")
+
+            headers = {"Authorization": f"Bearer {token}"}
+
+            response = requests.get(f"{self.base_url}/accounts", headers=headers, timeout=10)
+            response.raise_for_status()
+            data = response.json()
+
+            balances: Dict[str, Balance] = {}
+            for item in data:
+                currency = item.get("currency")
+                balance = float(item.get("balance", 0) or 0)
+                avg_price = float(item.get("avg_buy_price", 0) or 0)
+                if currency:
+                    balances[currency] = Balance(symbol=currency, quantity=balance, avg_price=avg_price)
+
+            logger.info(f"Upbit: Retrieved {len(balances)} balances")
+            return balances
+
         except Exception as e:
             logger.error(f"Upbit: Failed to get balance: {str(e)}")
             return {}
@@ -79,9 +131,9 @@ class UpbitConnector(BrokerConnector):
         - symbol 형식: BTC-KRW, ETH-KRW 등
         """
         try:
-            # symbol 정규화 (예: BTC -> BTC-KRW)
+            # symbol 정규화 (예: BTC -> KRW-BTC)
             if "-" not in symbol:
-                symbol = f"{symbol}-KRW"
+                symbol = f"KRW-{symbol}"
             
             logger.info(f"Upbit: Placing {side.value} order for {qty} {symbol}")
             
@@ -183,66 +235,152 @@ class UpbitConnector(BrokerConnector):
                 normalized_map = {}
                 normalized_symbols = []
                 for sym in symbol:
-                    normalized = f"{sym}-KRW" if "-" not in sym else sym
+                    # Upbit 형식: KRW-BTC (화폐-코인)
+                    normalized = f"KRW-{sym}" if "-" not in sym else sym
                     normalized_map[normalized] = sym
                     normalized_symbols.append(normalized)
                 
-                # TODO: 실제 Upbit API 호출 (여러 심볼 한 번에)
-                # response = requests.get(f"{self.base_url}/ticker?markets={','.join(normalized_symbols)}")
-                # data = response.json()
-                
-                # 임시 데이터 (테스트용)
-                price_map = {
-                    "BTC-KRW": PriceData(symbol="BTC-KRW", current_price=45000000.0, change_percent=2.5),
-                    "ETH-KRW": PriceData(symbol="ETH-KRW", current_price=2500000.0, change_percent=-1.2),
-                    "XRP-KRW": PriceData(symbol="XRP-KRW", current_price=3000.0, change_percent=0.5),
-                }
-                
-                result = {}
-                for normalized_sym in normalized_symbols:
-                    original_sym = normalized_map[normalized_sym]
-                    if normalized_sym in price_map:
-                        # PriceData의 symbol은 원본 심볼로 유지
-                        price_data = price_map[normalized_sym]
-                        result[original_sym] = PriceData(
-                            symbol=original_sym,
-                            current_price=price_data.current_price,
-                            change_percent=price_data.change_percent
+                # 실제 Upbit API 호출 (여러 심볼 한 번에)
+                if requests:
+                    try:
+                        response = requests.get(
+                            f"{self.base_url}/ticker",
+                            params={"markets": ','.join(normalized_symbols)},
+                            timeout=10
                         )
-                    else:
-                        result[original_sym] = PriceData(symbol=original_sym, current_price=0.0, change_percent=0.0)
-                
-                return result
+                        response.raise_for_status()
+                        data = response.json()
+                        
+                        # 에러 응답 처리
+                        if isinstance(data, dict) and 'error' in data:
+                            logger.error(f"Upbit API error: {data['error']}")
+                            # 폴백: 빈 데이터 반환
+                            return {sym: PriceData(symbol=sym, current_price=0.0, change_percent=0.0) 
+                                    for sym in symbol}
+                        
+                        result = {}
+                        for item in data:
+                            market = item['market']
+                            original_sym = normalized_map.get(market, market)
+                            result[original_sym] = PriceData(
+                                symbol=original_sym,
+                                current_price=item['trade_price'],
+                                change_percent=item['signed_change_rate'] * 100
+                            )
+                        
+                        # 응답에 없는 심볼은 0으로 처리
+                        for sym in symbol:
+                            if sym not in result:
+                                result[sym] = PriceData(symbol=sym, current_price=0.0, change_percent=0.0)
+                        
+                        return result
+                    except Exception as e:
+                        logger.error(f"Failed to fetch prices from Upbit API: {str(e)}")
+                        # 폴백: 빈 데이터 반환
+                        return {sym: PriceData(symbol=sym, current_price=0.0, change_percent=0.0) 
+                                for sym in symbol}
+                else:
+                    logger.warning("requests module not available, returning dummy data")
+                    # requests 모듈이 없는 경우 더미 데이터
+                    price_map = {
+                        "KRW-BTC": PriceData(symbol="KRW-BTC", current_price=45000000.0, change_percent=2.5),
+                        "KRW-ETH": PriceData(symbol="KRW-ETH", current_price=2500000.0, change_percent=-1.2),
+                        "KRW-XRP": PriceData(symbol="KRW-XRP", current_price=3000.0, change_percent=0.5),
+                    }
+                    
+                    result = {}
+                    for normalized_sym in normalized_symbols:
+                        original_sym = normalized_map[normalized_sym]
+                        if normalized_sym in price_map:
+                            price_data = price_map[normalized_sym]
+                            result[original_sym] = PriceData(
+                                symbol=original_sym,
+                                current_price=price_data.current_price,
+                                change_percent=price_data.change_percent
+                            )
+                        else:
+                            result[original_sym] = PriceData(symbol=original_sym, current_price=0.0, change_percent=0.0)
+                    
+                    return result
             
             # 단일 심볼 처리
-            # symbol 정규화
+            original_symbol = symbol
+            # symbol 정규화 - Upbit 형식: KRW-BTC (화폐-코인)
             if "-" not in symbol:
-                symbol = f"{symbol}-KRW"
+                symbol = f"KRW-{symbol}"
             
             logger.info(f"Upbit: Getting price for {symbol}")
             
-            # TODO: 실제 Upbit API 호출 (인증 불필요)
-            # response = requests.get(f"{self.base_url}/ticker?markets={symbol}")
-            # data = response.json()[0]
-            # return PriceData(
-            #     symbol=symbol,
-            #     current_price=data["trade_price"],
-            #     change_percent=data["change_rate"] * 100
-            # )
-            
-            # 임시 데이터 (테스트용)
-            price_map = {
-                "BTC-KRW": PriceData(symbol="BTC-KRW", current_price=45000000.0, change_percent=2.5),
-                "ETH-KRW": PriceData(symbol="ETH-KRW", current_price=2500000.0, change_percent=-1.2),
-                "XRP-KRW": PriceData(symbol="XRP-KRW", current_price=3000.0, change_percent=0.5),
-            }
-            
-            if symbol in price_map:
-                return price_map[symbol]
-            
-            logger.warning(f"Upbit: Price data not found for {symbol}")
-            return PriceData(symbol=symbol, current_price=0.0, change_percent=0.0)
+            # 실제 Upbit API 호출 (인증 불필요)
+            if requests:
+                try:
+                    response = requests.get(
+                        f"{self.base_url}/ticker",
+                        params={"markets": symbol},
+                        timeout=10
+                    )
+                    response.raise_for_status()
+                    data = response.json()
+                    
+                    # 에러 응답 처리
+                    if isinstance(data, dict) and 'error' in data:
+                        logger.error(f"Upbit API error: {data['error']}")
+                        return PriceData(symbol=original_symbol, current_price=0.0, change_percent=0.0)
+                    
+                    if data and len(data) > 0:
+                        item = data[0]
+                        return PriceData(
+                            symbol=original_symbol,
+                            current_price=item['trade_price'],
+                            change_percent=item['signed_change_rate'] * 100
+                        )
+                    else:
+                        logger.warning(f"Upbit: No price data returned for {symbol}")
+                        return PriceData(symbol=original_symbol, current_price=0.0, change_percent=0.0)
+                        
+                except Exception as e:
+                    logger.error(f"Failed to fetch price from Upbit API: {str(e)}")
+                    return PriceData(symbol=original_symbol, current_price=0.0, change_percent=0.0)
+            else:
+                logger.warning("requests module not available, returning dummy data")
+                # requests 모듈이 없는 경우 더미 데이터
+                price_map = {
+                    "KRW-BTC": PriceData(symbol="KRW-BTC", current_price=45000000.0, change_percent=2.5),
+                    "KRW-ETH": PriceData(symbol="KRW-ETH", current_price=2500000.0, change_percent=-1.2),
+                    "KRW-XRP": PriceData(symbol="KRW-XRP", current_price=3000.0, change_percent=0.5),
+                }
+                
+                if symbol in price_map:
+                    price_data = price_map[symbol]
+                    return PriceData(
+                        symbol=original_symbol,
+                        current_price=price_data.current_price,
+                        change_percent=price_data.change_percent
+                    )
+                
+                logger.warning(f"Upbit: Price data not found for {symbol}")
+                return PriceData(symbol=original_symbol, current_price=0.0, change_percent=0.0)
             
         except Exception as e:
             logger.error(f"Upbit: Failed to get current price: {str(e)}")
             return PriceData(symbol=symbol, current_price=0.0, change_percent=0.0)
+
+if __name__ == "__main__":
+    # 간단한 테스트
+    logging.basicConfig(level=logging.INFO)
+    
+    print("=== Upbit Connector Test ===")
+    connector = UpbitConnector(access_key="test-key", secret_key="test-secret")
+    
+    # 단일 심볼 테스트
+    print("\n1. Single symbol test (BTC):")
+    price = connector.get_current_price('BTC')
+    print(f"   Symbol: {price.symbol}")
+    print(f"   Price: {price.current_price:,.0f} KRW")
+    print(f"   Change: {price.change_percent:+.2f}%")
+    
+    # 여러 심볼 테스트
+    print("\n2. Multiple symbols test (BTC, ETH, XRP):")
+    prices = connector.get_current_price(['BTC', 'ETH', 'XRP'])
+    for symbol, price_data in prices.items():
+        print(f"   {symbol}: {price_data.current_price:,.0f} KRW ({price_data.change_percent:+.2f}%)")

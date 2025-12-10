@@ -28,7 +28,12 @@ class DaemonScheduler:
     
     def __init__(self):
         self.scheduler = BackgroundScheduler()
-        self.broker = get_broker_connector(settings.broker)
+        logger.info(f"Broker config: type={settings.broker}, key_len={len(settings.broker_app_key or '')}, secret_len={len(settings.broker_app_secret or '')}")
+        self.broker = get_broker_connector(
+            broker_type=settings.broker,
+            access_key=settings.broker_app_key,
+            secret_key=settings.broker_app_secret
+        )
         self.strategy_runner = StrategyRunner(self.broker)
     
     def setup_jobs(self):
@@ -103,15 +108,28 @@ class DaemonScheduler:
             
             # 1. 브로커에서 잔고 조회
             broker_balance = self.broker.get_balance()
-            logger.info(f"Broker balance: {broker_balance}")
+            #logger.info(f"Broker balance: {broker_balance}")
             
-            # 2. 백엔드에서 자산 목록 조회
-            assets_response = asset_api.list_assets(is_active=True)
+            # 2. 백엔드에서 자산 목록 조회 (특정 계좌의 거래가능 자산만)
+            # ACCOUNT_ID가 설정된 경우 해당 계좌만, 현금 제외
+            params = {"size": 100}
+            if settings.account_id:
+                params["account_id"] = settings.account_id
+                logger.info(f"Filtering assets for account: {settings.account_id}")
+            
+            assets_response = asset_api.list_assets(**params)
             assets = assets_response.get("items", [])
-            logger.info(f"Backend assets count: {len(assets)}")
+            
+            # 현금 자산 제외 (asset_type이 'cash'가 아닌 것만)
+            tradable_assets = [
+                asset for asset in assets 
+                if asset.get("asset_type") != "cash"
+            ]
+            
+            logger.info(f"Backend assets count: {len(tradable_assets)} (total: {len(assets)}, filtered out cash assets)")
             
             # 3. 비교 및 동기화 (여기서는 로그만)
-            for asset in assets:
+            for asset in tradable_assets:
                 symbol = asset.get("symbol")
                 backend_balance = asset.get("balance")
                 
@@ -148,7 +166,7 @@ class DaemonScheduler:
             logger.info(f"Current broker balance: {broker_balance}")
             
             # 3. 백엔드에서 자산 설정 조회
-            assets_response = asset_api.list_assets(is_active=True)
+            assets_response = asset_api.list_assets(size=100)
             assets = assets_response.get("items", [])
             
             logger.info(f"Processing {len(assets)} assets")
