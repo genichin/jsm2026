@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState, useEffect } from "react";
-import { useSearchParams } from "next/navigation";
+import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import TransactionCards from "@/components/TransactionCards";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
@@ -61,6 +61,8 @@ type CategoriesTreeResponse = { id: string; name: string; flow_type: string }[];
 export default function TransactionsPage() {
   const qc = useQueryClient();
   const searchParams = useSearchParams();
+  const router = useRouter();
+  const pathname = usePathname();
 
   // Filters & paging
   const [assetFilter, setAssetFilter] = useState<string | "">("");
@@ -81,14 +83,29 @@ export default function TransactionsPage() {
     return "card";
   });
 
-  // URL 파라미터에서 초기 필터 설정 및 변화 감지
+  // URL 파라미터에서 초기 필터 설정
   useEffect(() => {
     const assetId = searchParams.get('asset_id');
     if (assetId !== assetFilter) {
       setAssetFilter(assetId || "");
       setPage(1); // 페이지를 1로 리셋
     }
-  }, [searchParams, assetFilter]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- assetFilter를 의존성에서 제거하여 순환 업데이트 방지
+  }, [searchParams]);
+
+  /**
+   * URL을 업데이트하는 헬퍼 함수
+   * Updates URL with the selected asset filter to keep state and URL in sync
+   */
+  const updateUrlWithAssetFilter = (assetId: string) => {
+    const params = new URLSearchParams(searchParams.toString());
+    if (assetId) {
+      params.set('asset_id', assetId);
+    } else {
+      params.delete('asset_id');
+    }
+    router.push(`${pathname}?${params.toString()}`, { scroll: false });
+  };
 
   // Assets, Accounts, Categories for filters/create
   const assetsQuery = useQuery<AssetsListResponse>({
@@ -633,7 +650,12 @@ export default function TransactionsPage() {
           <label className="block text-xs text-gh-fg-muted mb-1">자산</label>
           <select 
             value={assetFilter} 
-            onChange={(e) => { setAssetFilter(e.target.value); setPage(1); }} 
+            onChange={(e) => { 
+              const newValue = e.target.value;
+              setAssetFilter(newValue); 
+              setPage(1);
+              updateUrlWithAssetFilter(newValue);
+            }} 
             className={`border-gh-border-default bg-gh-canvas-inset rounded-md px-3 py-1.5 min-w-40 focus:ring-2 focus:ring-gh-accent-emphasis ${searchParams.get('asset_id') ? 'opacity-50 cursor-not-allowed' : ''}`}
             disabled={!!searchParams.get('asset_id')}
           >
