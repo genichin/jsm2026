@@ -282,4 +282,8 @@ class UpbitConnector(BrokerConnector):
             
         except Exception as e:
             logger.error(f"Upbit: Failed to get current price: {str(e)}")
-            return PriceData(symbol=symbol, current_price=0.0, change_percent=0.0)
+            # Handle both list and single symbol cases
+            if isinstance(symbol, list):
+                return {sym: PriceData(symbol=sym, current_price=0.0, change_percent=0.0) for sym in symbol}
+            else:
+                return PriceData(symbol=symbol, current_price=0.0, change_percent=0.0)
