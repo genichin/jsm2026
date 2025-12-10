@@ -2,7 +2,7 @@
 업비트(암호화폐) 브로커 커넥터
 """
 
-from typing import Dict, List
+from typing import Dict, List, Union
 import logging
 import sys
 from pathlib import Path
@@ -25,9 +25,9 @@ if __name__ == "__main__":
     project_root = Path(__file__).parent.parent
     if str(project_root) not in sys.path:
         sys.path.insert(0, str(project_root))
-    from broker.base import BrokerConnector, OrderSide, OrderStatus, Order, Balance, PriceData
+    from broker.base import BrokerConnector, OrderSide, OrderStatus, Order, Balance, PriceData, OrderBook, OrderBookLevel
 else:
-    from .base import BrokerConnector, OrderSide, OrderStatus, Order, Balance, PriceData
+    from .base import BrokerConnector, OrderSide, OrderStatus, Order, Balance, PriceData, OrderBook, OrderBookLevel
 
 logger = logging.getLogger(__name__)
 
@@ -135,7 +135,7 @@ class UpbitConnector(BrokerConnector):
             if "-" not in symbol:
                 symbol = f"KRW-{symbol}"
             
-            logger.info(f"Upbit: Placing {side.value} order for {qty} {symbol}")
+            logger.info(f"Upbit: Placing {side.value} order for {price} {qty} {symbol}")
             
             # TODO: 실제 Upbit API 호출
             # order_data = {
@@ -364,6 +364,132 @@ class UpbitConnector(BrokerConnector):
         except Exception as e:
             logger.error(f"Upbit: Failed to get current price: {str(e)}")
             return PriceData(symbol=symbol, current_price=0.0, change_percent=0.0)
+    
+    def get_orderbook(self, symbol: Union[str, list]) -> Union[OrderBook, Dict]:
+        """
+        호가 조회 (5단계)
+        
+        실제 구현 시:
+        - GET /orderbook?markets={market} 엔드포인트 호출
+        """
+        try:
+            if isinstance(symbol, list):
+                logger.info(f"Upbit: Getting orderbook for {len(symbol)} symbols")
+                result = {}
+                
+                for sym in symbol:
+                    normalized = f"KRW-{sym}" if "-" not in sym else sym
+                    
+                    if requests:
+                        try:
+                            response = requests.get(
+                                f"{self.base_url}/orderbook",
+                                params={"markets": normalized},
+                                timeout=10
+                            )
+                            response.raise_for_status()
+                            data = response.json()
+                            
+                            if isinstance(data, dict) and 'error' in data:
+                                logger.error(f"Upbit API error: {data['error']}")
+                                result[sym] = OrderBook(symbol=sym)
+                                continue
+                            
+                            if data and len(data) > 0:
+                                item = data[0]
+                                orderbook_units = item.get('orderbook_units', [])
+                                
+                                if orderbook_units:
+                                    # 최대 5개씩 추출
+                                    bids = [OrderBookLevel(price=unit['bid_price'], quantity=unit['bid_size']) 
+                                           for unit in orderbook_units[:5] if 'bid_price' in unit]
+                                    asks = [OrderBookLevel(price=unit['ask_price'], quantity=unit['ask_size']) 
+                                           for unit in orderbook_units[:5] if 'ask_price' in unit]
+                                    
+                                    result[sym] = OrderBook(
+                                        symbol=sym,
+                                        bids=bids,
+                                        asks=asks
+                                    )
+                                else:
+                                    result[sym] = OrderBook(symbol=sym)
+                            else:
+                                result[sym] = OrderBook(symbol=sym)
+                        
+                        except Exception as e:
+                            logger.error(f"Failed to fetch orderbook for {sym}: {str(e)}")
+                            result[sym] = OrderBook(symbol=sym)
+                    else:
+                        # 더미 데이터 (5단계)
+                        price = 45000000.0 if sym == "BTC" else 2500000.0
+                        result[sym] = OrderBook(
+                            symbol=sym,
+                            bids=[OrderBookLevel(price=price * (0.999 - i * 0.002), quantity=0.1) for i in range(5)],
+                            asks=[OrderBookLevel(price=price * (1.001 + i * 0.002), quantity=0.1) for i in range(5)]
+                        )
+                
+                return result
+            
+            # 단일 심볼 처리
+            original_symbol = symbol
+            normalized = f"KRW-{symbol}" if "-" not in symbol else symbol
+            
+            logger.info(f"Upbit: Getting orderbook for {normalized}")
+            
+            if requests:
+                try:
+                    response = requests.get(
+                        f"{self.base_url}/orderbook",
+                        params={"markets": normalized},
+                        timeout=10
+                    )
+                    response.raise_for_status()
+                    data = response.json()
+                    
+                    if isinstance(data, dict) and 'error' in data:
+                        logger.error(f"Upbit API error: {data['error']}")
+                        return OrderBook(symbol=original_symbol)
+                    
+                    if data and len(data) > 0:
+                        item = data[0]
+                        orderbook_units = item.get('orderbook_units', [])
+                        
+                        if orderbook_units:
+                            # 최대 5개씩 추출
+                            bids = [OrderBookLevel(price=unit['bid_price'], quantity=unit['bid_size']) 
+                                   for unit in orderbook_units[:5] if 'bid_price' in unit]
+                            asks = [OrderBookLevel(price=unit['ask_price'], quantity=unit['ask_size']) 
+                                   for unit in orderbook_units[:5] if 'ask_price' in unit]
+                            
+                            return OrderBook(
+                                symbol=original_symbol,
+                                bids=bids,
+                                asks=asks
+                            )
+                    
+                    return OrderBook(symbol=original_symbol)
+                
+                except Exception as e:
+                    logger.error(f"Failed to fetch orderbook: {str(e)}")
+                    return OrderBook(symbol=original_symbol)
+            else:
+                # 더미 데이터 (5단계)
+                price = 45000000.0 if symbol == "BTC" else 2500000.0
+                return OrderBook(
+                    symbol=original_symbol,
+                    bids=[OrderBookLevel(price=price * (0.999 - i * 0.002), quantity=0.1) for i in range(5)],
+                    asks=[OrderBookLevel(price=price * (1.001 + i * 0.002), quantity=0.1) for i in range(5)]
+                )
+        
+        except Exception as e:
+            logger.error(f"Upbit: Failed to get orderbook: {str(e)}")
+            return OrderBook(symbol=symbol)
+
+    def get_min_order_price(self) -> float:
+        return 5000.0
+
+    def supports_fractional_trading(self) -> bool:
+        return True
 
 if __name__ == "__main__":
     # 간단한 테스트

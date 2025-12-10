@@ -9,7 +9,7 @@ from apscheduler.triggers.cron import CronTrigger
 from config import settings
 from api import asset_api
 from broker import get_broker_connector
-from strategy import StrategyRunner
+from strategy import StrategyRunner, StrategyFactory, StrategyType, StrategyConfig
 
 # 로깅 설정
 logging.basicConfig(
@@ -163,16 +163,27 @@ class DaemonScheduler:
             
             # 2. 브로커에서 최신 잔고 조회
             broker_balance = self.broker.get_balance()
-            logger.info(f"Current broker balance: {broker_balance}")
             
             # 3. 백엔드에서 자산 설정 조회
-            assets_response = asset_api.list_assets(size=100)
+            # ACCOUNT_ID가 설정된 경우 해당 계좌만, 현금 제외
+            params = {"size": 100}
+            if settings.account_id:
+                params["account_id"] = settings.account_id
+                logger.info(f"Filtering assets for account: {settings.account_id}")
+            
+            assets_response = asset_api.list_assets(**params)
             assets = assets_response.get("items", [])
             
-            logger.info(f"Processing {len(assets)} assets")
+            # 현금 자산 제외 (asset_type이 'cash'가 아닌 것만)
+            tradable_assets = [
+                asset for asset in assets 
+                if asset.get("asset_type") != "cash"
+            ]
             
-            # 4. 각 자산별 전략 실행 (간단한 DCA 예시)
-            for asset in assets:
+            logger.info(f"Backend assets count: {len(tradable_assets)} (total: {len(assets)}, filtered out cash assets)")
+            
+            # 4. 각 자산별 전략 실행
+            for asset in tradable_assets:
                 asset_id = asset.get("id")
                 symbol = asset.get("symbol")
                 asset_type = asset.get("asset_type")
@@ -181,21 +192,73 @@ class DaemonScheduler:
                 if asset_type == "cash" or not symbol:
                     logger.debug(f"Skipping non-tradable asset: {symbol}")
                     continue
+
+                # metadata가 없으면 스킵
+                if not metadata:
+                    logger.debug(f"Skipping asset {symbol} due to missing metadata")
+                    continue
+
+                # 
+                strategy = metadata.get("strategy")
+                if not strategy:
+                    logger.debug(f"Skipping asset {symbol} due to missing strategy in metadata")
+                    continue
                 
-                logger.info(f"Processing asset {symbol} ({asset_type})")
                 
-                # 간단한 데모: 1000원어치 매수 (실제로는 더 복잡한 로직 필요)
+
+                # 전략 유형 확인 metadata에서 'strategy_type' 키 확인
+                strategy_type_str = strategy.get("type", "not_defined").lower()
+                
                 try:
-                    price_data = self.broker.get_current_price(symbol)
-                    if price_data.current_price > 0:
-                        buy_qty = 1000 / price_data.current_price
-                        order = self.broker.place_order(
-                            symbol=symbol,
-                            side="buy",
-                            qty=buy_qty,
-                            price=price_data.current_price
-                        )
-                        logger.info(f"Order placed for {symbol}: {order.order_id}")
+                    # 문자열을 StrategyType enum으로 변환
+                    strategy_type = StrategyType[strategy_type_str.upper()]
+                except KeyError:
+                    logger.warning(f"Unknown strategy type for {symbol}: {strategy_type_str}")
+                    continue
+                
+                # 전략 설정 생성
+                strategy_config = StrategyConfig(
+                    strategy_type=strategy_type,
+                    asset_id=asset_id,
+                    symbol=symbol,
+                    config=strategy.get("config", {})
+                )
+                
+                # 전략 실행 (필요시 추가 인자 전달)
+                try:
+                    logger.info(f"Executing {strategy_type.value} strategy for {symbol}")
+                    
+                    # 전략별 추가 인자 준비
+                    kwargs = {}
+                    
+                    if strategy_type == StrategyType.REBALANCE:
+                        # 현재 비중 계산 (예시)
+                        current_weight = asset.get("balance", 0) / 100  # 간단한 예시
+                        kwargs["current_weight"] = current_weight
+                    
+                    elif strategy_type in [StrategyType.STOP_LOSS, StrategyType.TAKE_PROFIT]:
+                        # 현재가 조회
+                        price_data = self.broker.get_current_price(symbol)
+                        kwargs["current_price"] = price_data.current_price
+                        kwargs["avg_cost"] = asset.get("avg_price", price_data.current_price)
+                    
+                    elif strategy_type == StrategyType.TARGET_VALUE:
+                        # 보유 수량은 broker_balance에서 조회
+                        kwargs["current_quantity"] = broker_balance.get(symbol, 0).quantity
+                        # 호가 정보 조회
+                        orderbook = self.broker.get_orderbook(symbol)
+                        kwargs["orderbook"] = orderbook
+
+                        #print(kwargs)
+                    
+                    # 전략 실행
+                    result = self.strategy_runner.execute_strategy(strategy_config, **kwargs)
+                    
+                    if result:
+                        logger.info(f"Strategy executed successfully for {symbol}")
+                    else:
+                        logger.debug(f"Strategy did not trigger for {symbol}")
+                
                 except Exception as e:
                     logger.error(f"Strategy execution failed for {symbol}: {str(e)}")
             

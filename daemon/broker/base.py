@@ -3,8 +3,8 @@
 """
 
 from abc import ABC, abstractmethod
-from typing import Dict, Union
-from dataclasses import dataclass
+from typing import Dict, Union, List
+from dataclasses import dataclass, field
 from enum import Enum
 import logging
 
@@ -55,6 +55,38 @@ class PriceData:
     change_amount: float = 0.0
 
 
+@dataclass
+class OrderBookLevel:
+    """호가 단계"""
+    price: float
+    quantity: float
+
+
+@dataclass
+class OrderBook:
+    """호가 정보 (5단계)"""
+    symbol: str
+    bids: List[OrderBookLevel] = field(default_factory=list)  # 매수호가 (최대 5개)
+    asks: List[OrderBookLevel] = field(default_factory=list)  # 매도호가 (최대 5개)
+    timestamp: float = 0.0
+    
+    def get_best_bid(self) -> float:
+        """최고 매수호가"""
+        return self.bids[0].price if self.bids else 0.0
+    
+    def get_best_ask(self) -> float:
+        """최저 매도호가"""
+        return self.asks[0].price if self.asks else 0.0
+    
+    def get_spread(self) -> float:
+        """스프레드"""
+        best_bid = self.get_best_bid()
+        best_ask = self.get_best_ask()
+        if best_bid > 0 and best_ask > 0:
+            return best_ask - best_bid
+        return 0.0
+
+
 class BrokerConnector(ABC):
     """브로커 커넥터 추상 클래스"""
     
@@ -95,4 +127,27 @@ class BrokerConnector(ABC):
         Returns:
             단일 심볼이면 PriceData, 리스트면 Dict[symbol, PriceData]
         """
+        pass
+    
+    @abstractmethod
+    def get_orderbook(self, symbol: Union[str, list]) -> Union[OrderBook, Dict]:
+        """
+        호가 조회
+        
+        Args:
+            symbol: 단일 심볼 문자열 또는 심볼 리스트
+        
+        Returns:
+            단일 심볼이면 OrderBook, 리스트면 Dict[symbol, OrderBook]
+        """
+        pass
+
+    @abstractmethod
+    def get_min_order_price(self) -> float:
+        """브로커 최소 주문 금액. 기본 0 (제약 없음)."""
+        pass
+
+    @abstractmethod
+    def supports_fractional_trading(self) -> bool:
+        """소수점 단위 주문 지원 여부."""
         pass
