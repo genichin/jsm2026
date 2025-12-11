@@ -104,7 +104,8 @@ export default function TransactionsPage() {
     } else {
       params.delete('asset_id');
     }
-    router.push(`${pathname}?${params.toString()}`, { scroll: false });
+    const url = `${pathname}?${params.toString()}`;
+    router.push(url as any, { scroll: false });
   };
 
   // Assets, Accounts, Categories for filters/create
