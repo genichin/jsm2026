@@ -684,7 +684,7 @@ export default function TransactionsPage() {
         <div className="flex-1" />
         {searchParams.get('asset_id') && (
           <Button 
-            variant="secondary"
+            variant="default"
             onClick={() => {
               setAssetFilter("");
               router.push('/transactions');
