@@ -86,26 +86,12 @@ export default function TransactionsPage() {
   // URL 파라미터에서 초기 필터 설정
   useEffect(() => {
     const assetId = searchParams.get('asset_id');
-    if (assetId !== assetFilter) {
-      setAssetFilter(assetId || "");
-      setPage(1); // 페이지를 1로 리셋
+    if (assetId && assetId !== assetFilter) {
+      setAssetFilter(assetId);
+      setPage(1);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- assetFilter를 의존성에서 제거하여 순환 업데이트 방지
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams]);
-
-  /**
-   * URL을 업데이트하는 헬퍼 함수
-   * Updates URL with the selected asset filter to keep state and URL in sync
-   */
-  const updateUrlWithAssetFilter = (assetId: string) => {
-    const params = new URLSearchParams(searchParams.toString());
-    if (assetId) {
-      params.set('asset_id', assetId);
-    } else {
-      params.delete('asset_id');
-    }
-    router.push(`${pathname}?${params.toString()}`, { scroll: false });
-  };
 
   // Assets, Accounts, Categories for filters/create
   const assetsQuery = useQuery<AssetsListResponse>({
@@ -654,10 +640,10 @@ export default function TransactionsPage() {
               const newValue = e.target.value;
               setAssetFilter(newValue); 
               setPage(1);
-              updateUrlWithAssetFilter(newValue);
             }} 
             className={`border-gh-border-default bg-gh-canvas-inset rounded-md px-3 py-1.5 min-w-40 focus:ring-2 focus:ring-gh-accent-emphasis ${searchParams.get('asset_id') ? 'opacity-50 cursor-not-allowed' : ''}`}
             disabled={!!searchParams.get('asset_id')}
+            title={searchParams.get('asset_id') ? '자산 상세 페이지에서 필터링됨' : ''}
           >
             <option value="">전체</option>
             {(assetsQuery.data?.items || []).map((a) => (
@@ -696,6 +682,17 @@ export default function TransactionsPage() {
           </select>
         </div>
         <div className="flex-1" />
+        {searchParams.get('asset_id') && (
+          <Button 
+            variant="secondary"
+            onClick={() => {
+              setAssetFilter("");
+              router.push('/transactions');
+            }}
+          >
+            필터 초기화
+          </Button>
+        )}
         <Button onClick={() => setIsUploadModalOpen(true)}>
           파일 업로드
         </Button>
