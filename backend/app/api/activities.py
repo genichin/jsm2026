@@ -55,19 +55,19 @@ def create_activity(
     return activity
 
 
-@router.get("", response_model=List[ActivityResponse])
+@router.get("", response_model=ActivitiesListResponse)
 def list_activities(
     target_type: TargetType = Query(..., description="대상 타입"),
     target_id: str = Query(..., description="대상 ID"),
     activity_type: Optional[ActivityType] = Query(None, description="활동 유형 필터"),
     include_deleted: bool = Query(False, description="삭제된 댓글 포함 여부"),
     order: str = Query("desc", pattern="^(asc|desc)$", description="정렬 순서"),
-    skip: int = Query(0, ge=0, description="건너뛸 개수"),
-    limit: int = Query(20, ge=1, le=100, description="가져올 개수"),
+    page: int = Query(1, ge=1, description="페이지 번호 (1부터 시작)"),
+    size: int = Query(20, ge=1, le=100, description="페이지당 항목 수"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """대상별 활동 목록 (리스트 응답, skip/limit 지원)"""
+    """대상별 활동 목록 (페이지네이션 응답, page/size 지원)"""
     validate_target(db, current_user.id, target_type, target_id)
 
     query = db.query(Activity).filter(
@@ -81,10 +81,25 @@ def list_activities(
     if activity_type:
         query = query.filter(Activity.activity_type == activity_type.value)
 
-    query = query.order_by(Activity.created_at.asc() if order == 'asc' else Activity.created_at.desc())
-    items = query.offset(skip).limit(limit).all()
+    # 총 개수 계산
+    total = query.count()
 
-    return items
+    query = query.order_by(Activity.created_at.asc() if order == 'asc' else Activity.created_at.desc())
+    
+    # page/size를 skip/limit로 변환
+    skip = (page - 1) * size
+    items = query.offset(skip).limit(size).all()
+
+    # 총 페이지 수 계산
+    pages = (total + size - 1) // size if total > 0 else 0
+
+    return ActivitiesListResponse(
+        items=items,
+        total=total,
+        page=page,
+        size=size,
+        pages=pages
+    )
 
 
 @router.get("/{activity_id}", response_model=ActivityResponse)
