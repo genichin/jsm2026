@@ -193,6 +193,15 @@ export default function AssetDetailPage({ params }: { params: { id: string } }) 
     },
   });
 
+  // 모든 태그 조회 (태그 추가 시 사용)
+  const allTagsQuery = useQuery({
+    queryKey: ["all-tags"],
+    queryFn: async () => {
+      const res = await api.get("/tags");
+      return res.data;
+    },
+  });
+
   // 카테고리 조회
   const categoriesQuery = useQuery({
     queryKey: ["categories"],
@@ -282,6 +291,36 @@ export default function AssetDetailPage({ params }: { params: { id: string } }) 
     },
     onError: (err: any) => {
       const msg = err?.response?.data?.detail || "가격 업데이트 중 오류가 발생했습니다.";
+      alert(msg);
+    },
+  });
+
+  // 태그 추가 mutation
+  const addTagMut = useMutation({
+    mutationFn: async (tagId: string) =>
+      (await api.post("/tags/attach", {
+        tag_id: tagId,
+        taggable_type: "asset",
+        taggable_id: params.id,
+      })).data,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["asset-tags", params.id] });
+    },
+    onError: (err: any) => {
+      const msg = err?.response?.data?.detail || "태그 추가 중 오류가 발생했습니다.";
+      alert(msg);
+    },
+  });
+
+  // 태그 제거 mutation
+  const removeTagMut = useMutation({
+    mutationFn: async (taggableId: string) =>
+      (await api.delete(`/tags/detach/${taggableId}`)).data,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["asset-tags", params.id] });
+    },
+    onError: (err: any) => {
+      const msg = err?.response?.data?.detail || "태그 제거 중 오류가 발생했습니다.";
       alert(msg);
     },
   });
@@ -855,33 +894,98 @@ export default function AssetDetailPage({ params }: { params: { id: string } }) 
         )}
 
         {activeTab === "tags" && (
-          <div className="space-y-4">
+          <div className="space-y-6">
             {tagsQuery.isLoading && <p>태그 로딩 중...</p>}
             {tagsQuery.isError && <p className="text-red-600">태그를 불러오는데 실패했습니다.</p>}
             {tagsQuery.isSuccess && (
               <>
-                <p className="text-sm text-gray-600">총 {tagsQuery.data.total}개의 태그</p>
-                {tagsQuery.data.tags.length === 0 ? (
-                  <p className="text-gray-500 text-center py-8">연결된 태그가 없습니다.</p>
-                ) : (
-                  <div className="flex flex-wrap gap-2">
-                    {tagsQuery.data.tags.map((tag) => (
-                      <div
-                        key={tag.id}
-                        className="flex items-center gap-2 px-3 py-1.5 border rounded-full"
-                        style={{ borderColor: tag.color || undefined }}
-                      >
-                        {tag.color && (
-                          <div
-                            className="w-3 h-3 rounded-full"
-                            style={{ backgroundColor: tag.color }}
-                          />
-                        )}
-                        <span className="text-sm font-medium">{tag.name}</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
+                {/* 현재 태그 목록 */}
+                <div className="border rounded-lg p-4">
+                  <h3 className="text-lg font-semibold mb-4">현재 태그</h3>
+                  {tagsQuery.data.tags.length === 0 ? (
+                    <p className="text-gray-500 text-center py-8">연결된 태그가 없습니다.</p>
+                  ) : (
+                    <div className="flex flex-wrap gap-2">
+                      {tagsQuery.data.tags.map((tag) => (
+                        <div
+                          key={tag.id}
+                          className="flex items-center gap-2 px-3 py-1.5 border rounded-full group hover:bg-red-50"
+                          style={{ borderColor: tag.color || undefined }}
+                        >
+                          {tag.color && (
+                            <div
+                              className="w-3 h-3 rounded-full"
+                              style={{ backgroundColor: tag.color }}
+                            />
+                          )}
+                          <span className="text-sm font-medium">{tag.name}</span>
+                          <button
+                            onClick={() => {
+                              const taggableId = (tag as any).taggable_id;
+                              if (taggableId) {
+                                removeTagMut.mutate(taggableId);
+                              }
+                            }}
+                            disabled={removeTagMut.isPending}
+                            className="ml-1 text-gray-400 hover:text-red-600 opacity-0 group-hover:opacity-100 disabled:opacity-50"
+                            title="태그 제거"
+                          >
+                            ×
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* 태그 추가 */}
+                <div className="border rounded-lg p-4">
+                  <h3 className="text-lg font-semibold mb-4">태그 추가</h3>
+                  {allTagsQuery.isLoading && <p>태그 목록 로딩 중...</p>}
+                  {allTagsQuery.isError && <p className="text-red-600">태그 목록을 불러오는데 실패했습니다.</p>}
+                  {allTagsQuery.isSuccess && (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                      {allTagsQuery.data?.tags?.map((tag: any) => {
+                        const alreadyAdded = tagsQuery.data.tags.some(
+                          (t: any) => t.id === tag.id
+                        );
+                        return (
+                          <button
+                            key={tag.id}
+                            onClick={() => {
+                              if (!alreadyAdded) {
+                                addTagMut.mutate(tag.id);
+                              }
+                            }}
+                            disabled={alreadyAdded || addTagMut.isPending}
+                            className={`px-4 py-2 border rounded text-sm font-medium transition-colors ${
+                              alreadyAdded
+                                ? "border-gray-200 bg-gray-100 text-gray-500 cursor-not-allowed"
+                                : "border-blue-500 text-blue-600 hover:bg-blue-50 disabled:opacity-50"
+                            }`}
+                            style={
+                              tag.color && !alreadyAdded
+                                ? {
+                                    borderColor: tag.color,
+                                    color: tag.color,
+                                  }
+                                : undefined
+                            }
+                          >
+                            {tag.color && !alreadyAdded && (
+                              <span
+                                className="inline-block w-2 h-2 rounded-full mr-2"
+                                style={{ backgroundColor: tag.color }}
+                              />
+                            )}
+                            {tag.name}
+                            {alreadyAdded && " ✓"}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
               </>
             )}
           </div>

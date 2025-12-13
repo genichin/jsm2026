@@ -93,3 +93,5 @@ docker-compose.override.yml
 *.bak
 
 certs/
+
+temp/
