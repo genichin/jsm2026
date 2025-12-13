@@ -93,6 +93,21 @@ export default function TransactionsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams]);
 
+  /**
+   * URL을 업데이트하는 헬퍼 함수
+   * Updates URL with the selected asset filter to keep state and URL in sync
+   */
+  const updateUrlWithAssetFilter = (assetId: string) => {
+    const params = new URLSearchParams(searchParams.toString());
+    if (assetId) {
+      params.set('asset_id', assetId);
+    } else {
+      params.delete('asset_id');
+    }
+    const url = `${pathname}?${params.toString()}`;
+    router.push(url as any, { scroll: false });
+  };
+
   // Assets, Accounts, Categories for filters/create
   const assetsQuery = useQuery<AssetsListResponse>({
     queryKey: ["assets", { for: "tx-filter" }],
