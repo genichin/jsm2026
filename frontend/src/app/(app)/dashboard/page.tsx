@@ -2,6 +2,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { Card, CardTitle } from "@/components/Card";
+import { ReviewPendingWidget } from "@/components/ReviewPendingWidget";
 import {
   ResponsiveContainer,
   LineChart,
@@ -133,6 +134,9 @@ export default function DashboardPage() {
           </div>
         </div>
       )}
+
+      {/* 검토가 필요한 자산 위젯 */}
+      <ReviewPendingWidget />
 
       <Card>
         <CardTitle>일자별 거래 건수</CardTitle>

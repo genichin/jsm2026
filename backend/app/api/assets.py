@@ -268,6 +268,130 @@ async def get_portfolio_summary(
         )
 
 
+# ============================================================
+# 자산 검토 관련 엔드포인트
+# ============================================================
+
+@router.get("/review-pending", response_model=List[AssetResponse])
+async def get_assets_pending_review(
+    limit: int = Query(10, ge=1, le=100, description="조회할 자산 개수"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    검토가 필요한 자산 목록 조회 (오래된 순)
+    
+    - 한 번도 검토하지 않은 자산 우선
+    - 다음 검토 예정일이 도래한 자산
+    - 오래된 순서로 정렬
+    """
+    from sqlalchemy import func, case
+    from datetime import datetime, timezone
+    
+    query = (
+        db.query(Asset)
+        .filter(
+            Asset.user_id == current_user.id,
+            Asset.is_active == True,
+            or_(
+                Asset.last_reviewed_at.is_(None),  # 한 번도 검토 안 함
+                Asset.next_review_date <= datetime.now(timezone.utc)  # 검토 기한 도래
+            )
+        )
+        .order_by(
+            # 한 번도 검토 안 한 자산 우선 (NULL이 먼저 오도록)
+            case((Asset.last_reviewed_at.is_(None), 0), else_=1).asc(),
+            # 그 다음 오래된 순
+            Asset.last_reviewed_at.asc().nullsfirst()
+        )
+        .limit(limit)
+    )
+    
+    assets = query.all()
+    
+    # Redis 데이터 추가
+    result = []
+    for asset in assets:
+        asset_dict = {
+            "id": asset.id,
+            "user_id": asset.user_id,
+            "account_id": asset.account_id,
+            "name": asset.name,
+            "asset_type": asset.asset_type,
+            "symbol": asset.symbol,
+            "currency": asset.currency,
+            "asset_metadata": asset.asset_metadata,
+            "is_active": asset.is_active,
+            "review_interval_days": asset.review_interval_days,
+            "created_at": asset.created_at,
+            "updated_at": asset.updated_at,
+            "last_reviewed_at": asset.last_reviewed_at,
+            "next_review_date": asset.next_review_date,
+            "balance": get_asset_balance(asset.id),
+            "price": get_asset_price(asset.id),
+            "change": get_asset_change(asset.id),
+        }
+        result.append(AssetResponse(**asset_dict))
+    
+    return result
+
+
+@router.post("/{asset_id}/mark-reviewed", response_model=AssetResponse)
+async def mark_asset_reviewed(
+    asset_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    자산을 검토 완료로 표시
+    
+    - last_reviewed_at을 현재 시각으로 업데이트
+    - next_review_date는 last_reviewed_at + review_interval_days로 계산
+    """
+    from datetime import datetime, timezone, timedelta
+    
+    asset = db.query(Asset).filter(
+        Asset.id == asset_id,
+        Asset.user_id == current_user.id
+    ).first()
+    
+    if not asset:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="자산을 찾을 수 없습니다")
+    
+    now = datetime.now(timezone.utc)
+    asset.last_reviewed_at = now
+    
+    # next_review_date 계산 (트리거가 없는 환경을 위해 수동 계산)
+    if asset.review_interval_days:
+        asset.next_review_date = now + timedelta(days=asset.review_interval_days)
+    
+    db.commit()
+    db.refresh(asset)
+    
+    # Redis 데이터 추가
+    asset_dict = {
+        "id": asset.id,
+        "user_id": asset.user_id,
+        "account_id": asset.account_id,
+        "name": asset.name,
+        "asset_type": asset.asset_type,
+        "symbol": asset.symbol,
+        "currency": asset.currency,
+        "asset_metadata": asset.asset_metadata,
+        "is_active": asset.is_active,
+        "review_interval_days": asset.review_interval_days,
+        "created_at": asset.created_at,
+        "updated_at": asset.updated_at,
+        "last_reviewed_at": asset.last_reviewed_at,
+        "next_review_date": asset.next_review_date,
+        "balance": get_asset_balance(asset.id),
+        "price": get_asset_price(asset.id),
+        "change": get_asset_change(asset.id),
+    }
+    
+    return AssetResponse(**asset_dict)
+
+
 @router.get("/{asset_id}", response_model=AssetResponse)
 async def get_asset(
     asset_id: str,
@@ -304,6 +428,9 @@ async def get_asset(
         "currency": asset.currency,
         "asset_metadata": asset.asset_metadata,
         "is_active": asset.is_active,
+        "review_interval_days": asset.review_interval_days,
+        "last_reviewed_at": asset.last_reviewed_at,
+        "next_review_date": asset.next_review_date,
         "created_at": asset.created_at,
         "updated_at": asset.updated_at,
         "balance": balance,
@@ -364,8 +491,11 @@ async def update_asset(
         "currency": asset.currency,
         "asset_metadata": asset.asset_metadata,
         "is_active": asset.is_active,
+        "review_interval_days": asset.review_interval_days,
         "created_at": asset.created_at,
         "updated_at": asset.updated_at,
+        "last_reviewed_at": asset.last_reviewed_at,
+        "next_review_date": asset.next_review_date,
         "balance": balance,
         "price": price,
         "change": change

@@ -67,6 +67,7 @@ class AssetBase(BaseModel):
     currency: str = Field(default="KRW", max_length=3, description="기준 통화")
     asset_metadata: Optional[dict] = Field(None, description="추가 메타데이터")
     is_active: bool = Field(default=True, description="활성 상태")
+    review_interval_days: Optional[int] = Field(30, ge=1, le=365, description="검토 주기 (일)")
 
 
 class AssetCreate(AssetBase):
@@ -96,6 +97,7 @@ class AssetUpdate(BaseModel):
     currency: Optional[str] = Field(None, max_length=3, description="기준 통화")
     asset_metadata: Optional[dict] = None
     is_active: Optional[bool] = None
+    review_interval_days: Optional[int] = Field(None, ge=1, le=365, description="검토 주기 (일)")
 
 
 class AssetResponse(AssetBase):
@@ -105,6 +107,8 @@ class AssetResponse(AssetBase):
     account_id: str
     created_at: datetime
     updated_at: datetime
+    last_reviewed_at: Optional[datetime] = Field(None, description="마지막 검토 일시")
+    next_review_date: Optional[datetime] = Field(None, description="다음 검토 예정일")
     balance: Optional[float] = Field(None, description="현재 보유 수량 (Redis)")
     price: Optional[float] = Field(None, description="현재 가격 (Redis)")
     change: Optional[float] = Field(None, description="가격 변화량 퍼센트 (Redis)")

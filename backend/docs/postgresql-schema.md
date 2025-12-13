@@ -998,6 +998,11 @@ CREATE TABLE assets (
     -- 상태
     is_active BOOLEAN DEFAULT TRUE,
     
+    -- 검토 추적 (Asset Review Tracking)
+    last_reviewed_at TIMESTAMP WITH TIME ZONE,      -- 마지막 검토 일시
+    review_interval_days INT DEFAULT 30,            -- 검토 주기 (일)
+    next_review_date TIMESTAMP WITH TIME ZONE,      -- 다음 검토 예정일 (트리거로 자동 계산)
+    
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
@@ -1007,6 +1012,8 @@ CREATE INDEX idx_assets_account ON assets(account_id);
 CREATE INDEX idx_assets_type ON assets(asset_type);
 CREATE INDEX idx_assets_symbol ON assets(symbol);
 CREATE INDEX idx_assets_is_active ON assets(is_active);
+CREATE INDEX idx_assets_review_due ON assets(user_id, next_review_date) 
+    WHERE is_active = TRUE AND next_review_date IS NOT NULL;
 ```
 
 **필드 설명**:
@@ -1015,6 +1022,15 @@ CREATE INDEX idx_assets_is_active ON assets(is_active);
 - `asset_type`: AssetType Enum 값 (stock, crypto, bond, fund, etf, cash, savings, deposit)
 - `symbol`: 외부 API 연동용 식별자 (티커, 코드 등)
 - `metadata`: 확장 가능한 추가 정보 (ISIN, 상장국가 등)
+- `last_reviewed_at`: 사용자가 마지막으로 자산을 검토한 일시 (NULL = 아직 검토하지 않음)
+- `review_interval_days`: 검토 주기 (기본값 30일, 범위 1-365일)
+- `next_review_date`: 다음 검토 예정일 (트리거로 자동 계산됨)
+
+**검토 시스템 동작**:
+- `mark_asset_reviewed()` API 호출 시 `last_reviewed_at`이 현재 시각으로 설정됩니다.
+- `update_next_review_date()` 트리거가 자동으로 `next_review_date`를 계산합니다.
+- `next_review_date = last_reviewed_at + (review_interval_days * INTERVAL '1 day')`
+- `idx_assets_review_due` 인덱스로 검토 필요한 자산을 빠르게 조회할 수 있습니다.
 
 **자산 유형별 예시**:
 ```json
@@ -1042,6 +1058,32 @@ CREATE INDEX idx_assets_is_active ON assets(is_active);
   "metadata": {"exchange": "upbit"}
 }
 ```
+
+#### 자산 검토 트리거
+
+```sql
+-- 자산 검토 시 next_review_date 자동 계산 트리거
+CREATE OR REPLACE FUNCTION update_next_review_date()
+RETURNS TRIGGER AS $$
+BEGIN
+    IF NEW.last_reviewed_at IS NOT NULL AND NEW.review_interval_days IS NOT NULL THEN
+        NEW.next_review_date := NEW.last_reviewed_at + (NEW.review_interval_days * INTERVAL '1 day');
+    ELSE
+        NEW.next_review_date := NULL;
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trg_update_next_review_date
+BEFORE INSERT OR UPDATE OF last_reviewed_at, review_interval_days ON assets
+FOR EACH ROW
+EXECUTE FUNCTION update_next_review_date();
+```
+
+**트리거 동작**:
+- `last_reviewed_at` 또는 `review_interval_days` 변경 시 자동으로 `next_review_date` 계산
+- `last_reviewed_at`이나 `review_interval_days`가 NULL이면 `next_review_date`도 NULL로 설정
 
 ---
 

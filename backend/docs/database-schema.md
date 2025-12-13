@@ -67,6 +67,7 @@ transactions (거래)
 - **activities**: 댓글 및 시스템 로그 (불변성 지원)
 - **categories**: 거래 분류 (지출/수입/투자/이동/중립)
 - **category_auto_rules**: 거래 자동 분류 규칙
+- **자산 검토 시스템**: 주기적 자산 검토 추적 및 알림
 
 ## 데이터 설계 원칙
 
@@ -141,6 +142,14 @@ asset:{asset_id}:purchase_queue  → 매수 내역 [[수량,취득원가], ...]
 4. 수익 계산 시스템 구현
 5. 배당/조정 특수 거래 구현
 
+### 자산 검토 시스템
+- **자동 검토 추적**: `last_reviewed_at`, `review_interval_days`, `next_review_date` 필드
+- **트리거 기반 자동 계산**: `next_review_date`는 검토 시 자동 업데이트
+- **검토 필요 자산 조회**: 인덱스 최적화된 쿼리로 빠른 조회
+- **API 엔드포인트**:
+  - `GET /api/v1/assets/review-pending`: 검토 필요한 자산 목록 (오래된 순)
+  - `POST /api/v1/assets/{id}/mark-reviewed`: 자산 검토 완료 표시
+
 ### 주요 고려사항
 - **데이터 정합성**: PostgreSQL 트랜잭션과 Redis 업데이트 동기화
 - **성능**: Redis 배치 처리, 인덱스 최적화
@@ -151,6 +160,6 @@ asset:{asset_id}:purchase_queue  → 매수 내역 [[수량,취득원가], ...]
 
 ## 버전 정보
 
-**Current Version**: 1.0.0 (수익 계산 시스템 포함)  
-**Last Updated**: 2025-11-01  
+**Current Version**: 1.1.0 (자산 검토 시스템 추가)  
+**Last Updated**: 2025-12-13  
 **Database**: PostgreSQL 15+ + Redis 7+

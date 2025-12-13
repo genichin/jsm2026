@@ -242,6 +242,11 @@ class Asset(Base):
     # 상태
     is_active = Column(Boolean, default=True, nullable=False)
     
+    # 검토 추적
+    last_reviewed_at = Column(DateTime(timezone=True))  # 마지막 검토 일시
+    review_interval_days = Column(Integer, default=30)  # 검토 주기 (일)
+    next_review_date = Column(DateTime(timezone=True))  # 다음 검토 예정일
+    
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 

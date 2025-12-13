@@ -31,6 +31,9 @@ interface Asset {
   balance?: number;  // Redis에서 조회한 현재 잔고
   price?: number;    // Redis에서 조회한 현재 가격
   change?: number;   // Redis에서 조회한 가격 변화량 (퍼센트)
+  last_reviewed_at?: string | null;  // 마지막 검토 일시
+  next_review_date?: string | null;  // 다음 검토 예정일
+  review_interval_days?: number;     // 검토 주기 (일)
 }
 
 interface AssetSummary {
@@ -325,6 +328,21 @@ export default function AssetDetailPage({ params }: { params: { id: string } }) 
     },
   });
 
+  // 검토 완료 mutation
+  const markReviewedMut = useMutation({
+    mutationFn: async () =>
+      (await api.post(`/assets/${params.id}/mark-reviewed`)).data,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["asset", params.id] });
+      queryClient.invalidateQueries({ queryKey: ["assets", "review-pending"] });
+      alert("검토 완료로 표시되었습니다.");
+    },
+    onError: (err: any) => {
+      const msg = err?.response?.data?.detail || "검토 완료 처리 중 오류가 발생했습니다.";
+      alert(msg);
+    },
+  });
+
   // 거래 추가 시작
   function startCreateTransaction() {
     setSelectedAssetId(params.id);
@@ -564,6 +582,14 @@ export default function AssetDetailPage({ params }: { params: { id: string } }) 
   const asset = assetQuery.data;
   const summary = summaryQuery.data;
 
+  const showReviewInfo = !!(
+    asset?.review_interval_days &&
+    (
+      !asset.next_review_date ||
+      new Date(asset.next_review_date) <= new Date()
+    )
+  );
+
   return (
     <div className="space-y-6">
       {/* 헤더 */}
@@ -603,6 +629,16 @@ export default function AssetDetailPage({ params }: { params: { id: string } }) 
           >
             + 거래 추가
           </button>
+          {asset?.review_interval_days && (
+            <button
+              onClick={() => markReviewedMut.mutate()}
+              disabled={markReviewedMut.isPending}
+              className="px-3 py-2 rounded bg-blue-600 text-white hover:bg-blue-700 text-sm font-medium transition-colors disabled:opacity-50"
+              title="이 자산을 검토 완료로 표시합니다"
+            >
+              ✓ 검토 완료
+            </button>
+          )}
           <button
             onClick={() => router.push(`/assets?edit=${params.id}` as any)}
             className="px-4 py-2 border rounded hover:bg-gray-50"
@@ -611,6 +647,47 @@ export default function AssetDetailPage({ params }: { params: { id: string } }) 
           </button>
         </div>
       </div>
+
+      {/* 검토 정보 (주기가 설정되고, 다음 검토일이 지났을 때만 노출) */}
+      {showReviewInfo && (
+        <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 mb-6">
+          <div className="flex items-center justify-between">
+            <div className="flex-1">
+              <h3 className="text-sm font-semibold text-amber-900 mb-2">검토 정보</h3>
+              <div className="space-y-1 text-sm text-amber-800">
+                {asset.last_reviewed_at ? (
+                  <>
+                    <p>
+                      마지막 검토:{" "}
+                      <span className="font-medium">
+                        {new Date(asset.last_reviewed_at).toLocaleDateString("ko-KR")}
+                      </span>
+                    </p>
+                    {asset.next_review_date && (
+                      <p>
+                        다음 검토 예정:{" "}
+                        <span className="font-medium">
+                          {new Date(asset.next_review_date).toLocaleDateString("ko-KR")}
+                        </span>
+                        {new Date(asset.next_review_date) < new Date() && (
+                          <span className="ml-2 text-red-600 font-bold">검토 필요!</span>
+                        )}
+                      </p>
+                    )}
+                  </>
+                ) : (
+                  <p className="text-orange-700 font-medium">
+                    이 자산은 아직 검토되지 않았습니다.
+                  </p>
+                )}
+                <p className="text-xs text-amber-700 mt-2">
+                  검토 주기: {asset.review_interval_days}일마다
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* 요약 카드 */}
       {summary && (
