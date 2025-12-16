@@ -28,11 +28,12 @@ class DaemonScheduler:
     
     def __init__(self):
         self.scheduler = BackgroundScheduler()
-        logger.info(f"Broker config: type={settings.broker}, key_len={len(settings.broker_app_key or '')}, secret_len={len(settings.broker_app_secret or '')}")
+        logger.info(f"Broker config: type={settings.broker}, key_len={len(settings.broker_app_key or '')}, secret_len={len(settings.broker_app_secret or '')}, account_id={settings.account_id}")
         self.broker = get_broker_connector(
             broker_type=settings.broker,
             access_key=settings.broker_app_key,
-            secret_key=settings.broker_app_secret
+            secret_key=settings.broker_app_secret,
+            account_id=settings.account_id
         )
         self.strategy_runner = StrategyRunner(self.broker)
     

@@ -6,6 +6,7 @@ from typing import Dict
 from .base import BrokerConnector
 from .demo import DemoBrokerConnector
 from .upbit import UpbitConnector
+from .krx import KRXConnector
 import logging
 
 logger = logging.getLogger(__name__)
@@ -17,6 +18,7 @@ class BrokerFactory:
     _connectors: Dict[str, type] = {
         "demo": DemoBrokerConnector,
         "upbit": UpbitConnector,
+        "krx": KRXConnector,
     }
     
     @classmethod
