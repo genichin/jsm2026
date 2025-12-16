@@ -68,6 +68,7 @@ class KRXConnector(BrokerConnector):
         self.firm_name = firm_name
         self.trades: Dict[str, ManualTrade] = {}  # trade_id -> ManualTrade
         self.pending_orders: Dict[str, Order] = {}  # order_id -> Order
+        self.symbol_market_map: Dict[str, str] = {}  # symbol -> market (KOSPI/KOSDAQ)
         
         logger.info(f"KRXConnector initialized for {firm_name or 'KRX'}")
         
@@ -163,11 +164,17 @@ class KRXConnector(BrokerConnector):
             
             logger.info(f"Backend assets: {len(tradable_assets)} tradable (total: {len(assets)})")
             
-            # Balance 객체로 변환
+            # Balance 객체로 변환 및 market 정보 캐싱
             balances = {}
             for asset in tradable_assets:
                 symbol = asset.get("symbol") or asset.get("id")
                 balance = asset.get("balance", 0.0)
+                market = asset.get("market")  # KOSPI, KOSDAQ, KRW 등
+                
+                # market 정보 캐싱
+                if market and symbol:
+                    self.symbol_market_map[symbol] = market
+                
                 # avg_price는 백엔드에서 제공하지 않으므로 0으로 설정
                 balances[symbol] = Balance(
                     symbol=symbol,
@@ -336,25 +343,39 @@ class KRXConnector(BrokerConnector):
             logger.error(f"get_price error for {symbol}: {e}")
             return None
 
-    def _normalize_symbol(self, symbol: str) -> Dict[str, str]:
+    def _normalize_symbol(self, symbol: str, market: str = None) -> Dict[str, str]:
         """
         심볼 정규화
-        - 6자리 숫자면 KRX 티커로 판단
-        - yfinance 티커 후보 생성: .KS 우선, 실패 시 .KQ
+        - market 정보가 있으면 KOSPI→.KS, KOSDAQ→.KQ 직접 매핑
+        - market 정보 없으면 기존 fallback 방식 사용
         """
         s = symbol.strip().upper()
         res = {"raw": s}
+        
+        # 이미 .KS/.KQ suffix가 있는 경우
         if s.endswith(".KS") or s.endswith(".KQ"):
             res["yf_primary"] = s
             res["yf_fallback"] = s[:-3] + (".KQ" if s.endswith(".KS") else ".KS")
             res["krx"] = s.split(".")[0]
             return res
+        
+        # 6자리 숫자 + market 정보가 있는 경우 (최적 경로)
+        if s.isdigit() and len(s) == 6 and market:
+            suffix = ".KS" if market == "KOSPI" else ".KQ" if market == "KOSDAQ" else ""
+            if suffix:
+                res["yf_primary"] = f"{s}{suffix}"
+                res["yf_fallback"] = ""  # market 정보가 정확하므로 fallback 불필요
+                res["krx"] = s
+                return res
+        
+        # 6자리 숫자이지만 market 정보 없음 (fallback 방식)
         if s.isdigit() and len(s) == 6:
             res["yf_primary"] = f"{s}.KS"
             res["yf_fallback"] = f"{s}.KQ"
             res["krx"] = s
             return res
-        # 기타 포맷은 그대로 사용 (yfinance가 직접 처리할 수도 있음)
+        
+        # 기타 포맷은 그대로 사용
         res["yf_primary"] = s
         res["yf_fallback"] = ""
         res["krx"] = s if s.isdigit() else ""
@@ -368,13 +389,15 @@ class KRXConnector(BrokerConnector):
         if yf is None:
             return None, None
         try:
-            m = self._normalize_symbol(symbol)
+            # 캐시된 market 정보 활용
+            market = self.symbol_market_map.get(symbol)
+            m = self._normalize_symbol(symbol, market=market)
+            
             for yf_sym in [m.get("yf_primary"), m.get("yf_fallback")]:
                 if not yf_sym:
                     continue
                 try:
                     t = yf.Ticker(yf_sym)
-                    # history 호출이 비교적 안정적
                     hist = t.history(period="10d", auto_adjust=False)
                     if hist is None or hist.empty:
                         continue
@@ -387,7 +410,8 @@ class KRXConnector(BrokerConnector):
                 except Exception:
                     continue
             return None, None
-        except Exception:
+        except Exception as e:
+            logger.error(f"yfinance unexpected error for {symbol}: {e}")
             return None, None
 
     def _fetch_price_pykrx(self, symbol: str) -> tuple[Optional[float], Optional[float]]:
@@ -398,16 +422,20 @@ class KRXConnector(BrokerConnector):
         if stock is None:
             return None, None
         try:
-            m = self._normalize_symbol(symbol)
+            # 캐시된 market 정보 활용 (pykrx는 6자리 KRX 코드만 필요)
+            market = self.symbol_market_map.get(symbol)
+            m = self._normalize_symbol(symbol, market=market)
             krx = m.get("krx")
             if not krx:
                 return None, None
+            
             end = datetime.now()
             start = end - timedelta(days=14)
-            # '종가' 컬럼 사용
+            
             df = stock.get_market_ohlcv_by_date(start.strftime("%Y%m%d"), end.strftime("%Y%m%d"), krx)
             if df is None or df.empty:
                 return None, None
+            
             # pykrx는 종종 멀티인덱스/컬럼명을 한글로 반환
             col_close_candidates = ["종가", "Close", "close"]
             close_series = None
@@ -415,12 +443,15 @@ class KRXConnector(BrokerConnector):
                 if col in df.columns:
                     close_series = df[col].dropna()
                     break
+            
             if close_series is None or close_series.empty:
                 return None, None
+            
             last_close = float(close_series.iloc[-1])
             prev_close = float(close_series.iloc[-2]) if len(close_series) >= 2 else None
             return last_close, prev_close
-        except Exception:
+        except Exception as e:
+            logger.error(f"pykrx error for {symbol}: {e}")
             return None, None
     
     def get_orderbook(self, symbol: str, depth: int = 5) -> Optional[OrderBook]:
