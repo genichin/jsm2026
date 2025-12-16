@@ -18,7 +18,7 @@ from app.core.config import settings
 # 테스트 DB URL (환경 변수 또는 기본값)
 TEST_DATABASE_URL = os.getenv(
     "DATABASE_URL_TEST",
-    "postgresql://postgres:jsmdb123!@jsmdb:5432/jsmdb_test"
+    "postgresql://postgres:jsmdb123!@localhost:5432/jsmdb_test"
 )
 
 

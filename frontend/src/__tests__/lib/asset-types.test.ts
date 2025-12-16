@@ -1,5 +1,5 @@
 /**
- * 자산 유형(AssetType) 테스트
+ * 자산 유형(AssetType) 및 거래소(Market) 테스트
  */
 
 describe('AssetType', () => {
@@ -67,6 +67,36 @@ describe('AssetType', () => {
 
   it('자산 유형 레이블이 중복되지 않아야 함', () => {
     const labels = Object.values(assetTypeLabels);
+    const uniqueLabels = new Set(labels);
+    expect(labels.length).toBe(uniqueLabels.size);
+  });
+});
+
+describe('Market', () => {
+  const validMarkets = ['KOSPI', 'KOSDAQ', 'KRW'];
+  
+  const marketLabels: Record<string, string> = {
+    KOSPI: 'KOSPI',
+    KOSDAQ: 'KOSDAQ',
+    KRW: 'KRW',
+  };
+
+  it('모든 거래소가 정의되어야 함', () => {
+    expect(validMarkets).toHaveLength(3);
+    expect(validMarkets).toContain('KOSPI');
+    expect(validMarkets).toContain('KOSDAQ');
+    expect(validMarkets).toContain('KRW');
+  });
+
+  it('각 거래소에 레이블이 있어야 함', () => {
+    validMarkets.forEach((market) => {
+      expect(marketLabels[market]).toBeDefined();
+      expect(marketLabels[market]).toBeTruthy();
+    });
+  });
+
+  it('거래소 레이블이 중복되지 않아야 함', () => {
+    const labels = Object.values(marketLabels);
     const uniqueLabels = new Set(labels);
     expect(labels.length).toBe(uniqueLabels.size);
   });

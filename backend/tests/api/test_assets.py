@@ -33,6 +33,7 @@ def test_asset(db_session: Session, test_user: User, test_account: Account) -> A
         name="Test Stock",
         asset_type="stock",
         symbol="TEST",
+        market="KOSPI",
         currency="KRW",
         is_active=True
     )
@@ -55,6 +56,7 @@ class TestCreateAsset:
                 "name": "Samsung Electronics",
                 "asset_type": "stock",
                 "symbol": "005930",
+                "market": "KOSPI",
                 "currency": "KRW"
             }
         )
@@ -64,6 +66,7 @@ class TestCreateAsset:
         assert data["name"] == "Samsung Electronics"
         assert data["asset_type"] == "stock"
         assert data["symbol"] == "005930"
+        assert data["market"] == "KOSPI"
         assert data["currency"] == "KRW"
         assert data["account_id"] == test_account.id
         assert "id" in data

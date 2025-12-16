@@ -22,6 +22,7 @@ type Asset = {
   name: string;
   asset_type: AssetType;
   symbol?: string | null;
+  market?: string | null;
   currency: string;
   asset_metadata?: any | null;
   is_active: boolean;
@@ -51,6 +52,12 @@ const assetTypeOptions: { value: AssetType; label: string }[] = [
   { value: "cash", label: "현금" },
   { value: "savings", label: "예금" },
   { value: "deposit", label: "적금" },
+];
+
+const marketOptions = [
+  { value: "KOSPI", label: "KOSPI" },
+  { value: "KOSDAQ", label: "KOSDAQ" },
+  { value: "KRW", label: "KRW" },
 ];
 
 export default function AssetsPage() {
@@ -133,6 +140,7 @@ export default function AssetsPage() {
       account_id: accountFilter || accountsQuery.data?.accounts?.[0]?.id || "",
       asset_type: (typeFilter || "stock") as AssetType,
       symbol: "",
+      market: "",
       currency: "KRW",
       is_active: true,
       asset_metadata: null,
@@ -144,6 +152,7 @@ export default function AssetsPage() {
       id: row.id,
       name: row.name,
       symbol: row.symbol || "",
+      market: row.market || "",
       currency: row.currency,
       is_active: row.is_active,
       asset_metadata: row.asset_metadata ?? null,
@@ -175,6 +184,7 @@ export default function AssetsPage() {
       const payload: any = {
         name: fd.get("name")?.toString().trim(),
         symbol: fd.get("symbol")?.toString().trim() || null,
+        market: fd.get("market")?.toString().trim() || null,
         currency: fd.get("currency")?.toString().trim() || "KRW",
         is_active: fd.get("is_active") === "on",
         asset_metadata,
@@ -189,6 +199,7 @@ export default function AssetsPage() {
         name: fd.get("name")?.toString().trim(),
         asset_type,
         symbol: fd.get("symbol")?.toString().trim() || null,
+        market: fd.get("market")?.toString().trim() || null,
         currency: fd.get("currency")?.toString().trim() || "KRW",
         is_active: fd.get("is_active") === "on",
         asset_metadata,
@@ -334,6 +345,15 @@ export default function AssetsPage() {
               <div>
                 <label className="block text-sm font-medium text-gh-fg-default mb-1.5">심볼</label>
                 <input name="symbol" defaultValue={editing.symbol || ""} className="w-full border border-gh-border-default bg-gh-canvas-inset rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gh-accent-emphasis" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gh-fg-default mb-1.5">거래소</label>
+                <select name="market" defaultValue={editing.market || ""} className="w-full border border-gh-border-default bg-gh-canvas-inset rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gh-accent-emphasis">
+                  <option value="">선택하세요</option>
+                  {marketOptions.map((m) => (
+                    <option key={m.value} value={m.value}>{m.label}</option>
+                  ))}
+                </select>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gh-fg-default mb-1.5">통화</label>

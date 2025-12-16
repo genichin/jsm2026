@@ -234,6 +234,7 @@ class Asset(Base):
     name = Column(String(100), nullable=False)         # 사용자 지정 이름
     asset_type = Column(String(50), nullable=False)    # AssetType Enum 값
     symbol = Column(String(20))                        # 거래 심볼
+    market = Column(String(20))                        # 거래소 (KOSPI, KOSDAQ, KRW, 등)
     
     # 메타데이터
     currency = Column(String(3), nullable=False, default='KRW')  # 기준 통화

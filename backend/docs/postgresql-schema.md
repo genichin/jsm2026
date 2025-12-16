@@ -990,6 +990,7 @@ CREATE TABLE assets (
     name VARCHAR(100) NOT NULL,         -- 사용자 지정 이름 (예: "삼성전자", "비트코인", "정기예금")
     asset_type VARCHAR(50) NOT NULL,    -- AssetType Enum 값
     symbol VARCHAR(20),                 -- 거래 심볼 (예: "005930", "BTC")
+    market VARCHAR(20),                 -- 거래소 (예: "KOSPI", "KOSDAQ", "KRW")
     
     -- 메타데이터
     currency VARCHAR(3) DEFAULT 'KRW',  -- 기준 통화
@@ -1021,6 +1022,7 @@ CREATE INDEX idx_assets_review_due ON assets(user_id, next_review_date)
 - `account_id`: 자산이 속한 계좌
 - `asset_type`: AssetType Enum 값 (stock, crypto, bond, fund, etf, cash, savings, deposit)
 - `symbol`: 외부 API 연동용 식별자 (티커, 코드 등)
+- `market`: 거래소/시장 분류 (KOSPI, KOSDAQ, KRW 등)
 - `metadata`: 확장 가능한 추가 정보 (ISIN, 상장국가 등)
 - `last_reviewed_at`: 사용자가 마지막으로 자산을 검토한 일시 (NULL = 아직 검토하지 않음)
 - `review_interval_days`: 검토 주기 (기본값 30일, 범위 1-365일)
@@ -1047,7 +1049,8 @@ CREATE INDEX idx_assets_review_due ON assets(user_id, next_review_date)
   "name": "삼성전자",
   "asset_type": "stock",
   "symbol": "005930",
-  "metadata": {"market": "KOSPI", "isin": "KR7005930003"}
+  "market": "KOSPI",
+  "metadata": {"isin": "KR7005930003"}
 }
 
 // 가상화폐

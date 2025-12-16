@@ -64,6 +64,7 @@ class AssetBase(BaseModel):
     name: str = Field(..., max_length=100, description="사용자 지정 자산 이름")
     asset_type: AssetType = Field(..., description="자산 유형")
     symbol: Optional[str] = Field(None, max_length=20, description="거래 심볼")
+    market: Optional[str] = Field(None, max_length=20, description="거래소 (KOSPI, KOSDAQ, KRW, 등)")
     currency: str = Field(default="KRW", max_length=3, description="기준 통화")
     asset_metadata: Optional[dict] = Field(None, description="추가 메타데이터")
     is_active: bool = Field(default=True, description="활성 상태")
@@ -94,6 +95,7 @@ class AssetUpdate(BaseModel):
     """자산 업데이트 요청"""
     name: Optional[str] = Field(None, max_length=100)
     symbol: Optional[str] = Field(None, max_length=20)
+    market: Optional[str] = Field(None, max_length=20, description="거래소 (KOSPI, KOSDAQ, KRW, 등)")
     currency: Optional[str] = Field(None, max_length=3, description="기준 통화")
     asset_metadata: Optional[dict] = None
     is_active: Optional[bool] = None
