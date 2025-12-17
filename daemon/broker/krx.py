@@ -136,6 +136,18 @@ class KRXConnector(BrokerConnector):
                 price=price,
                 quantity=qty if side == OrderSide.BUY else -qty
             )
+            logger.info(f"Updated need_trade for asset {asset_id}: {side.value} {qty} @ {price}")
+            # 3) 주문 객체 생성 및 반환 (실제 주문 ID는 없음)
+            order = Order(
+                order_id="MANUAL",
+                symbol=symbol,
+                side=side,
+                quantity=qty,
+                price=price or 0.0,
+                status=OrderStatus.PENDING,
+                executed_quantity=0.0
+            )
+            return order
 
         except Exception as e:
             logger.error(f"Failed to place order: {e}")

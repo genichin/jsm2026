@@ -4,6 +4,13 @@ daemon 메인 스케줄러 및 태스크
 
 import logging
 import sys
+import threading
+import os
+from typing import Callable, Optional, Tuple
+try:
+    import fcntl  # POSIX file locking
+except ImportError:  # pragma: no cover
+    fcntl = None
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 from config import settings
@@ -36,6 +43,9 @@ class DaemonScheduler:
             account_id=settings.account_id
         )
         self.strategy_runner = StrategyRunner(self.broker)
+        # 중복 실행 방지 락
+        self._strategy_lock = threading.Lock()
+        self._strategy_file_lock_fh = None
     
     def setup_jobs(self):
         """모든 스케줄 작업 설정"""
@@ -49,7 +59,9 @@ class DaemonScheduler:
                 id="balance_sync",
                 name="Balance Synchronization",
                 max_instances=1,
-                replace_existing=True
+                replace_existing=True,
+                coalesce=settings.scheduler_coalesce,
+                misfire_grace_time=settings.scheduler_misfire_grace_time
             )
             logger.info(f"Added job: balance_sync with cron '{settings.schedule_balance_cron}'")
         else:
@@ -63,7 +75,9 @@ class DaemonScheduler:
                 id="strategy_runner",
                 name="Strategy Execution",
                 max_instances=1,
-                replace_existing=True
+                replace_existing=True,
+                coalesce=settings.scheduler_coalesce,
+                misfire_grace_time=settings.scheduler_misfire_grace_time
             )
             logger.info(f"Added job: strategy_runner with cron '{settings.schedule_strategy_cron}'")
         else:
@@ -77,17 +91,78 @@ class DaemonScheduler:
                 id="price_updater",
                 name="Price Update",
                 max_instances=1,
-                replace_existing=True
+                replace_existing=True,
+                coalesce=settings.scheduler_coalesce,
+                misfire_grace_time=settings.scheduler_misfire_grace_time
             )
             logger.info(f"Added job: price_updater with cron '{settings.schedule_price_update_cron}'")
         else:
             logger.info("Skipped job: price_updater (SCHEDULE_PRICE_UPDATE_CRON not configured)")
+
+    def _acquire_process_lock(self) -> Tuple[bool, Optional[Callable[[], None]], str]:
+        """멀티 프로세스용 락 획득 시도 (파일락 사용).
+        Returns: (acquired, release_fn, method)
+        method in {"file","none"}
+        """
+        # 파일락 (POSIX 전용)
+        if fcntl is not None:
+            try:
+                # 잠금 파일 오픈(생성 포함)
+                fh = open(settings.strategy_lock_file, "a+")
+                try:
+                    fcntl.flock(fh.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                except BlockingIOError:
+                    try:
+                        fh.close()
+                    except Exception:
+                        pass
+                    return False, None, "file"
+                # 잠금 성공 시 핸들 저장
+                self._strategy_file_lock_fh = fh
+                def _release_file():
+                    try:
+                        fcntl.flock(fh.fileno(), fcntl.LOCK_UN)
+                    except Exception:
+                        pass
+                    try:
+                        fh.close()
+                    except Exception:
+                        pass
+                    self._strategy_file_lock_fh = None
+                return True, _release_file, "file"
+            except Exception as e:
+                logger.warning(f"File lock acquire failed: {e}")
+
+        return False, None, "none"
     
     def start(self):
         """스케줄러 시작"""
         self.setup_jobs()
         self.scheduler.start()
         logger.info("Daemon scheduler started")
+        
+        # daemon 시작 시 현재 시간이 개장~마감 사이면 즉시 전략 실행
+        from datetime import datetime, time as dt_time
+        now = datetime.now()
+        current_time = now.time()
+        
+        # 개장/마감 시간 파싱
+        open_hour, open_min = map(int, settings.market_open_time.split(':'))
+        close_hour, close_min = map(int, settings.market_close_time.split(':'))
+        market_open = dt_time(open_hour, open_min)
+        market_close = dt_time(close_hour, close_min)
+        
+        # 거래 시간 체크 (tradable_everyday=true면 주말 포함)
+        is_trading_day = settings.tradable_everyday or (now.weekday() < 5)
+        
+        if is_trading_day and market_open <= current_time < market_close:
+            logger.info(f"Daemon started during market hours ({current_time.strftime('%H:%M:%S')}), starting strategy execution immediately")
+            # 별도 스레드에서 실행 (메인 루프 블로킹 방지)
+            import threading
+            strategy_thread = threading.Thread(target=self.execute_strategy, daemon=True)
+            strategy_thread.start()
+        else:
+            logger.info(f"Daemon started outside market hours ({current_time.strftime('%H:%M:%S')}), waiting for scheduled cron")
         
         # 대기
         try:
@@ -150,17 +225,58 @@ class DaemonScheduler:
             logger.error(f"Balance synchronization failed: {str(e)}")
     
     def execute_strategy(self):
-        """전략 실행"""
+        """전략 실행 (개장~마감 시간 동안 루프)"""
+        acquired = False
+        release_proc: Optional[Callable[[], None]] = None
+        lock_method = "none"
+        # 프로세스 간 중복 실행 방지
+        proc_ok, release_fn, lock_method = self._acquire_process_lock()
+        if not proc_ok:
+            logger.info(f"Strategy already running in another process (method={lock_method}); skipping this invocation")
+            return
+        release_proc = release_fn
+        # 중복 실행 방지: 프로세스 내 스레드 간 보호
         try:
-            logger.info("=== Starting strategy execution ===")
+            if not self._strategy_lock.acquire(blocking=False):
+                logger.info("Strategy already running; skipping this invocation")
+                return
+            acquired = True
+
+            from datetime import datetime, time as dt_time
+            import time as time_module
             
-            # 1. 미체결 거래 취소
-            pending_orders = self.broker.get_pending_orders()
-            if pending_orders:
-                logger.info(f"Found {len(pending_orders)} pending orders, cancelling...")
-                for order in pending_orders:
-                    self.broker.cancel_order(order.order_id)
-                    logger.info(f"Cancelled order: {order.order_id}")
+            logger.info("=== Starting strategy execution loop ===")
+            
+            # 장 마감 시간 파싱
+            close_hour, close_min = map(int, settings.market_close_time.split(':'))
+            market_close = dt_time(close_hour, close_min)
+            loop_interval = settings.strategy_loop_interval
+            
+            logger.info(f"Market hours: {settings.market_open_time}~{settings.market_close_time}, Loop interval: {loop_interval}s")
+            
+            while True:
+                now = datetime.now()
+                current_time = now.time()
+                
+                # 마감 시간 체크
+                if current_time >= market_close:
+                    logger.info(f"Market closed at {current_time.strftime('%H:%M:%S')}, stopping strategy loop")
+                    break
+                
+                # 평일 체크 (월~금: 0~4, tradable_everyday=true면 체크 안함)
+                if (not settings.tradable_everyday) and now.weekday() >= 5:
+                    logger.info("Weekend detected, stopping strategy loop")
+                    break
+                
+                logger.info(f"=== Strategy execution at {now.strftime('%H:%M:%S')} ===")
+                
+                # 1. 미체결 거래 취소
+                pending_orders = self.broker.get_pending_orders()
+                if pending_orders:
+                    logger.info(f"Found {len(pending_orders)} pending orders, cancelling...")
+                    for order in pending_orders:
+                        self.broker.cancel_order(order.order_id)
+                        logger.info(f"Cancelled order: {order.order_id}")
             
             # 2. 브로커에서 최신 잔고 조회
             broker_balance = self.broker.get_balance()
@@ -261,11 +377,26 @@ class DaemonScheduler:
                 
                 except Exception as e:
                     logger.error(f"Strategy execution failed for {symbol}: {str(e)}")
+                
+                # 다음 실행까지 대기
+                logger.info(f"Waiting {loop_interval} seconds until next execution...")
+                time_module.sleep(loop_interval)
             
-            logger.info("=== Strategy execution completed ===")
+            logger.info("=== Strategy execution loop completed ===")
             
         except Exception as e:
-            logger.error(f"Strategy execution failed: {str(e)}")
+            logger.error(f"Strategy execution loop failed: {str(e)}")
+        finally:
+            if acquired:
+                try:
+                    self._strategy_lock.release()
+                except Exception:
+                    pass
+            if release_proc:
+                try:
+                    release_proc()
+                except Exception:
+                    pass
     
     def update_asset_prices(self):
         """가격 업데이트"""

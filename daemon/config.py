@@ -23,6 +23,19 @@ class Settings(BaseSettings):
     schedule_strategy_cron: Optional[str] = None
     schedule_price_update_cron: Optional[str] = None
     
+    # 거래 시간 설정
+    market_open_time: str = "09:00"  # 장 개장 시간 (HH:MM 형식)
+    tradable_everyday: bool = False  # 매일 거래 가능 여부 (True면 주말 포함)
+    market_close_time: str = "15:30"  # 장 마감 시간 (HH:MM 형식)
+    strategy_loop_interval: int = 300  # 전략 실행 루프 간격 (초 단위)
+
+    # 락 설정 (멀티 프로세스 중복 실행 방지)
+    strategy_lock_file: str = "/tmp/jsm2026_strategy.lock"
+
+    # 스케줄러 동작 옵션
+    scheduler_coalesce: bool = True
+    scheduler_misfire_grace_time: int = 300
+    
     # 브로커
     broker: str = "demo"
     broker_app_key: str = ""
