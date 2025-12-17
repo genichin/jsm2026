@@ -30,6 +30,7 @@ type Asset = {
   updated_at: string;
   balance?: number | null;
   price?: number | null;
+  need_trade?: { price?: number | null; quantity?: number | null; ttl?: number | null } | null;
   account?: AccountBrief | null;
 };
 
@@ -217,7 +218,14 @@ export default function AssetsPage() {
           onClick={() => router.push(`/assets/${row.original.id}`)}
           className="text-gh-accent-fg hover:underline text-left font-medium"
         >
-          {row.original.name}
+          <span className="inline-flex items-center gap-2">
+            {row.original.name}
+            {row.original.need_trade?.price != null || row.original.need_trade?.quantity != null ? (
+              <span className="inline-flex items-center rounded-full bg-yellow-100 text-yellow-800 text-xs px-2 py-0.5 border border-yellow-300">
+                거래요청
+              </span>
+            ) : null}
+          </span>
         </button>
       ),
     },

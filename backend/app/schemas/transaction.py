@@ -115,6 +115,13 @@ class AssetResponse(AssetBase):
     price: Optional[float] = Field(None, description="현재 가격 (Redis)")
     change: Optional[float] = Field(None, description="가격 변화량 퍼센트 (Redis)")
     
+    class NeedTrade(BaseModel):
+        price: Optional[float] = None
+        quantity: Optional[float] = None
+        ttl: Optional[int] = None
+
+    need_trade: Optional[NeedTrade] = Field(None, description="수동 거래 필요 정보 (Redis, TTL 포함)")
+    
     # Nested, lightweight account info for convenience in detail/list views
     class AccountBrief(BaseModel):
         id: str

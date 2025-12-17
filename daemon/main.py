@@ -187,11 +187,10 @@ class DaemonScheduler:
             for asset in tradable_assets:
                 asset_id = asset.get("id")
                 symbol = asset.get("symbol")
-                asset_type = asset.get("asset_type")
                 metadata = asset.get("asset_metadata", {})
                 
-                if asset_type == "cash" or not symbol:
-                    logger.debug(f"Skipping non-tradable asset: {symbol}")
+                if not symbol:
+                    logger.debug(f"Skipping asset without symbol")
                     continue
 
                 # metadata가 없으면 스킵

@@ -10,7 +10,17 @@ from sqlalchemy import or_
 
 from app.core.database import get_db
 from app.api.auth import get_current_user
-from app.core.redis import get_asset_balance, get_asset_price, get_asset_change, calculate_and_update_balance, update_asset_price, update_asset_price_by_symbol, update_asset_change_by_symbol
+from app.core.redis import (
+    get_asset_balance,
+    get_asset_price,
+    get_asset_change,
+    calculate_and_update_balance,
+    update_asset_price,
+    update_asset_price_by_symbol,
+    update_asset_change_by_symbol,
+    set_asset_need_trade,
+    get_asset_need_trade,
+)
 from app.models import User, Asset, Transaction, Account, Tag, Taggable
 from app.core.tag_helpers import (
     validate_taggable_exists,
@@ -39,6 +49,12 @@ class AssetBalanceResponse(BaseModel):
 class AssetTagsBatch(BaseModel):
     """자산에 연결/갱신할 태그 ID 목록"""
     tag_ids: List[str]
+
+
+class AssetNeedTradeUpdate(BaseModel):
+    """수동 거래 필요 정보 업데이트 바디"""
+    price: float
+    quantity: float
 
 
 @router.post("", response_model=AssetResponse, status_code=status.HTTP_201_CREATED)
@@ -154,6 +170,7 @@ async def list_assets(
         # db_asset.asset_type 이 현금인 경우 가격은 항상 1.0 으로 설정
         price = 1.0 if asset.asset_type == AssetType.CASH.value else get_asset_price(asset.id, asset.symbol)
         change = None if asset.asset_type == AssetType.CASH.value else get_asset_change(asset.id, asset.symbol)
+        need_trade = get_asset_need_trade(asset.id)
         asset_dict = {
             "id": asset.id,
             "user_id": asset.user_id,
@@ -170,6 +187,7 @@ async def list_assets(
             "balance": balance,
             "price": price,
             "change": change,
+            "need_trade": need_trade,
             "account": {
                 "id": asset.account.id,
                 "name": asset.account.name,
@@ -185,6 +203,41 @@ async def list_assets(
         size=size,
         pages=(total + size - 1) // size
     )
+
+
+@router.put("/{asset_id}/need_trade")
+async def update_asset_need_trade(
+    asset_id: str,
+    payload: AssetNeedTradeUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """자산의 수동 거래 필요 정보를 Redis에 저장 (TTL=600초)
+
+    - Redis Keys:
+      - asset:{asset_id}:need_trade:price
+      - asset:{asset_id}:need_trade:quantity
+    """
+    # 소유권 확인 및 자산 존재 확인
+    db_asset = db.query(Asset).filter(
+        Asset.id == asset_id,
+        Asset.user_id == current_user.id,
+    ).first()
+    if not db_asset:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="자산을 찾을 수 없습니다")
+
+    # Redis 저장 (TTL 600초)
+    set_asset_need_trade(asset_id=asset_id, price=float(payload.price), quantity=float(payload.quantity), ttl_seconds=600)
+
+    return {
+        "asset_id": asset_id,
+        "need_trade": {
+            "price": float(payload.price),
+            "quantity": float(payload.quantity),
+            "ttl": 600,
+        },
+        "updated": True,
+    }
 
 
 @router.get("/portfolio", response_model=PortfolioSummary)
@@ -420,6 +473,9 @@ async def get_asset(
     price = 1.0 if asset.asset_type == AssetType.CASH.value else get_asset_price(asset.id, asset.symbol)
     change = None if asset.asset_type == AssetType.CASH.value else get_asset_change(asset.id, asset.symbol)
     
+    # need_trade 조회 (TTL 포함)
+    need_trade = get_asset_need_trade(asset.id)
+
     # 응답 객체 생성
     asset_dict = {
         "id": asset.id,
@@ -440,6 +496,7 @@ async def get_asset(
         "balance": balance,
         "price": price,
         "change": change,
+        "need_trade": need_trade,
         "account": {
             "id": asset.account.id,
             "name": asset.account.name,

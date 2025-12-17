@@ -25,8 +25,9 @@ class TargetValueStrategy(BaseStrategy):
         
         config.config 예시:
         {
-            "target_value": 50000000,      # 목표 평가 금액 (KRW 또는 해당 화폐)
-            "tolerance_percent": 0.05      # 허용 오차 (±5%)
+            "target_price": 50000000,      # 목표 평가 금액 (KRW 또는 해당 화폐)
+            "target_ratio": 0.8,     # 목표 비율 (예: 0.8 = 80%)
+            "trade_ratio": 0.05       # 거래 비율 (예: 0.05 = 5%)
         }
         """
         #orderbook 이 있는지 확인 없으면 그냥 종료
@@ -38,7 +39,6 @@ class TargetValueStrategy(BaseStrategy):
             allow_fractional = self.broker.supports_fractional_trading()
 
             target_value = config.config.get("target_price", 0) * config.config.get("target_ratio", 0)
-            print(f"Target value: {target_value}")
             tolerance_percent = config.config.get("trade_ratio", 0)
             if tolerance_percent == 0:
                 # 기본 값 계산
@@ -46,14 +46,14 @@ class TargetValueStrategy(BaseStrategy):
                 min_order_price = self.broker.get_min_order_price()
                 if min_order_price != 0:
                     tolerance_percent = min_order_price / target_value
-                    print(f"Calculated tolerance_percent: {tolerance_percent}")
+                    logger.debug(f"Calculated tolerance_percent: {tolerance_percent}")
                 else:
                     # orderbook 의 가격 이용 : 가격/목표금액
                     best_price = (orderbook.get_best_bid() + orderbook.get_best_ask()) / 2
                     tolerance_percent = best_price / target_value
 
 
-            print(f"Using tolerance_percent: {tolerance_percent}")
+            logger.debug(f"Using tolerance_percent: {tolerance_percent}")
             
             if not target_value or target_value <= 0:
                 logger.warning(f"Invalid target_value: {target_value}")
@@ -64,6 +64,7 @@ class TargetValueStrategy(BaseStrategy):
             # 매수 체크 : 두번째 ask 값을 사용한 평가 금액 계산
             current_price = orderbook.asks[1].price if len(orderbook.asks) > 1 else orderbook.get_best_ask()
             current_value = current_price * current_quantity
+            logger.debug(f"매수체크 for {config.symbol}: current_price={current_price}, current_value={current_value}, target_value={target_value}")
             # 목표값과의 차이 계산
             value_diff_percent = (target_value - current_value) / target_value
             if value_diff_percent >= tolerance_percent:
@@ -81,6 +82,7 @@ class TargetValueStrategy(BaseStrategy):
                 # 매도 체크 : 두번째 bid 값을 사용한 평가 금액 계산
                 current_price = orderbook.bids[1].price if len(orderbook.bids) > 1 else orderbook.get_best_bid()
                 current_value = current_price * current_quantity
+                logger.debug(f"매도체크 for {config.symbol}: current_price={current_price}, current_value={current_value}, target_value={target_value}")
                 # 목표값과의 차이 계산
                 value_diff_percent = (current_value - target_value) / target_value
                 if value_diff_percent >= tolerance_percent:
@@ -119,21 +121,28 @@ class TargetValueStrategy(BaseStrategy):
                 price=order_price
             )
             
-            logger.info(
-                f"Target value order placed for {config.symbol}: "
-                f"{order.order_id} ({side.value}) {order_quantity:.6f} @ {order_price}\n"
-                f"  Current: {current_value:.0f}, Target: {target_value:.0f}, Diff: {value_diff_percent:.2%}"
-            )
+            if order :
+                logger.info(
+                    f"Target value order placed for {config.symbol}: "
+                    f"{order.order_id} ({side.value}) {order_quantity:.6f} @ {order_price}\n"
+                    f"  Current: {current_value:.0f}, Target: {target_value:.0f}, Diff: {value_diff_percent:.2%}"
+                )
+            else:
+                logger.info(
+                    f"Target value order placed for {config.symbol}: "
+                    f"({side.value}) {order_quantity:.6f} @ {order_price}\n"
+                    f"  Current: {current_value:.0f}, Target: {target_value:.0f}, Diff: {value_diff_percent:.2%}"
+                )
             
-            # 백엔드에 거래 기록
-            self._record_transaction(
-                asset_id=config.asset_id,
-                transaction_type=side.value,
-                quantity=order_quantity,
-                price=order_price,
-                broker_order_id=order.order_id,
-                strategy="target_value"
-            )
+            # # 백엔드에 거래 기록
+            # self._record_transaction(
+            #     asset_id=config.asset_id,
+            #     transaction_type=side.value,
+            #     quantity=order_quantity,
+            #     price=order_price,
+            #     broker_order_id=order.order_id,
+            #     strategy="target_value"
+            # )
             
             return True
         

@@ -121,14 +121,26 @@ class AssetAPI:
     def __init__(self, client: APIClient = None):
         self.client = client or APIClient()
     
-    def list_assets(self, account_id: str = None, asset_type: str = None, 
-                    page: int = 1, size: int = 100, is_active: bool = None) -> Dict:
+    def list_assets(
+        self,
+        account_id: str = None,
+        asset_type: str = None,
+        symbol: str = None,
+        page: int = 1,
+        size: int = 100,
+        is_active: bool = None,
+    ) -> Dict:
         """자산 목록 조회"""
         params = {"page": page, "size": size}
-        if is_active is not None:
-            params["is_active"] = is_active
+
+        # account_id와 symbol 모두 전달 가능 (동시 필터로 단일 자산 선택)
         if account_id:
             params["account_id"] = account_id
+        if symbol:
+            params["symbol"] = symbol
+
+        if is_active is not None:
+            params["is_active"] = is_active
         if asset_type:
             params["asset_type"] = asset_type
         
@@ -150,6 +162,15 @@ class AssetAPI:
             params["use_symbol"] = True
         
         response = self.client.put(f"/assets/{asset_id}/price", params=params)
+        return response.json()
+    
+    def update_asset_need_trade(self, asset_id: str, price: float, quantity: float) -> Dict:
+        """자산의 거래 필요 정보 업데이트 (수동 거래용)"""
+        data = {
+            "price": price,
+            "quantity": quantity
+        }
+        response = self.client.put(f"/assets/{asset_id}/need_trade", data=data)
         return response.json()
 
 

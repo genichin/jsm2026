@@ -313,6 +313,7 @@ curl -X GET "https://jsfamily2.myds.me:40041/api/v1/users/me" \
 - `account_id`: 계좌별 필터링
 - `asset_type`: 자산 유형별 필터링
 - `is_active`: 활성화 상태 필터링
+- `symbol`: 심볼 부분 검색 (account_id와 함께 전달 시 해당 계좌의 특정 심볼만)
 
 **응답:**
 ```json
@@ -338,6 +339,33 @@ curl -X GET "https://jsfamily2.myds.me:40041/api/v1/users/me" \
 #### GET /api/v1/assets/{asset_id}
 특정 자산 조회
 
+응답 예시 (Redis 기반 실시간 필드 포함):
+```json
+{
+  "id": "uuid",
+  "user_id": "uuid",
+  "account_id": "uuid",
+  "name": "삼성전자",
+  "asset_type": "stock",
+  "symbol": "005930",
+  "market": "KOSPI",
+  "currency": "KRW",
+  "asset_metadata": {"strategy": {"type": "target_value"}},
+  "is_active": true,
+  "created_at": "2025-12-17T12:34:56Z",
+  "updated_at": "2025-12-17T12:34:56Z",
+  "balance": 100.0,
+  "price": 68000.0,
+  "change": 0.74,
+  "need_trade": {
+    "price": 67500.0,
+    "quantity": 10.0,
+    "ttl": 540
+  },
+  "account": {"id": "uuid", "name": "증권계좌", "account_type": "securities"}
+}
+```
+
 #### PUT /api/v1/assets/{asset_id}
 자산 정보 수정
 
@@ -349,6 +377,26 @@ curl -X GET "https://jsfamily2.myds.me:40041/api/v1/users/me" \
 
 #### POST /api/v1/assets/{asset_id}/recalculate-balance
 자산 잔고 재계산
+
+#### PUT /api/v1/assets/{asset_id}/need_trade
+수동 거래 필요 정보를 설정 (Redis 저장, TTL=600초)
+
+요청:
+```json
+{
+  "price": 67500.0,
+  "quantity": 10
+}
+```
+
+응답:
+```json
+{
+  "asset_id": "uuid",
+  "need_trade": {"price": 67500.0, "quantity": 10.0, "ttl": 600},
+  "updated": true
+}
+```
 
 ### 카테고리 (Categories)
 

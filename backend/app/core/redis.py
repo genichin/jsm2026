@@ -204,3 +204,68 @@ def invalidate_user_cache(user_id: str) -> None:
     keys = redis_client.keys(pattern)
     if keys:
         redis_client.delete(*keys)
+
+
+def set_asset_need_trade(asset_id: str, price: float, quantity: float, ttl_seconds: int = 600) -> None:
+    """
+    자산의 수동 거래 필요 정보를 Redis에 저장 (TTL 포함)
+
+    Keys:
+        - asset:{asset_id}:need_trade:price
+        - asset:{asset_id}:need_trade:quantity
+
+    Args:
+        asset_id: 자산 ID
+        price: 희망 거래 가격
+        quantity: 희망 거래 수량 (매도는 음수 가능)
+        ttl_seconds: TTL 초 단위 (기본 600초)
+    """
+    key_price = f"asset:{asset_id}:need_trade:price"
+    key_qty = f"asset:{asset_id}:need_trade:quantity"
+    # setex로 값과 TTL 동시 설정
+    redis_client.setex(key_price, ttl_seconds, str(price))
+    redis_client.setex(key_qty, ttl_seconds, str(quantity))
+
+
+def get_asset_need_trade(asset_id: str) -> dict | None:
+    """
+    자산의 수동 거래 필요 정보를 Redis에서 조회
+
+    Returns:
+        {
+          "price": float | None,
+          "quantity": float | None,
+          "ttl": int | None   # 남은 TTL(초). 키가 없거나 TTL이 없으면 None
+        } 또는 None (관련 키 모두 없음)
+    """
+    key_price = f"asset:{asset_id}:need_trade:price"
+    key_qty = f"asset:{asset_id}:need_trade:quantity"
+
+    price_val = redis_client.get(key_price)
+    qty_val = redis_client.get(key_qty)
+
+    # 둘 다 없으면 None
+    if price_val is None and qty_val is None:
+        return None
+
+    # TTL 계산: 둘 다 TTL이 있으면 최소값, 하나만 있으면 해당 값, 없으면 None
+    ttl_price = redis_client.ttl(key_price)
+    ttl_qty = redis_client.ttl(key_qty)
+
+    def normalize_ttl(ttl: int) -> int | None:
+        # -2: 키 없음, -1: 만료 없음, >=0: 남은 TTL
+        if ttl is None:
+            return None
+        if ttl < 0:
+            return None
+        return ttl
+
+    ttl_candidates = [t for t in [normalize_ttl(ttl_price), normalize_ttl(ttl_qty)] if t is not None]
+    ttl_final = min(ttl_candidates) if ttl_candidates else None
+
+    result: dict = {
+        "price": float(price_val) if price_val is not None else None,
+        "quantity": float(qty_val) if qty_val is not None else None,
+        "ttl": ttl_final,
+    }
+    return result

@@ -119,6 +119,22 @@ HSET market_price:005930 \
 EXPIRE market_price:005930 30
 ```
 
+### 5. 수동 거래 필요(Need Trade) 캐시
+
+```redis
+# 키 구조
+asset:{asset_id}:need_trade:price     # 희망 거래 가격 (String)
+asset:{asset_id}:need_trade:quantity  # 희망 거래 수량 (String; 매도는 음수)
+
+# TTL: 600초 (10분)
+SETEX asset:123e4567:need_trade:price 600 "67500.0"
+SETEX asset:123e4567:need_trade:quantity 600 "10.0"
+```
+
+**설명**:
+- 백엔드 엔드포인트 `PUT /assets/{asset_id}/need_trade` 호출 시 두 키를 동시에 설정합니다.
+- 두 키의 TTL은 동일하게 600초로 설정되며, 조회 시 남은 TTL 중 작은 값을 응답의 `ttl`로 제공합니다.
+
 ---
 
 ## 수익 계산 시스템
