@@ -8,6 +8,7 @@ import { ColumnDef } from "@tanstack/react-table";
 import RecentTransactions from "@/components/RecentTransactions";
 import { Modal } from "@/components/Modal";
 import { DynamicTransactionForm } from "@/components/TransactionForm/DynamicTransactionForm";
+import { AssetFormModal, type AssetFormData } from "@/components/AssetFormModal";
 import { useMemo, useState } from "react";
 
 type TransactionType = 
@@ -28,6 +29,7 @@ interface Asset {
   is_active: boolean;
   created_at: string;
   updated_at: string;
+  asset_metadata?: any | null;  // JSON 메타데이터
   balance?: number;  // Redis에서 조회한 현재 잔고
   price?: number;    // Redis에서 조회한 현재 가격
   change?: number;   // Redis에서 조회한 가격 변화량 (퍼센트)
@@ -141,6 +143,10 @@ export default function AssetDetailPage({ params }: { params: { id: string } }) 
   const [editing, setEditing] = useState<any>(null);
   const [isSuggesting, setIsSuggesting] = useState(false);
   const [suggestedCategoryId, setSuggestedCategoryId] = useState<string | null>(null);
+
+  // 자산 편집 모달 상태
+  const [isAssetModalOpen, setIsAssetModalOpen] = useState(false);
+  const [editingAsset, setEditingAsset] = useState<AssetFormData | null>(null);
 
   // 파일 업로드 모달 상태
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
@@ -298,6 +304,26 @@ export default function AssetDetailPage({ params }: { params: { id: string } }) 
     },
   });
 
+  // 자산 수정 mutation
+  const updateAssetMut = useMutation({
+    mutationFn: async ({ id, payload }: { id: string; payload: any }) => {
+      const res = await api.put(`/assets/${id}`, payload);
+      return res.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["asset", params.id] });
+      queryClient.invalidateQueries({ queryKey: ["asset-summary", params.id] });
+      queryClient.invalidateQueries({ queryKey: ["assets"] });
+      setIsAssetModalOpen(false);
+      setEditingAsset(null);
+      alert("자산이 수정되었습니다.");
+    },
+    onError: (error: any) => {
+      console.error("Asset update failed:", error);
+      alert(`자산 수정 실패: ${error.response?.data?.detail || error.message}`);
+    },
+  });
+
   // 태그 추가 mutation
   const addTagMut = useMutation({
     mutationFn: async (tagId: string) =>
@@ -370,6 +396,82 @@ export default function AssetDetailPage({ params }: { params: { id: string } }) 
     
     const change = newChange ? parseFloat(newChange) : undefined;
     updatePriceMut.mutate({ price, change, use_symbol: useSymbol });
+  }
+
+  // 자산 편집 시작
+  function startEditAsset() {
+    if (!asset) return;
+    
+    // asset_metadata 파싱 (JSON 문자열인 경우 파싱)
+    let metadataObj = asset.asset_metadata || {};
+    if (typeof asset.asset_metadata === 'string') {
+      try {
+        metadataObj = JSON.parse(asset.asset_metadata);
+      } catch {
+        metadataObj = {};
+      }
+    }
+
+    setEditingAsset({
+      id: asset.id,
+      name: asset.name,
+      account_id: asset.account_id,
+      asset_type: asset.asset_type as any,
+      symbol: asset.symbol || "",
+      market: metadataObj.market || "KRX",
+      currency: asset.currency,
+      is_active: asset.is_active,
+      asset_metadata: metadataObj,
+    });
+    setIsAssetModalOpen(true);
+  }
+
+  // 자산 편집 취소
+  function cancelAssetEdit() {
+    setIsAssetModalOpen(false);
+    setEditingAsset(null);
+  }
+
+  // 자산 폼 제출
+  async function submitAssetForm(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    if (!editingAsset) return;
+    
+    const form = e.currentTarget as HTMLFormElement;
+    const formData = new FormData(form);
+
+    const name = formData.get("name")?.toString() || "";
+    const asset_type = formData.get("asset_type")?.toString() || "";
+    const symbol = formData.get("symbol")?.toString() || "";
+    const market = formData.get("market")?.toString() || "KRX";
+    const currency = formData.get("currency")?.toString() || "KRW";
+    const is_active = formData.get("is_active") === "on";
+
+    if (!name.trim()) {
+      alert("자산명을 입력해주세요.");
+      return;
+    }
+
+    let asset_metadata: any = {};
+    if (symbol && symbol.trim()) {
+      asset_metadata.market = market;
+    }
+
+    const payload = {
+      name: name.trim(),
+      asset_type,
+      symbol: symbol.trim() || null,
+      currency,
+      is_active,
+      asset_metadata: Object.keys(asset_metadata).length > 0 ? asset_metadata : {},
+    };
+
+    if (editingAsset.id) {
+      await updateAssetMut.mutateAsync({
+        id: editingAsset.id,
+        payload,
+      });
+    }
   }
 
   // 거래 폼 제출
@@ -640,7 +742,7 @@ export default function AssetDetailPage({ params }: { params: { id: string } }) 
             </button>
           )}
           <button
-            onClick={() => router.push(`/assets?edit=${params.id}` as any)}
+            onClick={() => startEditAsset()}
             className="px-4 py-2 border rounded hover:bg-gray-50"
           >
             편집
@@ -1216,6 +1318,16 @@ export default function AssetDetailPage({ params }: { params: { id: string } }) 
           suggestedCategoryId={suggestedCategoryId}
         />
       </Modal>
+
+      {/* 자산 편집 모달 */}
+      <AssetFormModal
+        isOpen={isAssetModalOpen}
+        onClose={cancelAssetEdit}
+        onSubmit={submitAssetForm}
+        editingAsset={editingAsset}
+        accounts={asset ? [{ id: asset.account_id, name: asset.account_id }] : []}
+        isLoading={updateAssetMut.isPending}
+      />
 
       {/* 파일 업로드 모달 */}
       <Modal
