@@ -5,9 +5,9 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { DataTable } from "@/components/DataTable";
 import { Button } from "@/components/Button";
-import { Modal } from "@/components/Modal";
 import { ColumnDef } from "@tanstack/react-table";
 import { useRouter } from "next/navigation";
+import { AssetFormModal, type AssetFormData } from "@/components/AssetFormModal";
 
 // Backend enums
 export type AssetType = "stock" | "crypto" | "bond" | "fund" | "etf" | "cash" | "savings" | "deposit";
@@ -55,12 +55,6 @@ const assetTypeOptions: { value: AssetType; label: string }[] = [
   { value: "deposit", label: "적금" },
 ];
 
-const marketOptions = [
-  { value: "KOSPI", label: "KOSPI" },
-  { value: "KOSDAQ", label: "KOSDAQ" },
-  { value: "KRW", label: "KRW" },
-];
-
 export default function AssetsPage() {
   const qc = useQueryClient();
   const router = useRouter();
@@ -72,6 +66,10 @@ export default function AssetsPage() {
   const [activeOnly, setActiveOnly] = useState<boolean | "">(true);
   const [page, setPage] = useState(1);
   const [size, setSize] = useState(20);
+
+  // Modal state
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [editingAsset, setEditingAsset] = useState<AssetFormData | null>(null);
 
   // Accounts for filter/create
   const accountsQuery = useQuery<AccountsListResponse>({
@@ -102,7 +100,8 @@ export default function AssetsPage() {
       (await api.post("/assets", payload)).data as Asset,
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["assets"] });
-      setEditing(null);
+      setIsModalOpen(false);
+      setEditingAsset(null);
     },
   });
 
@@ -111,7 +110,8 @@ export default function AssetsPage() {
       (await api.put(`/assets/${id}`, payload)).data as Asset,
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["assets"] });
-      setEditing(null);
+      setIsModalOpen(false);
+      setEditingAsset(null);
     },
   });
 
@@ -129,14 +129,8 @@ export default function AssetsPage() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["assets"] }),
   });
 
-  // Inline create/edit state
-  const [editing, setEditing] = useState<
-    | (Partial<Asset> & { account_id?: string; asset_type?: AssetType })
-    | null
-  >(null);
-
   function startCreate() {
-    setEditing({
+    setEditingAsset({
       name: "",
       account_id: accountFilter || accountsQuery.data?.accounts?.[0]?.id || "",
       asset_type: (typeFilter || "stock") as AssetType,
@@ -146,27 +140,31 @@ export default function AssetsPage() {
       is_active: true,
       asset_metadata: null,
     });
+    setIsModalOpen(true);
   }
 
   function startEdit(row: Asset) {
-    setEditing({
+    setEditingAsset({
       id: row.id,
       name: row.name,
+      account_id: row.account_id,
       symbol: row.symbol || "",
       market: row.market || "",
       currency: row.currency,
       is_active: row.is_active,
       asset_metadata: row.asset_metadata ?? null,
     });
+    setIsModalOpen(true);
   }
 
   function cancelEdit() {
-    setEditing(null);
+    setIsModalOpen(false);
+    setEditingAsset(null);
   }
 
   async function submitForm(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    if (!editing) return;
+    if (!editingAsset) return;
     const form = e.currentTarget as HTMLFormElement;
     const fd = new FormData(form);
 
@@ -181,7 +179,7 @@ export default function AssetsPage() {
       }
     }
 
-    if (editing.id) {
+    if (editingAsset.id) {
       const payload: any = {
         name: fd.get("name")?.toString().trim(),
         symbol: fd.get("symbol")?.toString().trim() || null,
@@ -190,7 +188,7 @@ export default function AssetsPage() {
         is_active: fd.get("is_active") === "on",
         asset_metadata,
       };
-      await updateMut.mutateAsync({ id: editing.id as string, payload });
+      await updateMut.mutateAsync({ id: editingAsset.id as string, payload });
     } else {
       const account_id = fd.get("account_id")?.toString();
       const asset_type = fd.get("asset_type")?.toString() as AssetType;
@@ -315,74 +313,15 @@ export default function AssetsPage() {
         <div className="flex-1" />
         <Button onClick={startCreate}>새 자산</Button>
       </div>
-
-      {/* Modal Form */}
-      {editing && (
-        <Modal
-          isOpen={!!editing}
-          onClose={cancelEdit}
-          title={editing.id ? "자산 수정" : "새 자산"}
-        >
-          <form onSubmit={submitForm} className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gh-fg-default mb-1.5">이름</label>
-                <input name="name" defaultValue={editing.name || ""} className="w-full border border-gh-border-default bg-gh-canvas-inset rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gh-accent-emphasis" required />
-              </div>
-              {!editing.id && (
-                <div>
-                  <label className="block text-sm font-medium text-gh-fg-default mb-1.5">계좌</label>
-                  <select name="account_id" defaultValue={editing.account_id || ""} className="w-full border border-gh-border-default bg-gh-canvas-inset rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gh-accent-emphasis">
-                    <option value="">선택하세요</option>
-                    {(accountsQuery.data?.accounts || []).map((a) => (
-                      <option key={a.id} value={a.id}>{a.name}</option>
-                    ))}
-                  </select>
-                </div>
-              )}
-              {!editing.id && (
-                <div>
-                  <label className="block text-sm font-medium text-gh-fg-default mb-1.5">유형</label>
-                  <select name="asset_type" defaultValue={(editing.asset_type || "stock") as string} className="w-full border border-gh-border-default bg-gh-canvas-inset rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gh-accent-emphasis">
-                    {assetTypeOptions.map((o) => (
-                      <option key={o.value} value={o.value}>{o.label}</option>
-                    ))}
-                  </select>
-                </div>
-              )}
-              <div>
-                <label className="block text-sm font-medium text-gh-fg-default mb-1.5">심볼</label>
-                <input name="symbol" defaultValue={editing.symbol || ""} className="w-full border border-gh-border-default bg-gh-canvas-inset rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gh-accent-emphasis" />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gh-fg-default mb-1.5">거래소</label>
-                <select name="market" defaultValue={editing.market || ""} className="w-full border border-gh-border-default bg-gh-canvas-inset rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gh-accent-emphasis">
-                  <option value="">선택하세요</option>
-                  {marketOptions.map((m) => (
-                    <option key={m.value} value={m.value}>{m.label}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gh-fg-default mb-1.5">통화</label>
-                <input name="currency" defaultValue={editing.currency || "KRW"} className="w-full border border-gh-border-default bg-gh-canvas-inset rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gh-accent-emphasis" />
-              </div>
-              <div className="flex items-center gap-2 pt-6">
-                <input type="checkbox" name="is_active" defaultChecked={editing.is_active ?? true} className="rounded" />
-                <label className="text-sm text-gh-fg-default">활성</label>
-              </div>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gh-fg-default mb-1.5">asset_metadata (JSON)</label>
-              <textarea name="asset_metadata" defaultValue={editing.asset_metadata ? JSON.stringify(editing.asset_metadata, null, 2) : ""} className="w-full border border-gh-border-default bg-gh-canvas-inset rounded-md px-3 py-2 h-32 font-mono text-xs focus:outline-none focus:ring-2 focus:ring-gh-accent-emphasis" />
-            </div>
-            <div className="flex justify-end gap-2 pt-4">
-              <Button type="button" variant="default" onClick={cancelEdit}>취소</Button>
-              <Button type="submit">{editing.id ? "수정" : "생성"}</Button>
-            </div>
-          </form>
-        </Modal>
-      )}
+      {/* Asset Form Modal */}
+      <AssetFormModal
+        isOpen={isModalOpen}
+        onClose={cancelEdit}
+        editingAsset={editingAsset}
+        accounts={accountsQuery.data?.accounts || []}
+        onSubmit={submitForm}
+        isLoading={createMut.isPending || updateMut.isPending}
+      />
 
       {/* Table */}
       {listQuery.isLoading ? (

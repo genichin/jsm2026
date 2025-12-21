@@ -5,6 +5,7 @@ import { api } from "@/lib/api";
 import { Card, CardTitle } from "@/components/Card";
 import { Modal } from "@/components/Modal";
 import { DynamicTransactionForm } from "@/components/TransactionForm/DynamicTransactionForm";
+import { AssetFormModal, type AssetFormData } from "@/components/AssetFormModal";
 import RecentTransactions from "@/components/RecentTransactions";
 import { useMemo, useState } from "react";
 
@@ -72,6 +73,10 @@ export default function AccountDetailPage() {
   const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null);
   const [selectedType, setSelectedType] = useState<TransactionType | null>(null);
   const [editing, setEditing] = useState<any>(null);
+
+  // 자산 추가 모달 상태
+  const [isAssetModalOpen, setIsAssetModalOpen] = useState(false);
+  const [editingAsset, setEditingAsset] = useState<AssetFormData | null>(null);
 
   // 자산 선택 핸들러 - 자산 선택 시 기본 거래 유형 설정
   const handleAssetChange = (assetId: string) => {
@@ -151,6 +156,40 @@ export default function AccountDetailPage() {
       console.error("Transaction creation failed:", error);
       console.error("Error response:", error.response?.data);
       alert(`거래 생성 실패: ${error.response?.data?.detail || error.message}`);
+    },
+  });
+
+  // 자산 생성 mutation
+  const createAssetMut = useMutation({
+    mutationFn: async (payload: any) => {
+      const res = await api.post("/assets", payload);
+      return res.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["assets"] });
+      setIsAssetModalOpen(false);
+      setEditingAsset(null);
+    },
+    onError: (error: any) => {
+      console.error("Asset creation failed:", error);
+      alert(`자산 생성 실패: ${error.response?.data?.detail || error.message}`);
+    },
+  });
+
+  // 자산 수정 mutation
+  const updateAssetMut = useMutation({
+    mutationFn: async ({ id, payload }: { id: string; payload: any }) => {
+      const res = await api.put(`/assets/${id}`, payload);
+      return res.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["assets"] });
+      setIsAssetModalOpen(false);
+      setEditingAsset(null);
+    },
+    onError: (error: any) => {
+      console.error("Asset update failed:", error);
+      alert(`자산 수정 실패: ${error.response?.data?.detail || error.message}`);
     },
   });
 
@@ -272,6 +311,79 @@ export default function AccountDetailPage() {
     setSuggestedCategoryId(null);
   }
 
+  // 자산 추가 시작
+  function startCreateAsset() {
+    setEditingAsset({
+      name: "",
+      account_id: accountId,
+      asset_type: "stock" as const,
+      symbol: "",
+      market: "",
+      currency: "KRW",
+      is_active: true,
+      asset_metadata: null,
+    });
+    setIsAssetModalOpen(true);
+  }
+
+  // 자산 추가/수정 폼 제출
+  async function submitAssetForm(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    if (!editingAsset) return;
+
+    const form = e.currentTarget as HTMLFormElement;
+    const fd = new FormData(form);
+
+    const metaText = fd.get("asset_metadata")?.toString().trim();
+    let asset_metadata: any = null;
+    if (metaText) {
+      try {
+        asset_metadata = JSON.parse(metaText);
+      } catch {
+        alert("asset_metadata JSON 형식이 올바르지 않습니다.");
+        return;
+      }
+    }
+
+    if (editingAsset.id) {
+      // 수정
+      const payload: any = {
+        name: fd.get("name")?.toString().trim(),
+        symbol: fd.get("symbol")?.toString().trim() || null,
+        market: fd.get("market")?.toString().trim() || null,
+        currency: fd.get("currency")?.toString().trim() || "KRW",
+        is_active: fd.get("is_active") === "on",
+        asset_metadata,
+      };
+      await updateAssetMut.mutateAsync({ id: editingAsset.id as string, payload });
+    } else {
+      // 생성
+      const account_id = fd.get("account_id")?.toString();
+      const asset_type = fd.get("asset_type")?.toString();
+      if (!account_id) {
+        alert("계좌를 선택하세요.");
+        return;
+      }
+      const payload: any = {
+        account_id,
+        name: fd.get("name")?.toString().trim(),
+        asset_type,
+        symbol: fd.get("symbol")?.toString().trim() || null,
+        market: fd.get("market")?.toString().trim() || null,
+        currency: fd.get("currency")?.toString().trim() || "KRW",
+        is_active: fd.get("is_active") === "on",
+        asset_metadata,
+      };
+      await createAssetMut.mutateAsync(payload);
+    }
+  }
+
+  // 자산 모달 닫기
+  function cancelAssetEdit() {
+    setIsAssetModalOpen(false);
+    setEditingAsset(null);
+  }
+
   // 계좌 요약 계산
   const summary = useMemo(() => {
     if (!assetsQuery.data?.items) return null;
@@ -354,7 +466,7 @@ export default function AccountDetailPage() {
           {/* 제어 메뉴 */}
           <div className="flex items-center gap-2">
             <button
-              onClick={() => router.push(`/assets/new?account_id=${accountId}`)}
+              onClick={startCreateAsset}
               className="px-3 py-2 rounded bg-blue-600 text-white hover:bg-blue-700 text-sm font-medium transition-colors"
             >
               + 자산 추가
@@ -474,6 +586,16 @@ export default function AccountDetailPage() {
           </Card>
         </div>
       </div>
+
+      {/* 자산 추가 모달 */}
+      <AssetFormModal
+        isOpen={isAssetModalOpen}
+        onClose={cancelAssetEdit}
+        editingAsset={editingAsset}
+        accounts={[{ id: accountId, name: account?.name || "" }]}
+        onSubmit={submitAssetForm}
+        isLoading={createAssetMut.isPending || updateAssetMut.isPending}
+      />
 
       {/* 거래 추가 모달 */}
       <Modal
