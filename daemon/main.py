@@ -13,6 +13,7 @@ except ImportError:  # pragma: no cover
     fcntl = None
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
+import pytz
 from config import settings
 from api import asset_api
 from broker import get_broker_connector
@@ -34,7 +35,8 @@ class DaemonScheduler:
     """daemon 스케줄러"""
     
     def __init__(self):
-        self.scheduler = BackgroundScheduler()
+        # APScheduler에 Asia/Seoul 타임존 설정 (KST 기준 cron 실행)
+        self.scheduler = BackgroundScheduler(timezone=pytz.timezone('Asia/Seoul'))
         logger.info(f"Broker config: type={settings.broker}, key_len={len(settings.broker_app_key or '')}, secret_len={len(settings.broker_app_secret or '')}, account_id={settings.account_id}")
         self.broker = get_broker_connector(
             broker_type=settings.broker,
