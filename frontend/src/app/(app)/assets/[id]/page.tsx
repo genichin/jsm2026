@@ -512,10 +512,17 @@ export default function AssetDetailPage({ params }: { params: { id: string } }) 
       return;
     }
 
+    let quantity = parseFloat(fd.get("quantity")?.toString() || "0");
+    
+    // SELL, WITHDRAW 타입은 음수 수량으로 변환
+    if ((selectedType === "sell" || selectedType === "withdraw") && quantity > 0) {
+      quantity = -quantity;
+    }
+
     const payload: any = {
       asset_id: selectedAssetId,
       type: selectedType,
-      quantity: parseFloat(fd.get("quantity")?.toString() || "0"),
+      quantity,
       transaction_date: fd.get("transaction_date")?.toString(),
       description: fd.get("description")?.toString().trim() || null,
       memo: fd.get("memo")?.toString().trim() || null,
