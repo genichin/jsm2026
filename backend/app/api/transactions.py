@@ -4,6 +4,7 @@ Transaction API endpoints
 """
 
 from datetime import datetime, timedelta, timezone
+from decimal import Decimal
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status, UploadFile, File, Form
 from sqlalchemy.orm import Session, joinedload
@@ -731,9 +732,9 @@ async def get_portfolio_summary(
     ).all()
     
     asset_summaries = []
-    total_assets_value = 0
-    total_cash = 0
-    total_realized_profit = 0
+    total_assets_value = Decimal(0)
+    total_cash = Decimal(0)
+    total_realized_profit = Decimal(0)
     
     for asset in assets:
         # 각 자산별 거래 집계 (확정/미확정 모두 포함)
@@ -744,14 +745,55 @@ async def get_portfolio_summary(
         ).filter(
             Transaction.asset_id == asset.id
         ).first()
-        
-        current_quantity = summary_query.total_quantity or 0
-        realized_profit = summary_query.realized_profit or 0
-        
-        # 취득원가, 현재가, 미실현손익은 별도 계산 대상이 없어 0으로 반환
-        total_cost = 0
-        current_value = 0
-        unrealized_profit = 0
+
+        current_quantity = Decimal(str(summary_query.total_quantity or 0))
+        realized_profit = Decimal(str(summary_query.realized_profit or 0))
+
+        # 총 취득원가: Redis AVG 큐 → 폴백 DB AVG 계산(confirmed만)
+        total_cost = Decimal(0)
+        try:
+            from app.core.redis import get_asset_avg_data
+            avg_data = get_asset_avg_data(asset.id)
+        except Exception:
+            avg_data = None
+
+        if avg_data:
+            if avg_data.get("total_quantity") is not None:
+                current_quantity = Decimal(str(avg_data["total_quantity"]))
+            if avg_data.get("total_cost") is not None:
+                total_cost = Decimal(str(avg_data["total_cost"]))
+        else:
+            txs = db.query(Transaction).filter(
+                Transaction.asset_id == asset.id
+            ).order_by(Transaction.transaction_date.asc()).all()
+
+            q_remain = Decimal(0)
+            cost_remain = Decimal(0)
+
+            for tx in txs:
+                qty = Decimal(str(tx.quantity or 0))
+                price = Decimal(str(tx.price)) if tx.price is not None else Decimal(0)
+                fee = Decimal(str(tx.fee)) if tx.fee is not None else Decimal(0)
+                tax = Decimal(str(tx.tax)) if tx.tax is not None else Decimal(0)
+
+                if qty > 0:
+                    cost_remain += qty * price + fee + tax
+                    q_remain += qty
+                elif qty < 0 and q_remain > 0:
+                    avg_cost_per_unit = (cost_remain / q_remain) if q_remain > 0 else Decimal(0)
+                    reduce_qty = -qty
+                    reduction = reduce_qty * avg_cost_per_unit
+                    cost_remain -= reduction
+                    q_remain += qty
+                else:
+                    pass
+
+            # DB AVG fallback: 확정+미확정 모든 거래를 기반으로 취득원가 계산
+            total_cost = cost_remain
+
+        # 현재가 및 미실현손익 계산은 생략/0 처리 (이 엔드포인트의 기존 정책 준수)
+        current_value = Decimal(0)
+        unrealized_profit = Decimal(0)
         
         if asset.asset_type == 'cash':
             total_cash += current_quantity
@@ -776,7 +818,7 @@ async def get_portfolio_summary(
         total_assets_value=total_assets_value,
         total_cash=total_cash,
         total_realized_profit=total_realized_profit,
-        total_unrealized_profit=0,  # 현재가 정보가 있을 때 계산
+        total_unrealized_profit=Decimal(0),  # 현재가 정보가 있을 때 계산
         asset_summaries=asset_summaries
     )
 

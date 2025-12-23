@@ -269,3 +269,47 @@ def get_asset_need_trade(asset_id: str) -> dict | None:
         "ttl": ttl_final,
     }
     return result
+
+
+def get_asset_avg_data(asset_id: str) -> dict | None:
+    """
+    매수 큐(AVG 방식)에서 총 수량/총 취득원가/평단가를 조회
+
+    Redis Hash 키: purchase_queue:{asset_id}:AVG
+    필드: total_quantity, total_cost, avg_price
+
+    Returns:
+        {
+          "total_quantity": float | None,
+          "total_cost": float | None,
+          "avg_price": float | None
+        } 또는 None (키 또는 필드가 없을 때)
+    """
+    key = f"purchase_queue:{asset_id}:AVG"
+    try:
+        values = redis_client.hmget(key, ["total_quantity", "total_cost", "avg_price"])  # type: ignore[arg-type]
+    except Exception:
+        return None
+
+    if not values:
+        return None
+
+    tq, tc, ap = values
+
+    # 모든 필드가 비어있으면 None
+    if tq is None and tc is None and ap is None:
+        return None
+
+    def to_float(v):
+        if v is None:
+            return None
+        try:
+            return float(v)
+        except Exception:
+            return None
+
+    return {
+        "total_quantity": to_float(tq),
+        "total_cost": to_float(tc),
+        "avg_price": to_float(ap),
+    }

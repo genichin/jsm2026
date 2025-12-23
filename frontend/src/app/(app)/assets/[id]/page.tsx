@@ -10,6 +10,7 @@ import { Modal } from "@/components/Modal";
 import { DynamicTransactionForm } from "@/components/TransactionForm/DynamicTransactionForm";
 import { AssetFormModal, type AssetFormData } from "@/components/AssetFormModal";
 import { useMemo, useState } from "react";
+import { formatNumber, formatCurrency, formatPercent } from "@/lib/number-formatter";
 
 type TransactionType = 
   | "buy" | "sell" | "deposit" | "withdraw" | "transfer_in" | "transfer_out"
@@ -932,7 +933,7 @@ export default function AssetDetailPage({ params }: { params: { id: string } }) 
             </div>
             <div className="text-lg font-semibold text-indigo-600">
               {asset?.price != null 
-                ? asset.price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+                ? formatNumber(asset.price)
                 : "-"}
             </div>
             {asset?.change != null && (
@@ -940,7 +941,7 @@ export default function AssetDetailPage({ params }: { params: { id: string } }) 
                 asset.change > 0 ? "text-red-600" : asset.change < 0 ? "text-blue-600" : "text-gray-500"
               }`}>
                 {asset.change > 0 ? "▲" : asset.change < 0 ? "▼" : ""}
-                {Math.abs(asset.change).toFixed(2)}%
+                {formatPercent(Math.abs(asset.change))}
               </div>
             )}
           </div>
@@ -955,14 +956,14 @@ export default function AssetDetailPage({ params }: { params: { id: string } }) 
             </div>
           </div>
           <div>
-            <div className="text-xs text-gray-600">총 취득원가</div>
-            <div className="text-lg font-semibold">{summary.total_cost?.toLocaleString() || "0"}</div>
+            <div className="text-xs text-gray-600">총취득원가</div>
+            <div className="text-lg font-semibold">{formatNumber(summary.total_cost)}</div>
           </div>
           <div>
             <div className="text-xs text-gray-600">평단가</div>
             <div className="text-lg font-semibold">
               {summary.current_quantity > 0
-                ? (summary.total_cost / summary.current_quantity).toFixed(2)
+                ? formatNumber(summary.total_cost / summary.current_quantity)
                 : "-"}
             </div>
           </div>
@@ -971,14 +972,14 @@ export default function AssetDetailPage({ params }: { params: { id: string } }) 
             <div className="text-xs text-gray-600">실현손익</div>
             <div className={`text-lg font-semibold ${(summary.realized_profit || 0) >= 0 ? "text-blue-600" : "text-red-600"}`}>
               {(summary.realized_profit || 0) >= 0 ? "+" : ""}
-              {summary.realized_profit?.toLocaleString() || "0"}
+              {formatNumber(summary.realized_profit || 0)}
             </div>
           </div>
           <div>
             <div className="text-xs text-gray-600">평가액</div>
             <div className="text-lg font-semibold">
               {summary.krw_value != null
-                ? `${Math.floor(Number(summary.krw_value)).toLocaleString()} 원`
+                ? `${formatNumber(summary.krw_value)} 원`
                 : "-"}
             </div>
             {asset?.currency && asset.currency !== "KRW" && (
@@ -986,7 +987,7 @@ export default function AssetDetailPage({ params }: { params: { id: string } }) 
                 <div>
                   <span className="font-medium">
                     {summary.foreign_value != null
-                      ? `${Math.floor(Number(summary.foreign_value)).toLocaleString()} ${summary.foreign_currency || asset.currency}`
+                      ? `${formatNumber(summary.foreign_value)} ${summary.foreign_currency || asset.currency}`
                       : "-"}
                   </span>
                 </div>

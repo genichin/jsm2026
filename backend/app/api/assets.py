@@ -20,6 +20,7 @@ from app.core.redis import (
     update_asset_change_by_symbol,
     set_asset_need_trade,
     get_asset_need_trade,
+    get_asset_avg_data,
 )
 from app.models import User, Asset, Transaction, Account, Tag, Taggable
 from app.core.tag_helpers import (
@@ -271,20 +272,67 @@ async def get_portfolio_summary(
         from sqlalchemy import func
         
         for asset in assets:
-            # 거래 집계
+            # 거래 집계 (기본값)
             summary_query = db.query(
                 func.sum(Transaction.quantity).label('total_quantity')
             ).filter(
                 Transaction.asset_id == asset.id
             ).first()
-            
+
             current_quantity = Decimal(summary_query.total_quantity or 0)
-            # TODO: Calculate realized_profit from transaction extras if needed
-            realized_profit = Decimal(0)
-            
-            # TODO: Calculate cost from transaction extras (price, fee, tax)
+            # 자산별 실현손익 합계
+            profit_sum = db.query(
+                func.coalesce(func.sum(Transaction.realized_profit), 0)
+            ).filter(
+                Transaction.asset_id == asset.id
+            ).scalar()
+            realized_profit = Decimal(str(profit_sum or 0))
             asset_cost = Decimal(0)
-            
+
+            # 1) Redis AVG 큐 우선 사용
+            try:
+                avg_data = get_asset_avg_data(asset.id)
+            except Exception:
+                avg_data = None
+
+            if avg_data:
+                if avg_data.get("total_quantity") is not None:
+                    current_quantity = Decimal(str(avg_data["total_quantity"]))
+                if avg_data.get("total_cost") is not None:
+                    asset_cost = Decimal(str(avg_data["total_cost"]))
+            else:
+                # 2) 폴백: DB 기반 AVG 원가 계산 (confirmed만)
+                txs = db.query(Transaction).filter(
+                    Transaction.asset_id == asset.id,
+                    Transaction.confirmed == True
+                ).order_by(Transaction.transaction_date.asc()).all()
+
+                q_remain = Decimal(0)
+                cost_remain = Decimal(0)
+
+                for tx in txs:
+                    qty = Decimal(str(tx.quantity or 0))
+                    price = Decimal(str(tx.price)) if tx.price is not None else Decimal(0)
+                    fee = Decimal(str(tx.fee)) if tx.fee is not None else Decimal(0)
+                    tax = Decimal(str(tx.tax)) if tx.tax is not None else Decimal(0)
+
+                    if qty > 0:
+                        cost_remain += qty * price + fee + tax
+                        q_remain += qty
+                    elif qty < 0 and q_remain > 0:
+                        avg_cost_per_unit = (cost_remain / q_remain) if q_remain > 0 else Decimal(0)
+                        reduce_qty = -qty
+                        reduction = reduce_qty * avg_cost_per_unit
+                        cost_remain -= reduction
+                        q_remain += qty
+                    else:
+                        pass
+
+                # DB AVG 폴백: 확정된 거래만 기반으로 계산하지만,
+                # 현재 수량(current_quantity)은 전체 거래(확정+미확정)의 합 유지
+                # total_cost만 DB AVG로 계산
+                asset_cost = cost_remain
+
             # Redis 가격 기반 현재가 계산
             price = get_asset_price(asset.id, asset.symbol)
             current_value = Decimal(0)
@@ -674,13 +722,61 @@ async def get_asset_summary(
     ).filter(
         Transaction.asset_id == asset_id
     ).first()
-    
-    current_quantity = summary_query.total_quantity or 0
-    # TODO: Calculate realized_profit from transaction extras if needed
-    realized_profit = 0
-    
-    # TODO: Calculate cost from transaction extras (price, fee, tax)
-    total_cost = 0
+
+    profit_sum = db.query(
+        func.coalesce(func.sum(Transaction.realized_profit), 0)
+    ).filter(
+        Transaction.asset_id == asset_id
+    ).scalar()
+
+    # 기본값 (DB 합계 기반) - Decimal로 유지
+    current_quantity = Decimal(summary_query.total_quantity or 0)
+    realized_profit = Decimal(str(profit_sum or 0))
+    total_cost = Decimal(0)
+
+    # 1) Redis AVG 큐에서 우선 읽기
+    try:
+        avg_data = get_asset_avg_data(asset.id)
+    except Exception:
+        avg_data = None
+
+    if avg_data:
+        if avg_data.get("total_quantity") is not None:
+            current_quantity = Decimal(str(avg_data["total_quantity"]))
+        if avg_data.get("total_cost") is not None:
+            total_cost = Decimal(str(avg_data["total_cost"]))
+    else:
+        # 2) 폴백: DB 거래 내역으로 AVG 방식 취득원가 계산 (확정+미확정 모두)
+        txs = db.query(Transaction).filter(
+            Transaction.asset_id == asset_id
+        ).order_by(Transaction.transaction_date.asc()).all()
+
+        q_remain = Decimal(0)
+        cost_remain = Decimal(0)
+
+        for tx in txs:
+            qty = Decimal(str(tx.quantity or 0))
+            price = Decimal(str(tx.price)) if tx.price is not None else Decimal(0)
+            fee = Decimal(str(tx.fee)) if tx.fee is not None else Decimal(0)
+            tax = Decimal(str(tx.tax)) if tx.tax is not None else Decimal(0)
+
+            if qty > 0:
+                # 매수/유입: 취득원가 누적 (수량*단가 + 부대비용)
+                cost_remain += qty * price + fee + tax
+                q_remain += qty
+            elif qty < 0 and q_remain > 0:
+                # 매도/유출: 평균단가 기준으로 원가 차감
+                avg_cost_per_unit = (cost_remain / q_remain) if q_remain > 0 else Decimal(0)
+                reduce_qty = -qty  # 음수 -> 양수 변환
+                reduction = reduce_qty * avg_cost_per_unit
+                cost_remain -= reduction
+                q_remain += qty  # qty는 음수
+            else:
+                # qty == 0 또는 잔고 0 상태의 음수 수량은 원가 변화 없음
+                pass
+
+        # DB AVG 폴백: 확정+미확정 모든 거래를 기반으로 취득원가 계산
+        total_cost = cost_remain
     
     # 현재가를 Redis에서 조회하여 평가액 계산
     price = None
@@ -692,7 +788,7 @@ async def get_asset_summary(
     foreign_value = None
     foreign_currency = None
     krw_value = None
-    unrealized_profit = 0
+    unrealized_profit = Decimal(0)
 
     if price is not None:
         # 평가액 계산 (기준 통화의 평가액)

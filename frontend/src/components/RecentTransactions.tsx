@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { transactionTypeLabels, TransactionType } from "@/lib/transactionTypes";
+import { formatNumber } from "@/lib/number-formatter";
 
 interface Transaction {
   id: string;
@@ -42,31 +43,31 @@ export default function RecentTransactions({
         return (
           <>
             <div className="font-mono text-sm text-green-600">
-              {tx.quantity >= 0 ? '+' : ''}{tx.quantity.toLocaleString()}
+              {tx.quantity >= 0 ? '+' : ''}{formatNumber(tx.quantity)}
               
             </div>
             {tx.extras?.price && (
-              <div className="font-mono text-sm text-gray-500 ml-1"> {tx.extras.price.toLocaleString(undefined, { maximumFractionDigits: 2 })}</div>
+              <div className="font-mono text-sm text-gray-500 ml-1"> {formatNumber(tx.extras.price)}</div>
             )}
           </>
         );
       case 'dividend':
         return (
           <div className="font-mono text-sm text-blue-600">
-            배당금: {tx.quantity.toLocaleString()}
+            배당금: {formatNumber(tx.quantity)}
           </div>
         );
       case 'transfer':
         return (
           <div className="font-mono text-sm text-purple-600">
-            이체: {tx.quantity >= 0 ? '+' : ''}{tx.quantity.toLocaleString()}
+            이체: {tx.quantity >= 0 ? '+' : ''}{formatNumber(tx.quantity)}
           </div>
         );
       default:
         return (
           <>
             <div className={`font-mono text-sm ${tx.quantity >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-              {tx.quantity >= 0 ? '+' : ''}{tx.quantity.toLocaleString()}
+              {tx.quantity >= 0 ? '+' : ''}{formatNumber(tx.quantity)}
             </div>
             {tx.description && (
               <div className="text-xs text-gray-500 mt-1 truncate max-w-[150px]">{tx.description}</div>
