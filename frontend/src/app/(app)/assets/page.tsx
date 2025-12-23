@@ -1,13 +1,12 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
-import { DataTable } from "@/components/DataTable";
 import { Button } from "@/components/Button";
-import { ColumnDef } from "@tanstack/react-table";
 import { useRouter } from "next/navigation";
 import { AssetFormModal, type AssetFormData } from "@/components/AssetFormModal";
+import { formatCurrency, formatNumber } from "@/lib/number-formatter";
 
 // Backend enums
 export type AssetType = "stock" | "crypto" | "bond" | "fund" | "etf" | "cash" | "savings" | "deposit";
@@ -30,6 +29,7 @@ type Asset = {
   updated_at: string;
   balance?: number | null;
   price?: number | null;
+  change?: number | null;
   need_trade?: { price?: number | null; quantity?: number | null; ttl?: number | null } | null;
   account?: AccountBrief | null;
 };
@@ -54,6 +54,17 @@ const assetTypeOptions: { value: AssetType; label: string }[] = [
   { value: "savings", label: "예금" },
   { value: "deposit", label: "적금" },
 ];
+
+const assetTypeAccent: Record<AssetType, string> = {
+  stock: "ring-emerald-400/25 border-emerald-100/70",
+  crypto: "ring-indigo-400/25 border-indigo-100/70",
+  bond: "ring-amber-400/25 border-amber-100/70",
+  fund: "ring-sky-400/25 border-sky-100/70",
+  etf: "ring-purple-400/25 border-purple-100/70",
+  cash: "ring-slate-400/25 border-slate-200/70",
+  savings: "ring-teal-400/25 border-teal-100/70",
+  deposit: "ring-rose-400/25 border-rose-100/70",
+};
 
 export default function AssetsPage() {
   const qc = useQueryClient();
@@ -207,74 +218,6 @@ export default function AssetsPage() {
     }
   }
 
-  const columns: ColumnDef<Asset>[] = [
-    {
-      accessorKey: "name",
-      header: "자산명",
-      cell: ({ row }) => (
-        <button
-          onClick={() => router.push(`/assets/${row.original.id}`)}
-          className="text-gh-accent-fg hover:underline text-left font-medium"
-        >
-          <span className="inline-flex items-center gap-2">
-            {row.original.name}
-            {row.original.need_trade?.price != null || row.original.need_trade?.quantity != null ? (
-              <span className="inline-flex items-center rounded-full bg-yellow-100 text-yellow-800 text-xs px-2 py-0.5 border border-yellow-300">
-                거래요청
-              </span>
-            ) : null}
-          </span>
-        </button>
-      ),
-    },
-    {
-      accessorKey: "asset_type",
-      header: "유형",
-      cell: ({ getValue }) => assetTypeOptions.find((t) => t.value === getValue())?.label ?? String(getValue()),
-    },
-    { accessorKey: "symbol", header: "심볼", cell: ({ getValue }) => <span className="text-gh-fg-muted">{(getValue() as string) || "-"}</span> },
-    { accessorKey: "currency", header: "통화" },
-    { accessorKey: "balance", header: "수량", cell: ({ getValue }) => <span className="font-mono">{(getValue() as number ?? 0).toLocaleString()}</span> },
-    { accessorKey: "price", header: "가격", cell: ({ getValue }) => <span className="font-mono">{(getValue() as number ?? 0).toLocaleString()}</span> },
-    {
-      accessorKey: "account.name",
-      header: "계좌",
-      cell: ({ row }) => <span>{row.original.account?.name || "-"}</span>,
-    },
-    {
-      accessorKey: "is_active",
-      header: "활성",
-      cell: ({ row }) => (
-        <Button
-          size="sm"
-          variant={row.original.is_active ? "primary" : "default"}
-          onClick={() => updateMut.mutate({ id: row.original.id, payload: { is_active: !row.original.is_active } })}
-        >
-          {row.original.is_active ? "활성" : "비활성"}
-        </Button>
-      ),
-    },
-    {
-      id: "actions",
-      header: "",
-      cell: ({ row }) => (
-        <div className="space-x-2">
-          <Button size="sm" variant="default" onClick={() => startEdit(row.original)}>편집</Button>
-          <Button size="sm" variant="default" onClick={() => recalcMut.mutate(row.original.id)}>잔고재계산</Button>
-          <Button
-            size="sm"
-            variant="danger"
-            onClick={() => {
-              if (confirm("정말 삭제하시겠습니까? 거래 내역이 있는 자산은 삭제할 수 없습니다.")) deleteMut.mutate(row.original.id);
-            }}
-          >
-            삭제
-          </Button>
-        </div>
-      ),
-    },
-  ];
-
   return (
     <div className="space-y-4">
       {/* Filters */}
@@ -323,11 +266,33 @@ export default function AssetsPage() {
         isLoading={createMut.isPending || updateMut.isPending}
       />
 
-      {/* Table */}
+      {/* Card list */}
       {listQuery.isLoading ? (
-        <div>로딩 중...</div>
+        <div className="rounded-xl border border-gh-border-default bg-gh-canvas-default divide-y divide-gh-border-default">
+          {Array.from({ length: 6 }).map((_, idx) => (
+            <div key={idx} className="h-24 animate-pulse" />
+          ))}
+        </div>
+      ) : assets.length === 0 ? (
+        <div className="rounded-xl border border-dashed border-gh-border-default bg-gh-canvas-subtle px-6 py-10 text-center text-gh-fg-muted">
+          조건에 맞는 자산이 없습니다.
+        </div>
       ) : (
-        <DataTable columns={columns} data={assets} />
+        <div className="rounded-xl border border-gh-border-default bg-gh-canvas-default divide-y divide-gh-border-default">
+          {assets.map((asset) => (
+            <AssetCard
+              key={asset.id}
+              asset={asset}
+              onOpen={() => router.push(`/assets/${asset.id}`)}
+              onEdit={() => startEdit(asset)}
+              onRecalc={() => recalcMut.mutate(asset.id)}
+              onDelete={() => {
+                if (confirm("정말 삭제하시겠습니까? 거래 내역이 있는 자산은 삭제할 수 없습니다.")) deleteMut.mutate(asset.id);
+              }}
+              onToggleActive={() => updateMut.mutate({ id: asset.id, payload: { is_active: !asset.is_active } })}
+            />
+          ))}
+        </div>
       )}
 
       {/* Pagination */}
@@ -362,5 +327,231 @@ export default function AssetsPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+type AssetCardProps = {
+  asset: Asset;
+  onOpen: () => void;
+  onEdit: () => void;
+  onRecalc: () => void;
+  onDelete: () => void;
+  onToggleActive: () => void;
+};
+
+function Field({ label, value, align = "left" }: { label: string; value: ReactNode; align?: "left" | "right" }) {
+  return (
+    <div className="rounded-md border border-gh-border-default bg-gh-canvas-default px-3 py-2">
+      <div className="text-[12px] text-gh-fg-muted">{label}</div>
+      <div className={`text-sm font-medium text-gh-fg ${align === "right" ? "text-right" : ""}`}>{value ?? "-"}</div>
+    </div>
+  );
+}
+
+function renderByType(asset: Asset) {
+  switch (asset.asset_type) {
+    case "stock":
+    case "etf":
+      return (
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="티커" value={asset.symbol || "-"} />
+          <Field label="시장" value={asset.market || "-"} />
+        </div>
+      );
+    case "crypto":
+      return (
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="심볼" value={asset.symbol || "-"} />
+          <Field label="네트워크" value={asset.asset_metadata?.network || "-"} />
+        </div>
+      );
+    case "bond":
+      return (
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="표면금리" value={asset.asset_metadata?.coupon_rate ?? "-"} />
+          <Field label="만기" value={asset.asset_metadata?.maturity_date ?? "-"} />
+        </div>
+      );
+    case "fund":
+      return (
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="펀드 코드" value={asset.symbol || "-"} />
+          <Field label="운용사" value={asset.asset_metadata?.manager || "-"} />
+        </div>
+      );
+    case "savings":
+    case "deposit":
+      return (
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="금리" value={asset.asset_metadata?.rate ?? "-"} />
+          <Field label="만기" value={asset.asset_metadata?.maturity_date ?? "-"} />
+        </div>
+      );
+    case "cash":
+      return (
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="통화" value={asset.currency} />
+          <Field label="메모" value={asset.asset_metadata?.memo || "-"} />
+        </div>
+      );
+    default:
+      return null;
+  }
+}
+
+function AssetCard({ asset, onOpen, onEdit, onRecalc, onDelete, onToggleActive }: AssetCardProps) {
+  const [expanded, setExpanded] = useState(false);
+  const typeLabel = assetTypeOptions.find((t) => t.value === asset.asset_type)?.label ?? asset.asset_type;
+  const accent = assetTypeAccent[asset.asset_type] ?? "ring-gh-border-muted/30 border-gh-border-default";
+
+  function renderSummaryByType() {
+    switch (asset.asset_type) {
+      case "stock":
+      case "etf":
+        const priceChange = asset.change;
+        const changeColor = priceChange && priceChange > 0 ? "text-red-600" : priceChange && priceChange < 0 ? "text-blue-600" : "text-gh-fg-muted";
+        const changePrefix = priceChange && priceChange > 0 ? "+" : "";
+        
+        return (
+          <div className="grid grid-cols-2 gap-3 text-sm">
+            <Field label="티커" value={asset.symbol || "-"} />
+            <Field label="잔고" value={formatNumber(asset.balance)} align="right" />
+            <Field 
+              label="현재가" 
+              value={asset.price ? formatCurrency(asset.price, asset.currency) : "-"} 
+              align="right" 
+            />
+            <Field 
+              label="등락률" 
+              value={
+                priceChange != null ? (
+                  <span className={changeColor}>
+                    {changePrefix}{priceChange.toFixed(2)}%
+                  </span>
+                ) : "-"
+              } 
+              align="right" 
+            />
+          </div>
+        );
+      case "crypto":
+        return (
+          <div className="grid grid-cols-2 gap-3 text-sm">
+            <Field label="심볼" value={asset.symbol || "-"} />
+            <Field label="네트워크" value={asset.asset_metadata?.network || "-"} />
+          </div>
+        );
+      case "bond":
+        return (
+          <div className="grid grid-cols-2 gap-3 text-sm">
+            <Field label="표면금리" value={asset.asset_metadata?.coupon_rate ?? "-"} />
+            <Field label="만기" value={asset.asset_metadata?.maturity_date ?? "-"} />
+          </div>
+        );
+      case "fund":
+        return (
+          <div className="grid grid-cols-2 gap-3 text-sm">
+            <Field label="코드" value={asset.symbol || "-"} />
+            <Field label="운용사" value={asset.asset_metadata?.manager || "-"} />
+          </div>
+        );
+      case "savings":
+      case "deposit":
+        return (
+          <div className="grid grid-cols-2 gap-3 text-sm">
+            <Field label="금리" value={asset.asset_metadata?.rate ?? "-"} />
+            <Field label="만기" value={asset.asset_metadata?.maturity_date ?? "-"} />
+          </div>
+        );
+      case "cash":
+        console.log('Cash asset:', {
+          balance: asset.balance,
+          balanceType: typeof asset.balance,
+          currency: asset.currency,
+          fullAsset: asset
+        });
+        return (
+          <div className="grid grid-cols-2 gap-3 text-sm">
+            <Field label="잔고" value={formatCurrency(asset.balance, asset.currency)} align="right" />
+          </div>
+        );
+      default:
+        return (
+          <div className="grid grid-cols-2 gap-3 text-sm">
+            <Field label="수량" value={(asset.balance ?? 0).toLocaleString()} />
+            <Field label="가격" value={(asset.price ?? 0).toLocaleString()} />
+          </div>
+        );
+    }
+  }
+
+  return (
+    <article className="group relative px-4 py-3 hover:bg-gh-canvas-subtle transition">
+      <div className="flex flex-col gap-3 md:grid md:grid-cols-12 md:items-center md:gap-4">
+        <div className="md:col-span-5 flex items-start gap-3">
+          <div className={`mt-1 h-8 w-1 rounded-full ${accent}`} aria-hidden />
+          <div className="space-y-1">
+            <button onClick={onOpen} className="text-left text-base font-semibold text-gh-accent-fg hover:underline">
+              <span className="inline-flex items-center gap-2">
+                {asset.name}
+                {asset.need_trade?.price != null || asset.need_trade?.quantity != null ? (
+                  <span className="inline-flex items-center rounded-full bg-yellow-100 px-2 py-0.5 text-[11px] font-medium text-yellow-800 border border-yellow-200">
+                    거래요청
+                  </span>
+                ) : null}
+              </span>
+            </button>
+            <div className="flex flex-wrap items-center gap-2 text-[12px] text-gh-fg-muted">
+              <span className="inline-flex items-center gap-1 rounded-full bg-gh-canvas-inset px-2 py-0.5 font-medium text-gh-fg">{typeLabel}</span>
+              <span className="inline-flex items-center gap-1 font-medium text-gh-fg-muted">{asset.account?.name || "미지정"}</span>
+              <span className="inline-flex items-center gap-1 font-medium text-gh-fg-muted">{asset.currency}</span>
+            </div>
+          </div>
+        </div>
+
+        <div className="md:col-span-5">
+          {renderSummaryByType()}
+        </div>
+
+        <div className="md:col-span-2 flex items-center justify-end gap-3">
+          <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[12px] font-semibold ${asset.is_active ? "bg-emerald-50 text-emerald-700 border border-emerald-100" : "bg-slate-100 text-slate-700 border border-slate-200"}`}>
+            {asset.is_active ? "활성" : "비활성"}
+          </span>
+          <Button
+            size="sm"
+            variant="default"
+            onClick={() => setExpanded((prev) => !prev)}
+          >
+            {expanded ? "접기" : "확장"}
+          </Button>
+        </div>
+      </div>
+
+      {expanded ? (
+        <div className="mt-3 rounded-lg border border-gh-border-default bg-gh-canvas-inset p-3">
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <div className="space-y-1 text-sm text-gh-fg-muted">
+              <div className="flex items-center gap-2">
+                <span className="font-semibold text-gh-fg">{asset.symbol || "-"}</span>
+                <span>{asset.market || "시장 미지정"}</span>
+              </div>
+              <div className="text-[12px]">최근 갱신: {new Date(asset.updated_at).toLocaleString()}</div>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button size="sm" variant="default" onClick={onToggleActive}>
+                {asset.is_active ? "비활성 전환" : "활성 전환"}
+              </Button>
+              <Button size="sm" variant="primary" onClick={onOpen}>열기</Button>
+              <Button size="sm" variant="default" onClick={onEdit}>편집</Button>
+              <Button size="sm" variant="default" onClick={onRecalc}>잔고재계산</Button>
+              <Button size="sm" variant="danger" onClick={onDelete}>삭제</Button>
+            </div>
+          </div>
+          {renderByType(asset) ? (
+            <div className="mt-3">{renderByType(asset)}</div>
+          ) : null}
+        </div>
+      ) : null}
+    </article>
   );
 }

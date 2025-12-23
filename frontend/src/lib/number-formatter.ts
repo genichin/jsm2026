@@ -44,7 +44,11 @@ export function formatNumber(num: number | string | null | undefined): string {
   
   // 정수 부분에 쉼표 추가
   const parts = withoutTrailingZeros.split(".");
-  parts[0] = parseInt(parts[0]).toLocaleString();
+  const integerPart = Number(parts[0]);
+  if (isNaN(integerPart)) {
+    return "0";
+  }
+  parts[0] = integerPart.toLocaleString();
   
   return parts.join(".");
 }
@@ -57,7 +61,25 @@ export function formatCurrency(
   currency: string = "KRW"
 ): string {
   const formatted = formatNumber(num);
-  return `${formatted} ${currency}`;
+  
+  // 통화별 심볼 매핑
+  const currencySymbols: Record<string, string> = {
+    KRW: '원',
+    USD: '$',
+    EUR: '€',
+    JPY: '¥',
+    CNY: '¥',
+  };
+  
+  const symbol = currencySymbols[currency] || currency;
+  
+  // USD, EUR 등은 앞에 표시, KRW, JPY 등은 뒤에 표시
+  const prefixCurrencies = ['USD', 'EUR'];
+  if (prefixCurrencies.includes(currency)) {
+    return `${symbol}${formatted}`;
+  }
+  
+  return `${formatted}${symbol}`;
 }
 
 /**
