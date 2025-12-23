@@ -306,7 +306,7 @@ class DaemonScheduler:
                     asset_id = asset.get("id")
                     symbol = asset.get("symbol")
                     metadata = asset.get("asset_metadata", {})
-                    
+                   
                     if not symbol:
                         logger.debug(f"Skipping asset without symbol")
                         continue
@@ -321,8 +321,6 @@ class DaemonScheduler:
                     if not strategy:
                         logger.debug(f"Skipping asset {symbol} due to missing strategy in metadata")
                         continue
-                    
-                    
 
                     # 전략 유형 확인 metadata에서 'strategy_type' 키 확인
                     strategy_type_str = strategy.get("type", "not_defined").lower()
@@ -366,8 +364,6 @@ class DaemonScheduler:
                             # 호가 정보 조회
                             orderbook = self.broker.get_orderbook(symbol)
                             kwargs["orderbook"] = orderbook
-
-                            #print(kwargs)
                         
                         # 전략 실행
                         result = self.strategy_runner.execute_strategy(strategy_config, **kwargs)
@@ -380,9 +376,9 @@ class DaemonScheduler:
                     except Exception as e:
                         logger.error(f"Strategy execution failed for {symbol}: {str(e)}")
                     
-                    # 다음 실행까지 대기
-                    logger.info(f"Waiting {loop_interval} seconds until next execution...")
-                    time_module.sleep(loop_interval)
+                # 다음 실행까지 대기
+                logger.info(f"Waiting {loop_interval} seconds until next execution...")
+                time_module.sleep(loop_interval)
                 
                 logger.info("=== Strategy execution loop completed ===")
                 
