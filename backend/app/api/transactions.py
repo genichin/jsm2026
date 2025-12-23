@@ -15,7 +15,7 @@ from pathlib import Path
 
 from app.core.database import get_db
 from app.api.auth import get_current_user
-from app.core.redis import calculate_and_update_balance, invalidate_user_cache
+from app.core.redis import calculate_and_update_balance, invalidate_user_cache, get_asset_avg_data
 from app.models import User, Asset, Transaction, Account, Category
 from app.services.auto_category import auto_assign_category
 from app.schemas.transaction import (
@@ -481,6 +481,46 @@ async def create_transaction(
     fee_val = transaction.fee if transaction.fee is not None else extras_dict.get('fee')
     tax_val = transaction.tax if transaction.tax is not None else extras_dict.get('tax')
     rp_val = transaction.realized_profit if transaction.realized_profit is not None else extras_dict.get('realized_profit')
+    
+    # SELL 거래의 경우 realized_profit 자동 계산
+    if transaction.type.value == 'sell' and rp_val is None:
+        from decimal import Decimal
+        qty = Decimal(str(abs(transaction.quantity)))  # SELL은 음수이므로 절대값
+        sell_price = Decimal(str(price_val)) if price_val is not None else Decimal(0)
+        sell_fee = Decimal(str(fee_val)) if fee_val is not None else Decimal(0)
+        sell_tax = Decimal(str(tax_val)) if tax_val is not None else Decimal(0)
+        
+        # 평균 매수가 계산
+        avg_buy_price = Decimal(0)
+        try:
+            avg_data = get_asset_avg_data(transaction.asset_id)
+            if avg_data and avg_data.get('avg_price'):
+                avg_buy_price = Decimal(str(avg_data['avg_price']))
+        except Exception:
+            pass
+        
+        # avg_price가 없으면 DB에서 계산
+        if avg_buy_price == 0:
+            buy_txs = db.query(Transaction).filter(
+                Transaction.asset_id == transaction.asset_id,
+                Transaction.quantity > 0,
+                Transaction.confirmed == True
+            ).order_by(Transaction.transaction_date.asc()).all()
+            
+            total_qty = Decimal(0)
+            total_cost = Decimal(0)
+            for tx in buy_txs:
+                total_qty += Decimal(str(tx.quantity or 0))
+                tx_price = Decimal(str(tx.price)) if tx.price is not None else Decimal(0)
+                tx_fee = Decimal(str(tx.fee)) if tx.fee is not None else Decimal(0)
+                tx_tax = Decimal(str(tx.tax)) if tx.tax is not None else Decimal(0)
+                total_cost += Decimal(str(tx.quantity or 0)) * tx_price + tx_fee + tx_tax
+            
+            if total_qty > 0:
+                avg_buy_price = total_cost / total_qty
+        
+        # realized_profit = (판매가 - 수수료 - 세금 - 평균매수가) * 수량
+        rp_val = float((sell_price - sell_fee - sell_tax - avg_buy_price) * qty)
     
     db_transaction = Transaction(
         asset_id=transaction.asset_id,
