@@ -1151,6 +1151,7 @@ CREATE INDEX idx_transactions_flow_type ON transactions(flow_type);
   - `fee`: 수수료
   - `tax`: 세금
   - `balance_after`: 거래 후 잔액
+  - `source_asset_id` : 원본 자산 ID
 - `flow_type`: 거래의 분류 상태 (expense, income, transfer, investment, neutral, undefined)
   - `undefined`: 아직 분류되지 않은 거래 (사용자 확인 필요)
   - 나머지: 자동/수동으로 분류된 거래
