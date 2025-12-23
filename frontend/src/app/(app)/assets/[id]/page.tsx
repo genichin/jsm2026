@@ -178,6 +178,15 @@ export default function AssetDetailPage({ params }: { params: { id: string } }) 
     queryFn: async () => (await api.get(`/assets/${params.id}/summary`)).data,
   });
 
+  // 모든 활성 자산 목록 (거래 폼에서 현금 자산 선택용)
+  const allAssetsQuery = useQuery({
+    queryKey: ["assets"],
+    queryFn: async () => {
+      const { data } = await api.get(`/assets`);
+      return data.items || [];
+    },
+  });
+
   // 거래 내역 (개요 탭에서도 사용하므로 항상 로드)
   const transactionsQuery = useQuery<TransactionListResponse>({
     queryKey: ["asset-transactions", params.id, txPage, txSize],
@@ -258,7 +267,11 @@ export default function AssetDetailPage({ params }: { params: { id: string } }) 
     },
     onError: (error: any) => {
       console.error("Transaction creation failed:", error);
-      alert(`거래 생성 실패: ${error.response?.data?.detail || error.message}`);
+      const errorDetail = error.response?.data?.detail || 
+                          JSON.stringify(error.response?.data) || 
+                          error.message;
+      console.error("Error details:", errorDetail);
+      alert(`거래 생성 실패: ${errorDetail}`);
     },
   });
 
@@ -1424,7 +1437,7 @@ export default function AssetDetailPage({ params }: { params: { id: string } }) 
           transactionType={(selectedType || 'deposit') as TransactionType}
           editing={editing}
           isEditMode={false}
-          assets={[{
+          assets={allAssetsQuery.data || [{
             id: params.id,
             name: asset?.name || '',
             symbol: asset?.symbol || '',
