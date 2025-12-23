@@ -51,6 +51,11 @@ interface AssetSummary {
   foreign_value?: number | null;
   foreign_currency?: string | null;
   krw_value?: number | null;
+  // 필요 거래 정보(있을 경우 표시)
+  need_trade?: {
+    price?: number;
+    quantity?: number;
+  } | null;
 }
 
 interface Transaction {
@@ -156,6 +161,9 @@ export default function AssetDetailPage({ params }: { params: { id: string } }) 
   const [newPrice, setNewPrice] = useState<string>("");
   const [newChange, setNewChange] = useState<string>("");
   const [useSymbol, setUseSymbol] = useState(false);
+
+  // 액션 메뉴 (모바일) 상태
+  const [isActionMenuOpen, setIsActionMenuOpen] = useState(false);
 
   // 자산 기본 정보
   const assetQuery = useQuery<Asset>({
@@ -719,34 +727,120 @@ export default function AssetDetailPage({ params }: { params: { id: string } }) 
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <button
-            onClick={() => setIsUploadModalOpen(true)}
-            className="px-3 py-2 rounded bg-purple-600 text-white hover:bg-purple-700 text-sm font-medium transition-colors"
-          >
-            📁 파일 업로드
-          </button>
-          <button
-            onClick={() => startCreateTransaction()}
-            className="px-3 py-2 rounded bg-emerald-600 text-white hover:bg-emerald-700 text-sm font-medium transition-colors"
-          >
-            + 거래 추가
-          </button>
-          {asset?.review_interval_days && (
+          {/* 모바일: 드롭다운 액션 메뉴 */}
+          <div className="relative md:hidden">
             <button
-              onClick={() => markReviewedMut.mutate()}
-              disabled={markReviewedMut.isPending}
-              className="px-3 py-2 rounded bg-blue-600 text-white hover:bg-blue-700 text-sm font-medium transition-colors disabled:opacity-50"
-              title="이 자산을 검토 완료로 표시합니다"
+              onClick={() => setIsActionMenuOpen((v) => !v)}
+              className="px-3 py-2 rounded border bg-white hover:bg-gray-50 text-sm font-medium"
+              aria-haspopup="menu"
+              aria-expanded={isActionMenuOpen}
             >
-              ✓ 검토 완료
+              ⋯
             </button>
-          )}
-          <button
-            onClick={() => startEditAsset()}
-            className="px-4 py-2 border rounded hover:bg-gray-50"
-          >
-            편집
-          </button>
+            {isActionMenuOpen && (
+              <div className="absolute right-0 mt-2 w-44 bg-white border rounded-lg shadow-lg z-10 py-1">
+                <button
+                  onClick={() => { setIsUploadModalOpen(true); setIsActionMenuOpen(false); }}
+                  className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50"
+                >
+                  <span className="inline-flex items-center gap-2">
+                    <svg className="w-4 h-4 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M12 12V4m0 0l-4 4m4-4l4 4" />
+                    </svg>
+                    <span>파일 업로드</span>
+                  </span>
+                </button>
+                <button
+                  onClick={() => { startCreateTransaction(); setIsActionMenuOpen(false); }}
+                  className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50"
+                >
+                  <span className="inline-flex items-center gap-2">
+                    <svg className="w-4 h-4 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 5v14M5 12h14" />
+                    </svg>
+                    <span>거래 추가</span>
+                  </span>
+                </button>
+                {asset?.review_interval_days && (
+                  <button
+                    onClick={() => { markReviewedMut.mutate(); setIsActionMenuOpen(false); }}
+                    disabled={markReviewedMut.isPending}
+                    className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50 disabled:opacity-50"
+                  >
+                    <span className="inline-flex items-center gap-2">
+                      <svg className="w-4 h-4 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                      </svg>
+                      <span>검토 완료</span>
+                    </span>
+                  </button>
+                )}
+                <button
+                  onClick={() => { startEditAsset(); setIsActionMenuOpen(false); }}
+                  className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50"
+                >
+                  <span className="inline-flex items-center gap-2">
+                    <svg className="w-4 h-4 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 4l8 8-6 6H6v-8l6-6z" />
+                    </svg>
+                    <span>편집</span>
+                  </span>
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* 데스크톱: GitHub 스타일 버튼 그룹 */}
+          <div className="hidden md:inline-flex items-center border border-gray-200 rounded-md overflow-hidden bg-white divide-x divide-gray-200">
+            <button
+              onClick={() => setIsUploadModalOpen(true)}
+              className="px-3 py-2 text-sm font-medium text-gray-800 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <span className="inline-flex items-center gap-2">
+                <svg className="w-4 h-4 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M12 12V4m0 0l-4 4m4-4l4 4" />
+                </svg>
+                <span>파일 업로드</span>
+              </span>
+            </button>
+            <button
+              onClick={() => startCreateTransaction()}
+              className="px-3 py-2 text-sm font-medium text-gray-800 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <span className="inline-flex items-center gap-2">
+                <svg className="w-4 h-4 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 5v14M5 12h14" />
+                </svg>
+                <span>거래 추가</span>
+              </span>
+            </button>
+            {asset?.review_interval_days && (
+              <button
+                onClick={() => markReviewedMut.mutate()}
+                disabled={markReviewedMut.isPending}
+                className="px-3 py-2 text-sm font-medium text-gray-800 hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-blue-500"
+                title="이 자산을 검토 완료로 표시합니다"
+              >
+                <span className="inline-flex items-center gap-2">
+                  <svg className="w-4 h-4 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                  </svg>
+                  <span>검토 완료</span>
+                </span>
+              </button>
+            )}
+            <button
+              onClick={() => startEditAsset()}
+              className="px-3 py-2 text-sm font-medium text-gray-800 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <span className="inline-flex items-center gap-2">
+                <svg className="w-4 h-4 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 4l8 8-6 6H6v-8l6-6z" />
+                </svg>
+                <span>편집</span>
+              </span>
+            </button>
+          </div>
         </div>
       </div>
 
@@ -791,19 +885,48 @@ export default function AssetDetailPage({ params }: { params: { id: string } }) 
         </div>
       )}
 
+      {/* 필요 거래 (검토 정보와 별도 표시) */}
+      {summary?.need_trade && (
+        <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 mb-6">
+          <div className="flex items-center justify-between">
+            <div className="flex-1">
+              <h3 className="text-sm font-semibold text-amber-900 mb-2">필요 거래</h3>
+              <div className="space-y-1 text-sm text-amber-800">
+                <p>
+                  가격:{" "}
+                  <span className="font-medium">
+                    {summary.need_trade.price != null
+                      ? summary.need_trade.price.toLocaleString()
+                      : "-"}
+                  </span>
+                </p>
+                <p>
+                  수량:{" "}
+                  <span className="font-medium">
+                    {summary.need_trade.quantity != null
+                      ? Number(summary.need_trade.quantity).toLocaleString(undefined, { maximumFractionDigits: 8 })
+                      : "-"}
+                  </span>
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 요약 카드 */}
       {summary && (
         <div className="grid grid-cols-2 md:grid-cols-6 gap-4 p-4 border rounded-lg bg-gray-50">
           <div>
-            <div className="flex items-center justify-between mb-1">
+            <div className="flex items-center mb-1">
               <div className="text-xs text-gray-600">현재가</div>
               {asset?.asset_type !== "cash" && (
                 <button
                   onClick={openPriceModal}
-                  className="text-xs text-blue-600 hover:text-blue-800 hover:underline"
+                  className="text-xs text-blue-600 hover:text-blue-800 hover:underline ms-2"
                   title="가격 변경"
                 >
-                  ✏️ 변경
+                  (수동변경)
                 </button>
               )}
             </div>

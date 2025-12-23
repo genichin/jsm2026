@@ -13,6 +13,9 @@ interface Transaction {
   asset?: {
     name: string;
   };
+  extras?: {
+    price?: number;
+  };
 }
 
 interface RecentTransactionsProps {
@@ -31,6 +34,47 @@ export default function RecentTransactions({
   showAssetName = true
 }: RecentTransactionsProps) {
   const router = useRouter();
+
+  const renderTransactionDetails = (tx: Transaction) => {
+    switch (tx.type) {
+      case 'buy':
+      case 'sell':
+        return (
+          <>
+            <div className="font-mono text-sm text-green-600">
+              {tx.quantity >= 0 ? '+' : ''}{tx.quantity.toLocaleString()}
+              
+            </div>
+            {tx.extras?.price && (
+              <div className="font-mono text-sm text-gray-500 ml-1"> {tx.extras.price.toLocaleString(undefined, { maximumFractionDigits: 2 })}</div>
+            )}
+          </>
+        );
+      case 'dividend':
+        return (
+          <div className="font-mono text-sm text-blue-600">
+            배당금: {tx.quantity.toLocaleString()}
+          </div>
+        );
+      case 'transfer':
+        return (
+          <div className="font-mono text-sm text-purple-600">
+            이체: {tx.quantity >= 0 ? '+' : ''}{tx.quantity.toLocaleString()}
+          </div>
+        );
+      default:
+        return (
+          <>
+            <div className={`font-mono text-sm ${tx.quantity >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+              {tx.quantity >= 0 ? '+' : ''}{tx.quantity.toLocaleString()}
+            </div>
+            {tx.description && (
+              <div className="text-xs text-gray-500 mt-1 truncate max-w-[150px]">{tx.description}</div>
+            )}
+          </>
+        );
+    }
+  };
 
   if (isLoading) {
     return <div className="text-sm text-gray-600">로딩 중...</div>;
@@ -76,16 +120,11 @@ export default function RecentTransactions({
                 </span>
               </div>
               <div className="text-xs text-gray-500 mt-1">
-                {new Date(tx.transaction_date).toLocaleDateString()}
+                {new Date(tx.transaction_date).toISOString().slice(0, 19).replace('T', ' ')}
               </div>
             </div>
-            <div className="text-right">
-              <div className={`font-mono text-sm ${tx.quantity >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                {tx.quantity >= 0 ? '+' : ''}{tx.quantity.toLocaleString()}
-              </div>
-              {tx.description && (
-                <div className="text-xs text-gray-500 mt-1 truncate max-w-[150px]">{tx.description}</div>
-              )}
+            <div className="text-right">              
+              {renderTransactionDetails(tx)}
             </div>
           </div>
         ))}
