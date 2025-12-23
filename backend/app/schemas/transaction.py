@@ -356,22 +356,23 @@ class AssetSummary(BaseModel):
     asset_name: str
     asset_type: AssetType
     symbol: Optional[str] = None
-    current_quantity: Decimal
-    total_cost: Decimal
-    realized_profit: Decimal
-    unrealized_profit: Optional[Decimal] = None
+    current_quantity: float
+    total_cost: float
+    realized_profit: float
+    unrealized_profit: Optional[float] = None
+    current_value: Optional[float] = None  # 현재 평가액
     # 통화별 평가액 (KRW 외 통화일 때 사용)
-    foreign_value: Optional[Decimal] = None
+    foreign_value: Optional[float] = None
     foreign_currency: Optional[str] = None
-    krw_value: Optional[Decimal] = None
+    krw_value: Optional[float] = None
 
 
 class PortfolioSummary(BaseModel):
     """포트폴리오 요약"""
-    total_assets_value: Decimal
-    total_cash: Decimal
-    total_realized_profit: Decimal
-    total_unrealized_profit: Decimal
+    total_assets_value: float
+    total_cash: float
+    total_realized_profit: float
+    total_unrealized_profit: float
     asset_summaries: List[AssetSummary]
 
 

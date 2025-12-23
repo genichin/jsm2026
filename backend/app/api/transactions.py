@@ -847,18 +847,18 @@ async def get_portfolio_summary(
             asset_name=asset.name,
             asset_type=AssetType(asset.asset_type),
             symbol=asset.symbol,
-            current_quantity=current_quantity,
-            total_cost=total_cost,
-            realized_profit=realized_profit,
-            unrealized_profit=unrealized_profit,
-            current_value=current_value
+            current_quantity=float(current_quantity),
+            total_cost=float(total_cost),
+            realized_profit=float(realized_profit),
+            unrealized_profit=float(unrealized_profit),
+            current_value=float(current_value)
         ))
     
     return PortfolioSummary(
-        total_assets_value=total_assets_value,
-        total_cash=total_cash,
-        total_realized_profit=total_realized_profit,
-        total_unrealized_profit=Decimal(0),  # 현재가 정보가 있을 때 계산
+        total_assets_value=float(total_assets_value),
+        total_cash=float(total_cash),
+        total_realized_profit=float(total_realized_profit),
+        total_unrealized_profit=float(Decimal(0)),  # 현재가 정보가 있을 때 계산
         asset_summaries=asset_summaries
     )
 

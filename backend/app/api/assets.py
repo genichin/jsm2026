@@ -345,10 +345,11 @@ async def get_portfolio_summary(
                 asset_name=asset.name,
                 asset_type=AssetType(asset.asset_type),
                 symbol=asset.symbol,
-                current_quantity=current_quantity,
-                total_cost=asset_cost,
-                realized_profit=realized_profit,
-                unrealized_profit=unrealized_profit,
+                current_quantity=float(current_quantity),
+                total_cost=float(asset_cost),
+                realized_profit=float(realized_profit),
+                unrealized_profit=float(unrealized_profit),
+                current_value=float(current_value),
             )
             
             asset_summaries.append(asset_summary)
@@ -359,10 +360,10 @@ async def get_portfolio_summary(
         total_unrealized_profit = Decimal(total_current_value) - Decimal(total_cost)
         
         return PortfolioSummary(
-            total_assets_value=total_current_value,
-            total_cash=Decimal(0),  # 현금은 별도 계산 필요
-            total_realized_profit=total_realized_profit,
-            total_unrealized_profit=total_unrealized_profit,
+            total_assets_value=float(total_current_value),
+            total_cash=float(Decimal(0)),  # 현금은 별도 계산 필요
+            total_realized_profit=float(total_realized_profit),
+            total_unrealized_profit=float(total_unrealized_profit),
             asset_summaries=asset_summaries
         )
     except Exception as e:
