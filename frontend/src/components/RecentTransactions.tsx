@@ -46,12 +46,18 @@ export default function RecentTransactions({
       case 'sell':
         return (
           <>
-            <div className="font-mono text-sm text-green-600">
+          <div className="font-mono text-sm flex items-center gap-1">
+            <span className={tx.quantity > 0 ? 'text-red-600' : 'text-blue-600'}>
               {tx.quantity >= 0 ? '+' : ''}{formatNumber(tx.quantity)}
-              
-            </div>
+            </span>
             {tx.price && (
-              <div className="font-mono text-sm text-gray-500 ml-1"> {formatNumber(tx.price)}</div>
+              <span className="text-gray-500">@{formatNumber(tx.price)}</span>
+            )}
+          </div>
+            {tx.price && (
+            <div className="font-mono text-sm text-gray-600">
+              {formatNumber((tx.quantity * tx.price))}
+            </div>
             )}
           </>
         );
