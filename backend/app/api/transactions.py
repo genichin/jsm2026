@@ -1618,6 +1618,7 @@ async def upload_transactions_file(
                     if realized_profit != 0:
                         extras['realized_profit'] = realized_profit
                     
+                    rp_column = realized_profit if realized_profit != 0 else None
                     db_transaction = Transaction(
                         asset_id=asset_id,
                         type=trans_type,
@@ -1626,7 +1627,8 @@ async def upload_transactions_file(
                         description=transaction_data['description'],
                         memo=transaction_data['memo'],
                         extras=extras,
-                        category_id=category_id_value
+                        category_id=category_id_value,
+                        realized_profit=rp_column
                     )
                     
                     db.add(db_transaction)
