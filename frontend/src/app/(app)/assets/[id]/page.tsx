@@ -538,9 +538,9 @@ export default function AssetDetailPage({ params }: { params: { id: string } }) 
     const fee = fd.get("fee");
     const tax = fd.get("tax");
     
-    if (price) payload.extras.price = parseFloat(price.toString());
-    if (fee) payload.extras.fee = parseFloat(fee.toString());
-    if (tax) payload.extras.tax = parseFloat(tax.toString());
+    if (price) payload.price = parseFloat(price.toString());
+    if (fee) payload.fee = parseFloat(fee.toString());
+    if (tax) payload.tax = parseFloat(tax.toString());
 
     if (selectedType === "exchange") {
       payload.target_asset_id = fd.get("target_asset_id")?.toString();

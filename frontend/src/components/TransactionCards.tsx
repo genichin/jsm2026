@@ -137,7 +137,7 @@ interface TransactionRenderer {
 const defaultRenderer: TransactionRenderer = {
   renderQuantityPrice: (tx) => {
     const qtyDisplay = (tx.quantity < 0 ? "-" : "") + formatNumber(Math.abs(tx.quantity));
-    const price = tx.extras?.price;
+    const price = tx.price;
     return (
       <>
         <span className={tx.quantity < 0 ? "text-rose-600" : "text-emerald-600"}>{qtyDisplay}</span>
@@ -146,7 +146,7 @@ const defaultRenderer: TransactionRenderer = {
     );
   },
   renderAmount: (tx) => {
-    const price = tx.extras?.price;
+    const price = tx.price;
     const amount = typeof price === 'number' ? Math.abs(tx.quantity) * price : 0;
     return <div className="font-mono text-slate-700">{formatNumber(amount)}</div>;
   },
@@ -213,9 +213,9 @@ const cashDividendRenderer: TransactionRenderer = {
   },
   renderExpandedExtraInfo: (tx) => {
     const hasValidExtras = tx.extras && typeof tx.extras === 'object';
-    const extrasPrice = hasValidExtras ? tx.extras?.price : undefined;
-    const extrasFee = hasValidExtras ? tx.extras?.fee : undefined;
-    const extrasTax = hasValidExtras ? tx.extras?.tax : undefined;
+    const extrasPrice = hasValidExtras ? tx.price : undefined;
+    const extrasFee = hasValidExtras ? tx.fee : undefined;
+    const extrasTax = hasValidExtras ? tx.tax : undefined;
     if (!tx.dividend_asset_name) return null;
     return (
       <>
@@ -267,7 +267,7 @@ const assetTransferRenderer: TransactionRenderer = {
 const assetTransactionRenderer: TransactionRenderer = {
   renderQuantityPrice: (tx) => {
     const qtyDisplay = (tx.quantity < 0 ? "-" : "") + formatNumber(Math.abs(tx.quantity));
-    const price = tx.extras?.price;
+    const price = tx.price;
     return (
       <>
         <span className={tx.quantity < 0 ? "text-rose-600" : "text-emerald-600"}>{qtyDisplay}</span>

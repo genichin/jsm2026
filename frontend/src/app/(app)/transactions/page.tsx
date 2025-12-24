@@ -306,9 +306,9 @@ export default function TransactionsPage() {
     // 현금배당의 경우 extras에서 값들을 추출하여 편집 데이터에 추가
     if (row.type === 'cash_dividend' && row.extras) {
       const editData = editingData as any;
-      editData.price = row.extras.price || 0;
-      editData.fee = row.extras.fee || 0;
-      editData.tax = row.extras.tax || 0;
+      editData.price = row.price || 0;
+      editData.fee = row.fee || 0;
+      editData.tax = row.tax || 0;
 
       // dividend_asset_id는 별도로 설정 (폼에서 사용)
       editData.dividend_asset_id = row.extras.asset || '';
@@ -418,9 +418,9 @@ export default function TransactionsPage() {
         const calculatedQuantity = parseFloat(fd.get("quantity")?.toString() || "0");
         
         const extras: any = { asset: dividend_asset_id };
-        if (!isNaN(price) && price > 0) extras.price = price;
-        if (!isNaN(fee) && fee > 0) extras.fee = fee;
-        if (!isNaN(tax) && tax > 0) extras.tax = tax;
+        if (!isNaN(price) && price > 0) payload.price = price;
+        if (!isNaN(fee) && fee > 0) payload.fee = fee;
+        if (!isNaN(tax) && tax > 0) payload.tax = tax;
         
         payload.extras = extras;
         payload.quantity = calculatedQuantity; // 계산된 배당금액을 quantity로 설정
@@ -495,18 +495,14 @@ export default function TransactionsPage() {
         }
       }
 
-      // 매수/매도인 경우 가격/수수료/세금을 extras로 전달
+      // 매수/매도인 경우 가격/수수료/세금을 필드로 전달
       if (type === "buy" || type === "sell") {
         const price = parseFloat(fd.get("price")?.toString() || "0");
         const fee = parseFloat(fd.get("fee")?.toString() || "0");
         const tax = parseFloat(fd.get("tax")?.toString() || "0");
-        const extras: any = {};
-        if (!isNaN(price) && price > 0) extras.price = price;
-        if (!isNaN(fee) && fee > 0) extras.fee = fee;
-        if (!isNaN(tax) && tax > 0) extras.tax = tax;
-        if (Object.keys(extras).length > 0) {
-          payload.extras = { ...(payload.extras || {}), ...extras };
-        }
+        if (!isNaN(price) && price > 0) payload.price = price;
+        if (!isNaN(fee) && fee > 0) payload.fee = fee;
+        if (!isNaN(tax) && tax > 0) payload.tax = tax;
       }
 
       // 현금배당: 현금 자산에 단일 거래로 기록, extras.asset에 배당 자산 ID 포함
@@ -515,14 +511,14 @@ export default function TransactionsPage() {
         const dividend_asset_id = fd.get("dividend_asset_id")?.toString();
         if (!dividend_asset_id) return alert("배당 자산을 선택하세요.");
         
-        // price(세전배당금), fee, tax를 extras에 추가
+        // price(세전배당금), fee, tax를 필드로 추가
         const price = parseFloat(fd.get("price")?.toString() || "0");
         const fee = parseFloat(fd.get("fee")?.toString() || "0");
         const tax = parseFloat(fd.get("tax")?.toString() || "0");
         const extras: any = { asset: dividend_asset_id };
-        if (!isNaN(price) && price > 0) extras.price = price;
-        if (!isNaN(fee) && fee > 0) extras.fee = fee;
-        if (!isNaN(tax) && tax > 0) extras.tax = tax;
+        if (!isNaN(price) && price > 0) payload.price = price;
+        if (!isNaN(fee) && fee > 0) payload.fee = fee;
+        if (!isNaN(tax) && tax > 0) payload.tax = tax;
         
         payload.extras = { ...(payload.extras || {}), ...extras };
       }

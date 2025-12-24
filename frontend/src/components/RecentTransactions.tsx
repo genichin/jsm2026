@@ -46,8 +46,8 @@ export default function RecentTransactions({
               {tx.quantity >= 0 ? '+' : ''}{formatNumber(tx.quantity)}
               
             </div>
-            {tx.extras?.price && (
-              <div className="font-mono text-sm text-gray-500 ml-1"> {formatNumber(tx.extras.price)}</div>
+            {tx.price && (
+              <div className="font-mono text-sm text-gray-500 ml-1"> {formatNumber(tx.price)}</div>
             )}
           </>
         );

@@ -51,9 +51,9 @@ def create_linked_cash_transaction(db: Session, asset_transaction: Transaction, 
     
     # extras에서 거래 금액 정보 추출
     extras = asset_transaction.extras or {}
-    price = float(extras.get('price', asset_transaction.price or 0) or 0)
-    fee = float(extras.get('fee', asset_transaction.fee or 0) or 0)
-    tax = float(extras.get('tax', asset_transaction.tax or 0) or 0)
+    price = asset_transaction.price or 0
+    fee = asset_transaction.fee or 0
+    tax = asset_transaction.tax or 0
         
     # 거래 금액 계산 (Decimal을 float로 변환)
     trade_amount = float(abs(asset_transaction.quantity)) * price
@@ -440,7 +440,7 @@ async def create_transaction(
         )
 
     extras_dict = transaction.extras or {}
-    effective_price = transaction.price if transaction.price is not None else extras_dict.get('price')
+    effective_price = transaction.price
     if transaction.type.value in {'buy', 'sell'} and effective_price is None:
         raise HTTPException(status_code=422, detail="매수/매도 거래는 price가 필요합니다")
     if transaction.type.value in {'deposit', 'withdraw', 'transfer_in', 'transfer_out', 'remittance', 'auto_transfer', 'payment_cancel'}:
@@ -477,9 +477,9 @@ async def create_transaction(
 
     extras_raw = transaction.extras if transaction.extras is not None else None
     extras_dict = transaction.extras or {}
-    price_val = transaction.price if transaction.price is not None else extras_dict.get('price')
-    fee_val = transaction.fee if transaction.fee is not None else extras_dict.get('fee')
-    tax_val = transaction.tax if transaction.tax is not None else extras_dict.get('tax')
+    price_val = transaction.price
+    fee_val = transaction.fee
+    tax_val = transaction.tax
     rp_val = transaction.realized_profit if transaction.realized_profit is not None else extras_dict.get('realized_profit')
     
     # SELL 거래의 경우 realized_profit 자동 계산
