@@ -1,10 +1,23 @@
 import React, { ReactElement } from 'react'
 import { render, RenderOptions } from '@testing-library/react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
-// 필요한 Provider들을 여기에 추가할 수 있습니다
-// 예: QueryClientProvider, AuthProvider 등
+// QueryClient를 테스트용으로 설정
+const createTestQueryClient = () =>
+  new QueryClient({
+    defaultOptions: {
+      queries: { retry: false },
+      mutations: { retry: false },
+    },
+  })
+
 const AllTheProviders = ({ children }: { children: React.ReactNode }) => {
-  return <>{children}</>
+  const testQueryClient = createTestQueryClient()
+  return (
+    <QueryClientProvider client={testQueryClient}>
+      {children}
+    </QueryClientProvider>
+  )
 }
 
 const customRender = (

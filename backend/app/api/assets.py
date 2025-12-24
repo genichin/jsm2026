@@ -22,7 +22,7 @@ from app.core.redis import (
     get_asset_need_trade,
     get_asset_avg_data,
 )
-from app.models import User, Asset, Transaction, Account, Tag, Taggable
+from app.models import User, Asset, Transaction, Account, Tag, Taggable, TransactionType
 from app.core.tag_helpers import (
     validate_taggable_exists,
     validate_tag_allowed_type,
@@ -712,6 +712,7 @@ def _calculate_realized_profit(db: Session, asset_id: str) -> Decimal:
 
     - 매수/유입: 원가와 수량만 갱신
     - 매도/유출: (매도가-수수료-세금)*수량 - 평균원가*수량 을 누적
+    - 현금배당: extras.source_asset_id가 해당 자산인 cash_dividend 거래의 수량을 수익에 합산
     """
     txs = db.query(Transaction).filter(
         Transaction.asset_id == asset_id
@@ -753,6 +754,17 @@ def _calculate_realized_profit(db: Session, asset_id: str) -> Decimal:
                 # 보유 원가 감소 및 수량 감소
                 cost_remain = max(Decimal(0), cost_remain - cost_basis)
             q_remain += qty  # qty는 음수
+
+    # 현금 배당 수익 추가: 해당 자산을 source로 하는 cash_dividend 거래 (DB에서 직접 필터링)
+    dividend_txs = db.query(Transaction).filter(
+        Transaction.type == TransactionType.CASH_DIVIDEND,
+        Transaction.extras['source_asset_id'].astext == asset_id
+    ).all()
+    
+    for div_tx in dividend_txs:
+        # 배당 금액은 quantity에 저장됨 (양수)
+        dividend_amount = Decimal(str(div_tx.quantity or 0))
+        realized += dividend_amount
 
     return realized
 

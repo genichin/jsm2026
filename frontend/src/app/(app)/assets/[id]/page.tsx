@@ -11,6 +11,7 @@ import { DynamicTransactionForm } from "@/components/TransactionForm/DynamicTran
 import { AssetFormModal, type AssetFormData } from "@/components/AssetFormModal";
 import { useMemo, useState } from "react";
 import { formatNumber, formatCurrency, formatPercent } from "@/lib/number-formatter";
+import { useTransactionForm } from "@/hooks/useTransactionForm";
 
 type TransactionType = 
   | "buy" | "sell" | "deposit" | "withdraw" | "transfer_in" | "transfer_out"
@@ -142,13 +143,30 @@ export default function AssetDetailPage({ params }: { params: { id: string } }) 
   const [activitySize] = useState(20);
   const [newComment, setNewComment] = useState("");
 
-  // 거래 추가 모달 상태
-  const [isTransactionModalOpen, setIsTransactionModalOpen] = useState(false);
-  const [selectedAssetId, setSelectedAssetId] = useState<string | null>(null);
-  const [selectedType, setSelectedType] = useState<TransactionType | null>(null);
-  const [editing, setEditing] = useState<any>(null);
-  const [isSuggesting, setIsSuggesting] = useState(false);
-  const [suggestedCategoryId, setSuggestedCategoryId] = useState<string | null>(null);
+  // 거래 폼 훅 초기화
+  const transactionForm = useTransactionForm({
+    assetFilter: params.id,
+    onSuccess: () => {
+      // 훅에서 자동으로 쿼리 무효화됨
+    },
+  });
+
+  const {
+    editing,
+    selectedType,
+    selectedAssetId,
+    isModalOpen: isTransactionModalOpen,
+    suggestedCategoryId,
+    isSuggesting,
+    setSelectedType,
+    setSelectedAssetId,
+    startCreate: startCreateTransaction,
+    startEdit,
+    submitForm: submitTransactionForm,
+    cancelEdit: cancelTransactionEdit,
+    suggestCategory,
+    uploadMut,
+  } = transactionForm;
 
   // 자산 편집 모달 상태
   const [isAssetModalOpen, setIsAssetModalOpen] = useState(false);
@@ -250,55 +268,6 @@ export default function AssetDetailPage({ params }: { params: { id: string } }) 
     return flatten(categoriesQuery.data.categories);
   }, [categoriesQuery.data]);
 
-  // 거래 생성 mutation
-  const createTransactionMut = useMutation({
-    mutationFn: async (payload: any) => {
-      const res = await api.post("/transactions", payload);
-      return res.data;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["asset-transactions"] });
-      queryClient.invalidateQueries({ queryKey: ["asset-summary"] });
-      setIsTransactionModalOpen(false);
-      setEditing(null);
-      setSelectedAssetId(null);
-      setSelectedType(null);
-      setSuggestedCategoryId(null);
-    },
-    onError: (error: any) => {
-      console.error("Transaction creation failed:", error);
-      const errorDetail = error.response?.data?.detail || 
-                          JSON.stringify(error.response?.data) || 
-                          error.message;
-      console.error("Error details:", errorDetail);
-      alert(`거래 생성 실패: ${errorDetail}`);
-    },
-  });
-
-  // 파일 업로드 mutation
-  const uploadMut = useMutation({
-    mutationFn: async (formData: FormData) => {
-      const response = await api.post("/transactions/upload", formData, {
-        headers: { "Content-Type": "multipart/form-data" },
-      });
-      return response.data;
-    },
-    onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ["asset-transactions"] });
-      queryClient.invalidateQueries({ queryKey: ["asset-summary"] });
-      
-      if (data.dry_run) {
-        alert(`미리보기 결과:\n생성될 거래: ${data.created || 0}개\n중복 스킵: ${data.skipped || 0}개\n실패: ${data.failed || 0}개`);
-      } else {
-        setIsUploadModalOpen(false);
-      }
-    },
-    onError: (err: any) => {
-      const msg = err?.response?.data?.detail || "파일 업로드 중 오류가 발생했습니다.";
-      alert(msg);
-    },
-  });
-
   // 가격 변경 mutation
   const updatePriceMut = useMutation({
     mutationFn: async (data: { price: number; change?: number; use_symbol: boolean }) => {
@@ -390,14 +359,6 @@ export default function AssetDetailPage({ params }: { params: { id: string } }) 
       alert(msg);
     },
   });
-
-  // 거래 추가 시작
-  function startCreateTransaction() {
-    setSelectedAssetId(params.id);
-    setSelectedType(null);
-    setEditing(null);
-    setIsTransactionModalOpen(true);
-  }
 
   // 가격 변경 모달 열기
   function openPriceModal() {
@@ -494,114 +455,6 @@ export default function AssetDetailPage({ params }: { params: { id: string } }) 
         payload,
       });
     }
-  }
-
-  // 거래 폼 제출
-  async function submitTransactionForm(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    
-    const form = e.currentTarget as HTMLFormElement;
-    const fd = new FormData(form);
-
-    if (!selectedAssetId) {
-      alert("자산을 선택해주세요.");
-      return;
-    }
-    if (!selectedType) {
-      alert("거래 유형을 선택해주세요.");
-      return;
-    }
-
-    let quantity = parseFloat(fd.get("quantity")?.toString() || "0");
-    
-    // SELL, WITHDRAW 타입은 음수 수량으로 변환
-    if ((selectedType === "sell" || selectedType === "withdraw") && quantity > 0) {
-      quantity = -quantity;
-    }
-
-    const payload: any = {
-      asset_id: selectedAssetId,
-      type: selectedType,
-      quantity,
-      transaction_date: fd.get("transaction_date")?.toString(),
-      description: fd.get("description")?.toString().trim() || null,
-      memo: fd.get("memo")?.toString().trim() || null,
-      extras: {},
-    };
-
-    const categoryId = fd.get("category_id")?.toString();
-    if (categoryId) {
-      payload.category_id = categoryId;
-    }
-
-    const price = fd.get("price");
-    const fee = fd.get("fee");
-    const tax = fd.get("tax");
-    
-    if (price) payload.price = parseFloat(price.toString());
-    if (fee) payload.fee = parseFloat(fee.toString());
-    if (tax) payload.tax = parseFloat(tax.toString());
-
-    if (selectedType === "exchange") {
-      payload.target_asset_id = fd.get("target_asset_id")?.toString();
-      payload.target_amount = parseFloat(fd.get("target_amount")?.toString() || "0");
-    }
-
-    if (selectedType === "cash_dividend") {
-      const dividendAssetId = fd.get("dividend_asset_id")?.toString();
-      if (dividendAssetId) {
-        payload.extras.asset = dividendAssetId;
-      }
-    }
-
-    if (selectedType === "buy" || selectedType === "sell") {
-      const cashAssetId = fd.get("cash_asset_id")?.toString();
-      if (cashAssetId) {
-        payload.cash_asset_id = cashAssetId;
-      }
-    }
-
-    await createTransactionMut.mutateAsync(payload);
-  }
-
-  // 카테고리 추천
-  async function suggestCategory() {
-    const form = document.querySelector("form") as HTMLFormElement;
-    if (!form) return;
-    const description = (form.querySelector("[name='description']") as HTMLInputElement)?.value?.trim();
-    if (!description) {
-      alert("설명을 입력하세요.");
-      return;
-    }
-    setIsSuggesting(true);
-    try {
-      const res = await api.post("/auto-rules/simulate", { description });
-      const data = res.data;
-      if (data.matched && data.category_id) {
-        setSuggestedCategoryId(data.category_id);
-        const categorySelect = form.querySelector("[name='category_id']") as HTMLSelectElement;
-        if (categorySelect) {
-          categorySelect.value = data.category_id;
-        }
-      } else {
-        setSuggestedCategoryId(null);
-        alert("매칭되는 자동 규칙이 없습니다.");
-      }
-    } catch (e) {
-      console.error(e);
-      alert("자동 추천 실패");
-    } finally {
-      setIsSuggesting(false);
-    }
-  }
-
-  // 모달 닫기
-  function cancelTransactionEdit() {
-    setIsTransactionModalOpen(false);
-    setEditing(null);
-    setSelectedAssetId(null);
-    setSelectedType(null);
-    setSuggestedCategoryId(null);
   }
 
   // 댓글 작성
@@ -1442,7 +1295,7 @@ export default function AssetDetailPage({ params }: { params: { id: string } }) 
       >
         <DynamicTransactionForm
           transactionType={(selectedType || 'deposit') as TransactionType}
-          editing={editing}
+          editing={editing as any}
           isEditMode={false}
           assets={allAssetsQuery.data || [{
             id: params.id,
@@ -1452,9 +1305,9 @@ export default function AssetDetailPage({ params }: { params: { id: string } }) 
             account_id: asset?.account_id || ''
           }]}
           categories={categoriesFlat}
-          selectedAssetId={params.id}
-          onAssetChange={() => {}}
-          onTypeChange={(type) => setSelectedType(type)}
+          selectedAssetId={selectedAssetId || params.id}
+          onAssetChange={setSelectedAssetId}
+          onTypeChange={setSelectedType}
           onSubmit={submitTransactionForm}
           onCancel={cancelTransactionEdit}
           onSuggestCategory={suggestCategory}

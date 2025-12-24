@@ -3,12 +3,13 @@
 import { useMemo, useState, useEffect } from "react";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import TransactionCards from "@/components/TransactionCards";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { DataTable } from "@/components/DataTable";
 import { Modal } from "@/components/Modal";
 import { ColumnDef } from "@tanstack/react-table";
 import { TransactionType, transactionTypeOptions, transactionTypeLabels } from "@/lib/transactionTypes";
+import { useTransactionForm } from "@/hooks/useTransactionForm";
 import { DynamicTransactionForm, CategoryBrief as CategoryBriefType } from "@/components/TransactionForm";
 import { Button } from "@/components/Button";
 
@@ -63,7 +64,6 @@ type AccountsListResponse = { total: number; accounts: { id: string; name: strin
 type CategoriesTreeResponse = { id: string; name: string; flow_type: string }[];
 
 export default function TransactionsPage() {
-  const qc = useQueryClient();
   const searchParams = useSearchParams();
   const router = useRouter();
   const pathname = usePathname();
@@ -73,19 +73,43 @@ export default function TransactionsPage() {
   const [accountFilter, setAccountFilter] = useState<string | "">("")
   const [typeFilter, setTypeFilter] = useState<TransactionType | "">("")
   const [categoryFilter, setCategoryFilter] = useState<string | "">("")
-  const [flowTypeFilter, setFlowTypeFilter] = useState<string>("")  // "", expense|income|transfer|investment|neutral|undefined
+  const [flowTypeFilter, setFlowTypeFilter] = useState<string>("")
   const [page, setPage] = useState(1);
   const [size, setSize] = useState(20);
-  const [isModalOpen, setIsModalOpen] = useState(false);
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
-  const [suggestedCategoryId, setSuggestedCategoryId] = useState<string | null>(null);
-  const [isSuggesting, setIsSuggesting] = useState(false);
   const [viewMode, setViewMode] = useState<"table" | "card">(() => {
     if (typeof window === "undefined") return "card";
     const saved = window.localStorage.getItem("txViewMode");
     if (saved === "card" || saved === "table") return saved as any;
     return "card";
   });
+
+  // Transaction form hook
+  const transactionForm = useTransactionForm({
+    typeFilter,
+    assetFilter,
+    onSuccess: () => {
+      // Hook에서 자동으로 쿼리 무효화됨
+    },
+  });
+
+  const {
+    editing,
+    selectedType,
+    selectedAssetId,
+    isModalOpen,
+    suggestedCategoryId,
+    isSuggesting,
+    setSelectedType,
+    setSelectedAssetId,
+    startCreate,
+    startEdit,
+    submitForm,
+    cancelEdit,
+    suggestCategory,
+    deleteMut,
+    uploadMut,
+  } = transactionForm;
 
   // URL 파라미터에서 초기 필터 설정
   useEffect(() => {
@@ -97,20 +121,7 @@ export default function TransactionsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams]);
 
-  /**
-   * URL을 업데이트하는 헬퍼 함수
-   * Updates URL with the selected asset filter to keep state and URL in sync
-   */
-  const updateUrlWithAssetFilter = (assetId: string) => {
-    const params = new URLSearchParams(searchParams.toString());
-    if (assetId) {
-      params.set('asset_id', assetId);
-    } else {
-      params.delete('asset_id');
-    }
-    const url = `${pathname}?${params.toString()}`;
-    router.push(url as any, { scroll: false });
-  };
+
 
   // Assets, Accounts, Categories for filters/create
   const assetsQuery = useQuery<AssetsListResponse>({
@@ -164,372 +175,6 @@ export default function TransactionsPage() {
 
   const transactions = listQuery.data?.items ?? [];
 
-  // Inline create/edit state
-  const [editing, setEditing] = useState<Partial<Transaction> | null>(null);
-  const [selectedType, setSelectedType] = useState<TransactionType | "">("");
-  const [selectedAssetId, setSelectedAssetId] = useState<string>("");
-
-  // 선택한 자산의 계좌에 속한 현금 자산 필터링 (환전용, FormFields에서 자체 처리)
-  const cashAssetsInSameAccount = useMemo(() => {
-    if (!selectedAssetId || !assetsQuery.data?.items) return [];
-    
-    const selectedAsset = assetsQuery.data.items.find(a => a.id === selectedAssetId);
-    if (!selectedAsset) return [];
-    
-    // 선택한 자산과 같은 계좌의 현금 자산만 필터링
-    return assetsQuery.data.items.filter(a => 
-      a.asset_type === 'cash' &&
-      a.account_id === selectedAsset.account_id
-    );
-  }, [selectedAssetId, assetsQuery.data?.items]);
-
-  // 매수/매도 시 동일 통화의 현금 자산 필터링 (FormFields에서 자체 처리)
-  const cashAssetsForBuySell = useMemo(() => {
-    if (!selectedAssetId || !assetsQuery.data?.items) return [];
-    
-    const selectedAsset = assetsQuery.data.items.find(a => a.id === selectedAssetId);
-    if (!selectedAsset) return [];
-    
-    // 선택한 자산과 같은 통화의 현금 자산만 필터링
-    return assetsQuery.data.items.filter(a => 
-      a.asset_type === 'cash' &&
-      a.currency === selectedAsset.currency &&
-      a.account_id === selectedAsset.account_id
-    );
-  }, [selectedAssetId, assetsQuery.data?.items]);
-
-  // Mutations
-  const createMut = useMutation({
-    mutationFn: async (payload: any) => (await api.post("/transactions", payload)).data as Transaction,
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["transactions"] });
-      qc.invalidateQueries({ queryKey: ["assets"] });
-      setEditing(null);
-      setIsModalOpen(false);
-    },
-    onError: (err: any) => {
-      const msg = err?.response?.data?.detail || "거래 생성 중 오류가 발생했습니다.";
-      alert(msg);
-    },
-  });
-
-  const updateMut = useMutation({
-    mutationFn: async ({ id, payload }: { id: string; payload: any }) =>
-      (await api.put(`/transactions/${id}`, payload)).data as Transaction,
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["transactions"] });
-      qc.invalidateQueries({ queryKey: ["assets"] });
-      setEditing(null);
-      setIsModalOpen(false);
-    },
-    onError: (err: any) => {
-      const msg = err?.response?.data?.detail || "거래 수정 중 오류가 발생했습니다.";
-      alert(msg);
-    },
-  });
-
-  const deleteMut = useMutation({
-    mutationFn: async (id: string) => (await api.delete(`/transactions/${id}`)).data,
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["transactions"] });
-      qc.invalidateQueries({ queryKey: ["assets"] });
-    },
-    onError: (err: any) => {
-      const msg = err?.response?.data?.detail || "거래 삭제 중 오류가 발생했습니다.";
-      alert(msg);
-    },
-  });
-
-  const uploadMut = useMutation({
-    mutationFn: async (formData: FormData) => {
-      const response = await api.post("/transactions/upload", formData, {
-        headers: { "Content-Type": "multipart/form-data" },
-      });
-      return response.data;
-    },
-    onSuccess: (data: any) => {
-      qc.invalidateQueries({ queryKey: ["transactions"] });
-      qc.invalidateQueries({ queryKey: ["assets"] });
-      
-      const successCount = data.created || 0;
-      const skippedCount = data.skipped || 0;
-      const errorCount = data.failed || 0;
-      
-      if (errorCount > 0) {
-        const errorMsg = data.errors.slice(0, 3).map((e: any) => 
-          `행 ${e.row}: ${e.error}`
-        ).join('\n');
-        alert(`${successCount}개 생성, ${skippedCount}개 중복 스킵, ${errorCount}개 오류:\n${errorMsg}${errorCount > 3 ? '\n...' : ''}`);
-      } else if (skippedCount > 0) {
-        alert(`${successCount}개 생성, ${skippedCount}개 중복으로 스킵되었습니다.`);
-      } else {
-        alert(`${successCount}개의 거래가 성공적으로 생성되었습니다.`);
-      }
-      
-      setIsUploadModalOpen(false);
-    },
-    onError: (err: any) => {
-      const msg = err?.response?.data?.detail || "파일 업로드 중 오류가 발생했습니다.";
-      alert(msg);
-    },
-  });
-
-  function startCreate() {
-    const initialType = (typeFilter || "deposit") as TransactionType;
-    // URL 파라미터에 asset_id가 있으면 자동 선택
-    const initialAssetId = assetFilter || "";
-    
-    // 로컬 시간으로 기본값 생성
-    const now = new Date();
-    const pad = (n: number) => String(n).padStart(2, '0');
-    const localDateTime = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
-    
-    setSelectedType(initialType);
-    setSelectedAssetId(initialAssetId);
-    setEditing({
-      asset_id: initialAssetId,
-      type: initialType,
-      quantity: 0,
-      transaction_date: localDateTime,
-      description: "",
-      memo: "",
-    });
-    setIsModalOpen(true);
-  }
-
-  function startEdit(row: Transaction) {
-    setSelectedType(row.type);
-    setSelectedAssetId(row.asset_id);
-    
-    // datetime-local input을 위해 ISO 문자열을 YYYY-MM-DDTHH:mm:ss 형식으로 변환
-    const editingData = {
-      ...row,
-      transaction_date: new Date(row.transaction_date).toISOString().slice(0, 19)
-    };
-    
-    // 현금배당의 경우 extras에서 값들을 추출하여 편집 데이터에 추가
-    if (row.type === 'cash_dividend' && row.extras) {
-      const editData = editingData as any;
-      editData.price = row.price || 0;
-      editData.fee = row.fee || 0;
-      editData.tax = row.tax || 0;
-
-      // dividend_asset_id는 별도로 설정 (폼에서 사용)
-      editData.dividend_asset_id = row.extras.asset || '';
-    }
-    
-    setEditing(editingData);
-    setIsModalOpen(true);
-  }
-
-  function cancelEdit() {
-    setEditing(null);
-    setSelectedType("");
-    setSelectedAssetId("");
-    setIsModalOpen(false);
-    setSuggestedCategoryId(null);
-  }
-
-  async function suggestCategory() {
-    const form = document.querySelector("form") as HTMLFormElement;
-    if (!form) return;
-    const description = (form.querySelector("[name='description']") as HTMLInputElement)?.value?.trim();
-    if (!description) {
-      alert("설명을 입력하세요.");
-      return;
-    }
-    setIsSuggesting(true);
-    try {
-      const res = await api.post("/auto-rules/simulate", { description });
-      const data = res.data;
-      if (data.matched && data.category_id) {
-        setSuggestedCategoryId(data.category_id);
-        // 카테고리 select에 자동 선택
-        const categorySelect = form.querySelector("[name='category_id']") as HTMLSelectElement;
-        if (categorySelect) {
-          categorySelect.value = data.category_id;
-        }
-      } else {
-        setSuggestedCategoryId(null);
-        alert("매칭되는 자동 규칙이 없습니다.");
-      }
-    } catch (e) {
-      console.error(e);
-      alert("자동 추천 실패");
-    } finally {
-      setIsSuggesting(false);
-    }
-  }
-
-  async function submitForm(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    if (!editing) return;
-    const form = e.currentTarget as HTMLFormElement;
-    const fd = new FormData(form);
-
-    if (editing.id) {
-      // Update: type, description, memo, category_id, transaction_date
-      // 거래일시 처리: datetime-local 형식(YYYY-MM-DDTHH:mm:ss)을 ISO 문자열로 변환
-      let transactionDate = fd.get("transaction_date")?.toString();
-      if (transactionDate) {
-        // Convert local time to UTC for backend
-        const localDate = new Date(transactionDate);
-        transactionDate = new Date(localDate.getTime() - localDate.getTimezoneOffset() * 60000).toISOString();
-      }
-      
-      const payload: any = {
-        description: fd.get("description")?.toString().trim() || null,
-        memo: fd.get("memo")?.toString().trim() || null,
-        transaction_date: transactionDate,
-      };
-      
-      // type 처리
-      const typeValue = fd.get("type")?.toString();
-      if (typeValue) {
-        payload.type = typeValue;
-      }
-      
-      // category_id 처리: 빈 문자열은 null로, 값이 있으면 그대로
-      const categoryIdValue = fd.get("category_id")?.toString();
-      if (categoryIdValue) {
-        payload.category_id = categoryIdValue;
-      } else {
-        payload.category_id = null;
-      }
-      
-      // related_transaction_id 처리 (out_asset/in_asset 등 연결 거래)
-      const relatedTransactionIdValue = fd.get("related_transaction_id")?.toString();
-      if (relatedTransactionIdValue) {
-        payload.related_transaction_id = relatedTransactionIdValue;
-      } else {
-        payload.related_transaction_id = null;
-      }
-      
-      // flow_type 처리
-      const flowTypeValue = fd.get("flow_type")?.toString();
-      if (flowTypeValue) {
-        payload.flow_type = flowTypeValue;
-      }
-      
-      // 현금배당 업데이트 시 extras 및 quantity 처리
-      if (editing.type === "cash_dividend") {
-        const dividend_asset_id = fd.get("dividend_asset_id")?.toString();
-        if (!dividend_asset_id) return alert("배당 자산을 선택하세요.");
-        
-        const price = parseFloat(fd.get("price")?.toString() || "0");
-        const fee = parseFloat(fd.get("fee")?.toString() || "0");
-        const tax = parseFloat(fd.get("tax")?.toString() || "0");
-        const calculatedQuantity = parseFloat(fd.get("quantity")?.toString() || "0");
-        
-        const extras: any = { asset: dividend_asset_id };
-        if (!isNaN(price) && price > 0) payload.price = price;
-        if (!isNaN(fee) && fee > 0) payload.fee = fee;
-        if (!isNaN(tax) && tax > 0) payload.tax = tax;
-        
-        payload.extras = extras;
-        payload.quantity = calculatedQuantity; // 계산된 배당금액을 quantity로 설정
-      }
-      
-      await updateMut.mutateAsync({ id: editing.id as string, payload });
-    } else {
-      // Create
-      const asset_id = selectedAssetId; // state에서 직접 가져오기 (자산 선택 후 필드가 사라지므로)
-      const type = fd.get("type")?.toString() as TransactionType;
-      if (!asset_id) return alert("자산을 선택하세요.");
-
-      let quantity = parseFloat(fd.get("quantity")?.toString() || "0");
-      
-      // 매도/출금은 음수로 변환
-      if (type === "sell" || type === "withdraw" || type === "transfer_out") {
-        quantity = -Math.abs(quantity);
-      } else {
-        // 매수/입금은 양수로 보장
-        if (type === "buy" || type === "deposit" || type === "transfer_in") {
-          quantity = Math.abs(quantity);
-        }
-      }
-      
-      // 거래일시 처리: datetime-local 형식(YYYY-MM-DDTHH:mm:ss)을 ISO 문자열로 변환
-      let transactionDate = fd.get("transaction_date")?.toString() || new Date().toISOString();
-      if (transactionDate && !transactionDate.endsWith('Z') && transactionDate.length === 19) {
-        // datetime-local 형식이면 ISO 형식으로 변환
-        transactionDate = transactionDate + '.000Z';
-      }
-
-      const payload: any = {
-        asset_id,
-        type,
-        quantity,
-        transaction_date: transactionDate,
-        description: fd.get("description")?.toString().trim() || null,
-        memo: fd.get("memo")?.toString().trim() || null,
-        category_id: fd.get("category_id")?.toString() || null,
-      };
-
-      // out_asset/in_asset 타입은 현금 거래 자동 생성 건너뛰기
-      if (type === "out_asset" || type === "in_asset") {
-        payload.skip_auto_cash_transaction = true;
-      }
-
-      // 환전인 경우 대상 자산과 금액 추가
-      if (type === "exchange") {
-        const target_asset_id = fd.get("target_asset_id")?.toString();
-        const target_amount = fd.get("target_amount")?.toString();
-        const exchange_rate = fd.get("exchange_rate")?.toString();
-        
-        if (!target_asset_id) return alert("환전 대상 자산을 선택하세요.");
-        if (!target_amount || parseFloat(target_amount) <= 0) return alert("환전 대상 금액을 입력하세요.");
-        
-        payload.target_asset_id = target_asset_id;
-        payload.target_amount = parseFloat(target_amount);
-        
-        // 환율 정보를 extras에 추가
-        if (exchange_rate && parseFloat(exchange_rate) > 0) {
-          payload.extras = {
-            exchange_rate: parseFloat(exchange_rate)
-          };
-        }
-      }
-
-      // 매수/매도인 경우 현금 자산 추가
-      if (type === "buy" || type === "sell") {
-        const cash_asset_id = fd.get("cash_asset_id")?.toString();
-        if (cash_asset_id) {
-          payload.cash_asset_id = cash_asset_id;
-        }
-      }
-
-      // 매수/매도인 경우 가격/수수료/세금을 필드로 전달
-      if (type === "buy" || type === "sell") {
-        const price = parseFloat(fd.get("price")?.toString() || "0");
-        const fee = parseFloat(fd.get("fee")?.toString() || "0");
-        const tax = parseFloat(fd.get("tax")?.toString() || "0");
-        if (!isNaN(price) && price > 0) payload.price = price;
-        if (!isNaN(fee) && fee > 0) payload.fee = fee;
-        if (!isNaN(tax) && tax > 0) payload.tax = tax;
-      }
-
-      // 현금배당: 현금 자산에 단일 거래로 기록, extras.asset에 배당 자산 ID 포함
-      if (type === "cash_dividend") {
-        // quantity는 이미 위에서 입력값을 반영 (양수)
-        const dividend_asset_id = fd.get("dividend_asset_id")?.toString();
-        if (!dividend_asset_id) return alert("배당 자산을 선택하세요.");
-        
-        // price(세전배당금), fee, tax를 필드로 추가
-        const price = parseFloat(fd.get("price")?.toString() || "0");
-        const fee = parseFloat(fd.get("fee")?.toString() || "0");
-        const tax = parseFloat(fd.get("tax")?.toString() || "0");
-        const extras: any = { asset: dividend_asset_id };
-        if (!isNaN(price) && price > 0) payload.price = price;
-        if (!isNaN(fee) && fee > 0) payload.fee = fee;
-        if (!isNaN(tax) && tax > 0) payload.tax = tax;
-        
-        payload.extras = { ...(payload.extras || {}), ...extras };
-      }
-
-      await createMut.mutateAsync(payload);
-    }
-  }
 
   // Column visibility state (persisted)
   const [hiddenCols, setHiddenCols] = useState<Record<string, boolean>>(() => {
@@ -936,8 +581,8 @@ export default function TransactionsPage() {
           items={transactions.map(t => {
             // 현금배당의 경우 extras.asset에서 배당 자산 이름 찾기
             let dividendAssetName = null;
-            if (t.type === 'cash_dividend' && t.extras?.asset && assetsQuery.data?.items) {
-              const dividendAsset = assetsQuery.data.items.find(a => a.id === t.extras!.asset);
+            if (t.type === 'cash_dividend' && t.extras?.source_asset_id && assetsQuery.data?.items) {
+              const dividendAsset = assetsQuery.data.items.find(a => a.id === t.extras!.source_asset_id);
               dividendAssetName = dividendAsset?.name || null;
             }
             
