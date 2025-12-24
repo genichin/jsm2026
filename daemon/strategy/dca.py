@@ -45,7 +45,8 @@ class DCAStrategy(BaseStrategy):
                 symbol=config.symbol,
                 side=OrderSide.BUY,
                 qty=buy_quantity,
-                price=current_price
+                price=current_price,
+                asset_id=config.asset_id
             )
             
             logger.info(f"DCA order placed: {order.order_id} for {buy_quantity} {config.symbol} @ {current_price}")

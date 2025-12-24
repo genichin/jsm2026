@@ -61,7 +61,8 @@ class RebalanceStrategy(BaseStrategy):
                 symbol=config.symbol,
                 side=side,
                 qty=adjust_quantity,
-                price=current_price
+                price=current_price,
+                asset_id=config.asset_id
             )
             
             logger.info(f"Rebalance order placed: {order.order_id} ({side.value}) {adjust_quantity} {config.symbol} @ {current_price}")

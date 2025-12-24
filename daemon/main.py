@@ -6,7 +6,7 @@ import logging
 import sys
 import threading
 import os
-from typing import Callable, Optional, Tuple
+from typing import Callable, Optional, Tuple, Dict
 try:
     import fcntl  # POSIX file locking
 except ImportError:  # pragma: no cover
@@ -42,12 +42,71 @@ class DaemonScheduler:
             broker_type=settings.broker,
             access_key=settings.broker_app_key,
             secret_key=settings.broker_app_secret,
-            account_id=settings.account_id
+            account_id=settings.account_id,
+            account_config_ttl=settings.account_config_ttl_sec
         )
         self.strategy_runner = StrategyRunner(self.broker)
         # 중복 실행 방지 락
         self._strategy_lock = threading.Lock()
         self._strategy_file_lock_fh = None
+        # 계좌 설정 캐시
+        self._account_config: Optional[Dict] = None
+        self._account_config_cache_time: Optional[object] = None
+        # TTL은 설정에서 가져와 브로커와 일관되게 사용
+        self._account_config_ttl: int = settings.account_config_ttl_sec
+    
+    def _get_account_config(self, force_refresh: bool = False) -> Dict:
+        """
+        계좌 설정 조회 (캐싱)
+        
+        Args:
+            force_refresh: 강제 새로고침 여부
+        
+        Returns:
+            Dict: accounts.daemon_config 내용
+        """
+        from datetime import datetime
+        
+        now = datetime.now()
+        
+        # 캐시 유효성 검사
+        cache_valid = (
+            not force_refresh
+            and self._account_config is not None
+            and self._account_config_cache_time is not None
+            and (now - self._account_config_cache_time).total_seconds() < self._account_config_ttl
+        )
+        
+        if cache_valid:
+            logger.debug("Using cached account config")
+            return self._account_config
+        
+        # Backend API에서 계좌 설정 조회
+        try:
+            logger.info(f"Fetching account config for {settings.account_id}")
+            response = asset_api.client.get(f"/accounts/{settings.account_id}")
+            account_data = response.json()
+            daemon_config = account_data.get("daemon_config", {})
+            
+            # 캐시 업데이트
+            self._account_config = daemon_config
+            self._account_config_cache_time = now
+            
+            logger.info(f"Fetched account config with keys: {list(daemon_config.keys()) if daemon_config else 'empty'}")
+            return daemon_config
+            
+        except Exception as e:
+            logger.error(f"Failed to fetch account config: {str(e)}")
+            # 에러 시 기존 캐시 반환
+            return self._account_config if self._account_config else {}
+    
+    def _invalidate_account_config_cache(self):
+        """
+        계좌 설정 캐시 무효화 (전략 실행 후)
+        """
+        self._account_config = None
+        self._account_config_cache_time = None
+        logger.debug("Account config cache invalidated")
     
     def setup_jobs(self):
         """모든 스케줄 작업 설정"""
@@ -282,8 +341,12 @@ class DaemonScheduler:
             
                 # 2. 브로커에서 최신 잔고 조회
                 broker_balance = self.broker.get_balance()
+
+                # 3. 백엔드에서 계좌 정보 조회 (캐싱)
+                account_config = self._get_account_config()
+                logger.debug(f"Account config keys: {list(account_config.keys()) if account_config else 'empty'}")
                 
-                # 3. 백엔드에서 자산 설정 조회
+                # 4. 백엔드에서 자산 설정 조회
                 # ACCOUNT_ID가 설정된 경우 해당 계좌만, 현금 제외
                 params = {"size": 100}
                 if settings.account_id:
@@ -332,12 +395,13 @@ class DaemonScheduler:
                         logger.warning(f"Unknown strategy type for {symbol}: {strategy_type_str}")
                         continue
                     
-                    # 전략 설정 생성
+                    # 전략 설정 생성 (계좌 공통 설정 포함)
                     strategy_config = StrategyConfig(
                         strategy_type=strategy_type,
                         asset_id=asset_id,
                         symbol=symbol,
-                        config=strategy.get("config", {})
+                        config=strategy.get("config", {}),
+                        account_config=account_config  # 계좌 공통 설정 전달
                     )
                     
                     # 전략 실행 (필요시 추가 인자 전달)
@@ -370,6 +434,8 @@ class DaemonScheduler:
                         
                         if result:
                             logger.info(f"Strategy executed successfully for {symbol}")
+                            # 주문 발생 시 계좌 설정 캐시 무효화
+                            self._invalidate_account_config_cache()
                         else:
                             logger.debug(f"Strategy did not trigger for {symbol}")
                     

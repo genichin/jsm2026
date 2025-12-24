@@ -48,7 +48,8 @@ class StopLossStrategy(BaseStrategy):
                         symbol=config.symbol,
                         side=OrderSide.SELL,
                         qty=balance.quantity,
-                        price=current_price
+                        price=current_price,
+                        asset_id=config.asset_id
                     )
                     
                     logger.info(f"Stop loss order placed: {order.order_id} for {balance.quantity} {config.symbol}")

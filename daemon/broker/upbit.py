@@ -35,7 +35,7 @@ logger = logging.getLogger(__name__)
 class UpbitConnector(BrokerConnector):
     """업비트(암호화폐) 커넥터"""
     
-    def __init__(self, access_key: str = None, secret_key: str = None):
+    def __init__(self, access_key: str = None, secret_key: str = None, **kwargs):
         """
         업비트 API 초기화
         
@@ -43,6 +43,7 @@ class UpbitConnector(BrokerConnector):
             access_key: Upbit API Access Key
             secret_key: Upbit API Secret Key
         """
+        super().__init__(**kwargs)  # 부모 클래스 초기화 (account_config 캐시 설정)
         self.access_key = access_key or ""
         self.secret_key = secret_key or ""
         self.base_url = "https://api.upbit.com/v1"

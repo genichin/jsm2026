@@ -66,11 +66,17 @@ BROKER=demo
 BROKER_APP_KEY=<app-key>
 BROKER_APP_SECRET=<app-secret>
 BROKER_ACCOUNT=12345678-01
+# 처리 대상 계좌 (백엔드 accounts.id)
+ACCOUNT_ID=8623e07e-0edf-4dc4-9ca2-6978acdb7c9f
 
 # 리스크 한도
 MAX_ORDER_VALUE_KRW=1000000
 SLIPPAGE_BPS=50        # 0.50%
 MAX_RETRY=3
+
+# 계좌 설정 캐시 TTL (초)
+# broker/main 모두 동일 값 사용, 기본값 600
+ACCOUNT_CONFIG_TTL_SEC=600
 ```
 
 **스케줄러 주의사항**:

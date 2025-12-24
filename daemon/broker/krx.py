@@ -50,9 +50,10 @@ class KRXConnector(BrokerConnector):
         Args:
             firm_name: 금융사명 (예: '키움증권', '한국투자')
         """
-        self.account_id = kwargs.get("account_id", "")
+        super().__init__(**kwargs)  # 부모 클래스 초기화 (account_config 캐시 설정)
         self.firm_name = firm_name
         self.symbol_market_map: Dict[str, str] = {}  # symbol -> market (KOSPI/KOSDAQ)
+        self._asset_cache: Dict[str, dict] = {}  # symbol -> asset 정보 캐시
         
         logger.info(f"KRXConnector initialized for {firm_name or 'KRX'}")
     
@@ -76,7 +77,10 @@ class KRXConnector(BrokerConnector):
             
             logger.info(f"Backend assets: {len(tradable_assets)} tradable (total: {len(assets)})")
             
-            # Balance 객체로 변환 및 market 정보 캐싱
+            # 자산 정보 캐시 초기화
+            self._asset_cache.clear()
+            
+            # Balance 객체로 변환 및 market/자산 정보 캐싱
             balances = {}
             for asset in tradable_assets:
                 symbol = asset.get("symbol") or asset.get("id")
@@ -86,6 +90,10 @@ class KRXConnector(BrokerConnector):
                 # market 정보 캐싱
                 if market and symbol:
                     self.symbol_market_map[symbol] = market
+                
+                # 자산 정보 캐싱
+                if symbol:
+                    self._asset_cache[symbol] = asset
                 
                 # avg_price는 백엔드에서 제공하지 않으므로 0으로 설정
                 balances[symbol] = Balance(
@@ -104,31 +112,55 @@ class KRXConnector(BrokerConnector):
         return []
     
     def place_order(self, symbol: str, side: OrderSide, qty: float, 
-                   price: float = None) -> Order:
+                   price: float = None, asset_id: str = None) -> Order:
+        """
+        주문 접수 (KRX는 수동 거래로 처리됨)
+        
+        수동 거래의 경우 백엔드 API를 통해 해당 자산의 redis에 주문이 필요함을 알려줌
+        asset:{asset_id}:need_trade:price, asset:{asset_id}:need_trade:quantity
+        (실제 주문은 사용자가 증권사 HTS/MTS에서 직접 수행)
+        
+        Args:
+            symbol: 종목코드
+            side: 매수/매도
+            qty: 주문수량
+            price: 주문가격
+            asset_id: 자산 ID (제공되면 자산 조회 생략)
+        
+        Returns:
+            Order: 생성된 주문 객체
+        """
         logger.debug(f"Placing manual order: {side.value} {qty} {symbol}@{price or 'MKT'}")
 
-        '''
-        수동 거래의 경우 백엔드 API를 통해 해당 자산의 redis에 주문이 필요함을 알려줌 asset:{asset_id}:need_trade:price, asset:{asset_id}:need_trade:quantity
-        (실제 주문은 사용자가 증권사 HTS/MTS에서 직접 수행)
-        '''
         try:
-            # 1) 자산 조회 (account_id와 symbol 동시 필터링)
-            params = {"size": 1, "symbol": symbol, "account_id": self.account_id}
-            assets_response = asset_api.list_assets(**params)
-            items = assets_response.get("items", []) if assets_response else []
-
-            # symbol 필터 미지원 백엔드일 경우를 대비해 후처리
-            asset = None
-            if items:
-                asset = items[0]
-
-            if not asset:
-                logger.debug(f"place_order lookup: asset not found for {symbol}")
-                return None
-            
-            asset_id = asset.get("id")
+            # 1) asset_id 확보: 직접 전달받거나 캐시에서 조회
             if not asset_id:
-                logger.debug(f"place_order lookup: asset_id not found for {symbol}")
+                if symbol in self._asset_cache:
+                    # 캐시 히트
+                    asset_id = self._asset_cache[symbol].get("id")
+                    logger.debug(f"Using cached asset_id for {symbol}: {asset_id}")
+                else:
+                    # 캐시 미스: API 조회
+                    logger.debug(f"Cache miss for {symbol}, fetching from API")
+                    params = {"size": 1, "symbol": symbol, "account_id": self.account_id}
+                    assets_response = asset_api.list_assets(**params)
+                    items = assets_response.get("items", []) if assets_response else []
+
+                    # symbol 필터 미지원 백엔드일 경우를 대비해 후처리
+                    asset = items[0] if items else None
+
+                    if not asset:
+                        logger.debug(f"place_order lookup: asset not found for {symbol}")
+                        return None
+                    
+                    asset_id = asset.get("id")
+                    # 조회한 자산 정보를 캐시에 저장
+                    if asset_id and symbol:
+                        self._asset_cache[symbol] = asset
+                        logger.debug(f"Cached asset info for {symbol}")
+            
+            if not asset_id:
+                logger.debug(f"place_order: asset_id not found for {symbol}")
                 return None
             # 2) 자산 수동 거래 정보 업데이트
             asset_api.update_asset_need_trade(
@@ -137,7 +169,22 @@ class KRXConnector(BrokerConnector):
                 quantity=qty if side == OrderSide.BUY else -qty
             )
             logger.info(f"Updated need_trade for asset {asset_id}: {side.value} {qty} @ {price}")
-            # 3) 주문 객체 생성 및 반환 (실제 주문 ID는 없음)
+
+            # 3) Telegram 알림 발송 (accounts.daemon_config.telegram)
+            # 종목명 조회 (캐시된 asset 정보에서)
+            asset_name = "미상"
+            if symbol in self._asset_cache:
+                asset_name = self._asset_cache[symbol].get("name", "미상")
+            
+            side_text = "매수" if side == OrderSide.BUY else "매도"
+            message = (
+                f"[KRX 주문 알림]\n"
+                f"{asset_name}({symbol})\n"
+                f"{side_text} / {qty:.0f}주 / {price:.0f}원" if price else f"{side_text} / {qty:.0f}주"
+            )
+            self._send_telegram_notification(message=message)
+
+            # 4) 주문 객체 생성 및 반환 (실제 주문 ID는 없음)
             order = Order(
                 order_id="MANUAL",
                 symbol=symbol,
@@ -152,36 +199,6 @@ class KRXConnector(BrokerConnector):
         except Exception as e:
             logger.error(f"Failed to place order: {e}")
             return None
-        # """
-        # 주문 접수 (KRX는 수동 거래로 처리됨)
-        
-        # Args:
-        #     symbol: 종목코드
-        #     side: 매수/매도
-        #     qty: 주문수량
-        #     price: 주문가격
-        
-        # Returns:
-        #     Order: 생성된 주문 객체
-        # """
-        # try:
-        #     order_id = f"ORD{datetime.now().strftime('%Y%m%d%H%M%S')}"
-        #     order = Order(
-        #         order_id=order_id,
-        #         symbol=symbol,
-        #         side=side,
-        #         quantity=qty,
-        #         price=price or 0.0,
-        #         status=OrderStatus.PENDING,
-        #         executed_quantity=0.0
-        #     )
-        #     self.pending_orders[order_id] = order
-        #     logger.info(f"Created pending order {order_id}: {side.value} {qty} {symbol}")
-        #     return order
-        
-        # except Exception as e:
-        #     logger.error(f"Failed to place order: {e}")
-        #     raise
     
     def cancel_order(self, order_id: str) -> bool:
         return False

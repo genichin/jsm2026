@@ -96,9 +96,9 @@ CREATE INDEX idx_users_is_active ON users(is_active);
 
 ---
 
-### 2. accounts (계좌)
+### 2. users (사용자 정보)
 
-사용자의 금융 계좌 정보를 관리합니다.
+사용자 정보를 관리합니다.
 
 ```sql
 CREATE TABLE users (

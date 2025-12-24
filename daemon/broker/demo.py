@@ -12,7 +12,8 @@ logger = logging.getLogger(__name__)
 class DemoBrokerConnector(BrokerConnector):
     """데모 브로커 커넥터 (테스트용)"""
     
-    def __init__(self):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)  # 부모 클래스 초기화 (account_config 캐시 설정)
         self.balances = {
             "KRW": Balance(symbol="KRW", quantity=10000000.0, avg_price=1.0),
             "005930": Balance(symbol="005930", quantity=100.0, avg_price=65000.0),

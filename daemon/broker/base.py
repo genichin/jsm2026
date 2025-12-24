@@ -3,9 +3,10 @@
 """
 
 from abc import ABC, abstractmethod
-from typing import Dict, Union, List
+from typing import Dict, Union, List, Optional
 from dataclasses import dataclass, field
 from enum import Enum
+from datetime import datetime
 import logging
 
 logger = logging.getLogger(__name__)
@@ -89,6 +90,98 @@ class OrderBook:
 
 class BrokerConnector(ABC):
     """브로커 커넥터 추상 클래스"""
+    
+    def __init__(self, **kwargs):
+        """브로커 커넥터 초기화 (공통 기능)"""
+        self.account_id = kwargs.get("account_id", "")
+        # 계좌 설정 캐시 (accounts.daemon_config)
+        self._account_config: Dict = {}
+        self._account_config_cached_at: Optional[datetime] = None
+        self._account_config_ttl_sec: int = kwargs.get("account_config_ttl", 600)  # 기본 10분 TTL
+    
+    def _get_account_config(self, force_refresh: bool = False) -> Dict:
+        """
+        accounts.daemon_config 조회 (TTL 캐시)
+        
+        Args:
+            force_refresh: 강제 새로고침 여부
+        
+        Returns:
+            Dict: accounts.daemon_config 내용
+        """
+        try:
+            if not self.account_id:
+                return {}
+            
+            now = datetime.now()
+            
+            # 캐시 유효성 체크
+            if (
+                not force_refresh
+                and self._account_config_cached_at is not None
+                and (now - self._account_config_cached_at).total_seconds() < self._account_config_ttl_sec
+            ):
+                return self._account_config or {}
+
+            # Backend API 호출 (APIClient 재사용)
+            # 각 브로커 구현에서 asset_api를 import해서 사용
+            from api import asset_api
+            resp = asset_api.client.get(f"/accounts/{self.account_id}")
+            data = resp.json() if resp is not None else {}
+            daemon_cfg = data.get("daemon_config", {}) if isinstance(data, dict) else {}
+
+            # 캐시 저장
+            self._account_config = daemon_cfg or {}
+            self._account_config_cached_at = now
+            return self._account_config
+        except Exception as e:
+            logger.error(f"Failed to fetch account config: {e}")
+            return self._account_config or {}
+    
+    def _send_telegram_notification(self, message: str):
+        """
+        Telegram 알림 발송
+        
+        Args:
+            message: 발송할 메시지
+        """
+        account_config = self._get_account_config()
+        if not account_config:
+            logger.debug("No account_config available, skipping Telegram notification")
+            return
+        
+        telegram_config = account_config.get("telegram", {})
+        if not telegram_config:
+            logger.debug("No Telegram configuration in account_config")
+            return
+        
+        bot_token = telegram_config.get("bot_token")
+        chat_id = telegram_config.get("chat_id")
+        
+        if not bot_token or not chat_id:
+            logger.warning("Telegram bot_token or chat_id not configured")
+            return
+        
+        try:
+            import requests
+            
+            # Telegram Bot API 호출
+            url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
+            data = {
+                "chat_id": chat_id,
+                "text": message,
+                "parse_mode": "HTML"
+            }
+            
+            response = requests.post(url, json=data, timeout=5)
+            
+            if response.status_code == 200:
+                logger.info(f"Telegram notification sent")
+            else:
+                logger.warning(f"Telegram notification failed (status={response.status_code}): {response.text}")
+        
+        except Exception as e:
+            logger.error(f"Failed to send Telegram notification: {str(e)}")
     
     @abstractmethod
     def get_balance(self) -> Dict[str, Balance]:

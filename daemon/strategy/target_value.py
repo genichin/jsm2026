@@ -52,8 +52,11 @@ class TargetValueStrategy(BaseStrategy):
                     best_price = (orderbook.get_best_bid() + orderbook.get_best_ask()) / 2
                     tolerance_percent = best_price / target_value
 
+            min_trade_ratio = config.account_config.get("min_trade_ratio", 0.01)
+            if tolerance_percent < min_trade_ratio:
+                tolerance_percent = min_trade_ratio
 
-            logger.debug(f"Using tolerance_percent: {tolerance_percent}")
+            logger.info(f"Using tolerance_percent: {tolerance_percent}")
             
             if not target_value or target_value <= 0:
                 logger.warning(f"Invalid target_value: {target_value}")
@@ -108,17 +111,20 @@ class TargetValueStrategy(BaseStrategy):
                 logger.info(f"Fractional trading not supported and quantity diff too small for {config.symbol}: {quantity_diff:.6f}")
                 return False
             
+            # 소수점 거래가 불가능한 경우 quantity_diff를 정수로 변환(반올림)
+            if allow_fractional is False:
+                quantity_diff = round(quantity_diff)
+            
             order_price = current_price
             order_quantity = min(quantity_diff, available_quantity)
-
-            print(f"Placing order: side={side}, quantity={order_quantity}, price={order_price}")
-            
+           
             # 주문 접수
             order = self.broker.place_order(
                 symbol=config.symbol,
                 side=side,
                 qty=order_quantity,
-                price=order_price
+                price=order_price,
+                asset_id=config.asset_id
             )
             
             if order :

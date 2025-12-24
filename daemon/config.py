@@ -47,6 +47,9 @@ class Settings(BaseSettings):
     max_order_value_krw: float = 1000000
     slippage_bps: float = 50  # 0.50%
     max_retry: int = 3
+
+    # 계좌 설정 캐시 TTL (초)
+    account_config_ttl_sec: int = 600
     
     # 로깅
     log_level: str = "INFO"

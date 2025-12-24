@@ -28,7 +28,8 @@ class StrategyConfig:
     strategy_type: StrategyType
     asset_id: str
     symbol: str
-    config: Dict[str, Any]  # 전략별 설정값
+    config: Dict[str, Any]  # 자산별 설정값 (assets.daemon_config)
+    account_config: Optional[Dict[str, Any]] = None  # 계좌 공통 설정 (accounts.daemon_config)
 
 
 class BaseStrategy(ABC):
