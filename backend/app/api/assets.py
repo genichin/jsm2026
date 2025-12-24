@@ -287,51 +287,9 @@ async def get_portfolio_summary(
                 Transaction.asset_id == asset.id
             ).scalar()
             realized_profit = Decimal(str(profit_sum or 0))
-            asset_cost = Decimal(0)
-
-            # 1) Redis AVG 큐 우선 사용
-            try:
-                avg_data = get_asset_avg_data(asset.id)
-            except Exception:
-                avg_data = None
-
-            if avg_data:
-                if avg_data.get("total_quantity") is not None:
-                    current_quantity = Decimal(str(avg_data["total_quantity"]))
-                if avg_data.get("total_cost") is not None:
-                    asset_cost = Decimal(str(avg_data["total_cost"]))
-            else:
-                # 2) 폴백: DB 기반 AVG 원가 계산 (confirmed만)
-                txs = db.query(Transaction).filter(
-                    Transaction.asset_id == asset.id,
-                    Transaction.confirmed == True
-                ).order_by(Transaction.transaction_date.asc()).all()
-
-                q_remain = Decimal(0)
-                cost_remain = Decimal(0)
-
-                for tx in txs:
-                    qty = Decimal(str(tx.quantity or 0))
-                    price = Decimal(str(tx.price)) if tx.price is not None else Decimal(0)
-                    fee = Decimal(str(tx.fee)) if tx.fee is not None else Decimal(0)
-                    tax = Decimal(str(tx.tax)) if tx.tax is not None else Decimal(0)
-
-                    if qty > 0:
-                        cost_remain += qty * price + fee + tax
-                        q_remain += qty
-                    elif qty < 0 and q_remain > 0:
-                        avg_cost_per_unit = (cost_remain / q_remain) if q_remain > 0 else Decimal(0)
-                        reduce_qty = -qty
-                        reduction = reduce_qty * avg_cost_per_unit
-                        cost_remain -= reduction
-                        q_remain += qty
-                    else:
-                        pass
-
-                # DB AVG 폴백: 확정된 거래만 기반으로 계산하지만,
-                # 현재 수량(current_quantity)은 전체 거래(확정+미확정)의 합 유지
-                # total_cost만 DB AVG로 계산
-                asset_cost = cost_remain
+            
+            # 총취득원가: DB AVG 방식 계산
+            asset_cost = _calculate_asset_cost(db, asset.id)
 
             # Redis 가격 기반 현재가 계산
             price = get_asset_price(asset.id, asset.symbol)
@@ -696,6 +654,55 @@ async def update_asset_price_endpoint(
     }
 
 
+def _calculate_asset_cost(db: Session, asset_id: str) -> Decimal:
+    """
+    자산의 총취득원가를 AVG 방식으로 계산
+    
+    - 매수 거래(buy, deposit): 수량 × 단가 + 수수료 + 세금 누적
+    - 매도 거래(sell, withdraw): 평균단가 기준으로 원가 차감
+    
+    Args:
+        db: 데이터베이스 세션
+        asset_id: 자산 ID
+    
+    Returns:
+        Decimal: 총취득원가
+    """
+    txs = db.query(Transaction).filter(
+        Transaction.asset_id == asset_id
+    ).order_by(Transaction.transaction_date.asc()).all()
+    
+    if not txs:
+        return Decimal(0)
+    
+    q_remain = Decimal(0)  # 보유 수량
+    cost_remain = Decimal(0)  # 남은 취득원가
+    
+    for tx in txs:
+        qty = Decimal(str(tx.quantity or 0))
+        price = Decimal(str(tx.price)) if tx.price is not None else Decimal(0)
+        fee = Decimal(str(tx.fee)) if tx.fee is not None else Decimal(0)
+        tax = Decimal(str(tx.tax)) if tx.tax is not None else Decimal(0)
+        
+        if qty > 0:
+            # ✅ 매수/유입: 취득원가 누적
+            acquisition_cost = qty * price + fee + tax
+            cost_remain += acquisition_cost
+            q_remain += qty
+        
+        elif qty < 0:
+            # ✅ 매도/유출: 평균단가 기준으로 원가 차감
+            if q_remain > 0:
+                avg_cost_per_unit = cost_remain / q_remain
+                reduce_qty = -qty  # 음수를 양수로 변환
+                reduction = reduce_qty * avg_cost_per_unit
+                cost_remain = max(Decimal(0), cost_remain - reduction)
+            
+            q_remain += qty  # qty는 음수
+    
+    return max(Decimal(0), cost_remain)
+
+
 @router.get("/{asset_id}/summary", response_model=AssetSummary)
 async def get_asset_summary(
     asset_id: str,
@@ -716,111 +723,78 @@ async def get_asset_summary(
             detail="자산을 찾을 수 없습니다"
         )
     
-    # 거래 집계
     from sqlalchemy import func
+    
+    # 1️⃣ 현재 수량: 모든 거래(확정+미확정)의 수량 합계
     summary_query = db.query(
-        func.sum(Transaction.quantity).label('total_quantity')
+        func.coalesce(func.sum(Transaction.quantity), 0).label('total_quantity')
     ).filter(
         Transaction.asset_id == asset_id
     ).first()
-
+    
+    current_quantity = Decimal(str(summary_query.total_quantity or 0))
+    
+    # 2️⃣ 실현손익: 매도 거래의 realized_profit 합계
     profit_sum = db.query(
         func.coalesce(func.sum(Transaction.realized_profit), 0)
     ).filter(
         Transaction.asset_id == asset_id
     ).scalar()
-
-    # 기본값 (DB 합계 기반) - Decimal로 유지
-    current_quantity = Decimal(summary_query.total_quantity or 0)
-    realized_profit = Decimal(str(profit_sum or 0))
-    total_cost = Decimal(0)
-
-    # 1) Redis AVG 큐에서 우선 읽기
-    try:
-        avg_data = get_asset_avg_data(asset.id)
-    except Exception:
-        avg_data = None
-
-    if avg_data:
-        if avg_data.get("total_quantity") is not None:
-            current_quantity = Decimal(str(avg_data["total_quantity"]))
-        if avg_data.get("total_cost") is not None:
-            total_cost = Decimal(str(avg_data["total_cost"]))
-    else:
-        # 2) 폴백: DB 거래 내역으로 AVG 방식 취득원가 계산 (확정+미확정 모두)
-        txs = db.query(Transaction).filter(
-            Transaction.asset_id == asset_id
-        ).order_by(Transaction.transaction_date.asc()).all()
-
-        q_remain = Decimal(0)
-        cost_remain = Decimal(0)
-
-        for tx in txs:
-            qty = Decimal(str(tx.quantity or 0))
-            price = Decimal(str(tx.price)) if tx.price is not None else Decimal(0)
-            fee = Decimal(str(tx.fee)) if tx.fee is not None else Decimal(0)
-            tax = Decimal(str(tx.tax)) if tx.tax is not None else Decimal(0)
-
-            if qty > 0:
-                # 매수/유입: 취득원가 누적 (수량*단가 + 부대비용)
-                cost_remain += qty * price + fee + tax
-                q_remain += qty
-            elif qty < 0 and q_remain > 0:
-                # 매도/유출: 평균단가 기준으로 원가 차감
-                avg_cost_per_unit = (cost_remain / q_remain) if q_remain > 0 else Decimal(0)
-                reduce_qty = -qty  # 음수 -> 양수 변환
-                reduction = reduce_qty * avg_cost_per_unit
-                cost_remain -= reduction
-                q_remain += qty  # qty는 음수
-            else:
-                # qty == 0 또는 잔고 0 상태의 음수 수량은 원가 변화 없음
-                pass
-
-        # DB AVG 폴백: 확정+미확정 모든 거래를 기반으로 취득원가 계산
-        total_cost = cost_remain
     
-    # 현재가를 Redis에서 조회하여 평가액 계산
+    realized_profit = Decimal(str(profit_sum or 0))
+    
+    # 3️⃣ 총취득원가: DB 거래로 AVG 방식 계산
+    total_cost = _calculate_asset_cost(db, asset_id)
+    
+    # 4️⃣ 현재가 및 평가액 계산
     price = None
     try:
         price = get_asset_price(asset.id, asset.symbol)
     except Exception:
         price = None
-
+    
     foreign_value = None
     foreign_currency = None
     krw_value = None
     unrealized_profit = Decimal(0)
-
-    if price is not None:
-        # 평가액 계산 (기준 통화의 평가액)
-        base_value = Decimal(current_quantity) * Decimal(str(price))
-        # 통화별 처리: USD면 KRW 환산도 제공
+    
+    if price is not None and current_quantity > 0:
+        # 기준 통화 평가액
+        base_value = current_quantity * Decimal(str(price))
+        
+        # 통화별 처리
         if asset.currency and asset.currency.upper() != "KRW":
             foreign_value = base_value
             foreign_currency = asset.currency.upper()
-            # 통화→KRW 환율은 Redis 키 `asset:{CURRENCY}:price` 사용 (예: asset:USD:price, asset:JPY:price)
+            # 환율 조회 (Redis: asset:{currency}:price)
             try:
-                fx_rate = get_asset_price(foreign_currency, foreign_currency)
+                fx_rate = get_asset_price(asset.id, foreign_currency)
             except Exception:
                 fx_rate = None
+            
             if fx_rate is not None:
-                krw_value = Decimal(foreign_value) * Decimal(str(fx_rate))
+                krw_value = base_value * Decimal(str(fx_rate))
         else:
-            # KRW 통화이면 KRW 평가액은 동일
+            # KRW 통화
             krw_value = base_value
+        
+        # 미실현손익 = 현재가 평가액 - 취득원가
+        if total_cost > 0:
+            unrealized_profit = base_value - total_cost
     
     return AssetSummary(
         asset_id=asset.id,
         asset_name=asset.name,
         asset_type=AssetType(asset.asset_type),
         symbol=asset.symbol,
-        current_quantity=current_quantity,
-        total_cost=total_cost,
-        realized_profit=realized_profit,
-        unrealized_profit=unrealized_profit,
-        foreign_value=foreign_value,
+        current_quantity=float(current_quantity),
+        total_cost=float(total_cost),
+        realized_profit=float(realized_profit),
+        unrealized_profit=float(unrealized_profit),
+        current_value=float(krw_value) if krw_value else None,
+        foreign_value=float(foreign_value) if foreign_value else None,
         foreign_currency=foreign_currency,
-        krw_value=krw_value
+        krw_value=float(krw_value) if krw_value else None
     )
 
 

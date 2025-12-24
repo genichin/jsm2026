@@ -511,7 +511,7 @@ class DaemonScheduler:
                                 asset_id=assets_group[0]["id"],
                                 price=price_data.current_price,
                                 change=price_data.change_percent,
-                                use_symbol=True
+                                use_symbol=False
                             )
                             logger.info(f"Updated price for {symbol}: {price_data.current_price}")
                         else:
