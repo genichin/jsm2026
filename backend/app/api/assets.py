@@ -280,13 +280,8 @@ async def get_portfolio_summary(
             ).first()
 
             current_quantity = Decimal(summary_query.total_quantity or 0)
-            # 자산별 실현손익 합계
-            profit_sum = db.query(
-                func.coalesce(func.sum(Transaction.realized_profit), 0)
-            ).filter(
-                Transaction.asset_id == asset.id
-            ).scalar()
-            realized_profit = Decimal(str(profit_sum or 0))
+            # 자산별 실현손익: 거래 이력 기반 계산 (AVG 원가 방식)
+            realized_profit = _calculate_realized_profit(db, asset.id)
             
             # 총취득원가: DB AVG 방식 계산
             asset_cost = _calculate_asset_cost(db, asset.id)
@@ -703,6 +698,49 @@ def _calculate_asset_cost(db: Session, asset_id: str) -> Decimal:
     return max(Decimal(0), cost_remain)
 
 
+def _calculate_realized_profit(db: Session, asset_id: str) -> Decimal:
+    """
+    자산의 누적 실현손익을 거래 이력으로 계산 (AVG 원가 기준)
+
+    - 매수/유입: 원가와 수량만 갱신
+    - 매도/유출: (매도가-수수료-세금)*수량 - 평균원가*수량 을 누적
+    """
+    txs = db.query(Transaction).filter(
+        Transaction.asset_id == asset_id
+    ).order_by(Transaction.transaction_date.asc()).all()
+
+    if not txs:
+        return Decimal(0)
+
+    q_remain = Decimal(0)
+    cost_remain = Decimal(0)
+    realized = Decimal(0)
+
+    for tx in txs:
+        qty = Decimal(str(tx.quantity or 0))
+        price = Decimal(str(tx.price)) if tx.price is not None else Decimal(0)
+        fee = Decimal(str(tx.fee)) if tx.fee is not None else Decimal(0)
+        tax = Decimal(str(tx.tax)) if tx.tax is not None else Decimal(0)
+
+        if qty > 0:
+            # 매수/유입: 원가 누적
+            acquisition_cost = qty * price + fee + tax
+            cost_remain += acquisition_cost
+            q_remain += qty
+        elif qty < 0:
+            sell_qty = -qty
+            if q_remain > 0 and sell_qty > 0:
+                avg_cost_per_unit = cost_remain / q_remain
+                proceeds = sell_qty * price - fee - tax
+                cost_basis = sell_qty * avg_cost_per_unit
+                realized += proceeds - cost_basis
+                # 보유 원가 감소 및 수량 감소
+                cost_remain = max(Decimal(0), cost_remain - cost_basis)
+            q_remain += qty  # qty는 음수
+
+    return realized
+
+
 @router.get("/{asset_id}/summary", response_model=AssetSummary)
 async def get_asset_summary(
     asset_id: str,
@@ -735,13 +773,8 @@ async def get_asset_summary(
     current_quantity = Decimal(str(summary_query.total_quantity or 0))
     
     # 2️⃣ 실현손익: 매도 거래의 realized_profit 합계
-    profit_sum = db.query(
-        func.coalesce(func.sum(Transaction.realized_profit), 0)
-    ).filter(
-        Transaction.asset_id == asset_id
-    ).scalar()
-    
-    realized_profit = Decimal(str(profit_sum or 0))
+    # 실현손익: 거래 이력 기반 계산 (AVG 원가 방식)
+    realized_profit = _calculate_realized_profit(db, asset_id)
     
     # 3️⃣ 총취득원가: DB 거래로 AVG 방식 계산
     total_cost = _calculate_asset_cost(db, asset_id)
