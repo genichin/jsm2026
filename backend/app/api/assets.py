@@ -673,11 +673,19 @@ def _calculate_asset_cost(db: Session, asset_id: str) -> Decimal:
     q_remain = Decimal(0)  # 보유 수량
     cost_remain = Decimal(0)  # 남은 취득원가
     
-    for tx in txs:
+    def _nums_from_tx(tx: Transaction):
         qty = Decimal(str(tx.quantity or 0))
-        price = Decimal(str(tx.price)) if tx.price is not None else Decimal(0)
-        fee = Decimal(str(tx.fee)) if tx.fee is not None else Decimal(0)
-        tax = Decimal(str(tx.tax)) if tx.tax is not None else Decimal(0)
+        extras = tx.extras or {}
+        raw_price = tx.price if tx.price is not None else extras.get("price")
+        raw_fee = tx.fee if tx.fee is not None else extras.get("fee")
+        raw_tax = tx.tax if tx.tax is not None else extras.get("tax")
+        price = Decimal(str(raw_price)) if raw_price is not None else Decimal(0)
+        fee = Decimal(str(raw_fee)) if raw_fee is not None else Decimal(0)
+        tax = Decimal(str(raw_tax)) if raw_tax is not None else Decimal(0)
+        return qty, price, fee, tax
+
+    for tx in txs:
+        qty, price, fee, tax = _nums_from_tx(tx)
         
         if qty > 0:
             # ✅ 매수/유입: 취득원가 누적
@@ -716,11 +724,19 @@ def _calculate_realized_profit(db: Session, asset_id: str) -> Decimal:
     cost_remain = Decimal(0)
     realized = Decimal(0)
 
-    for tx in txs:
+    def _nums_from_tx(tx: Transaction):
         qty = Decimal(str(tx.quantity or 0))
-        price = Decimal(str(tx.price)) if tx.price is not None else Decimal(0)
-        fee = Decimal(str(tx.fee)) if tx.fee is not None else Decimal(0)
-        tax = Decimal(str(tx.tax)) if tx.tax is not None else Decimal(0)
+        extras = tx.extras or {}
+        raw_price = tx.price if tx.price is not None else extras.get("price")
+        raw_fee = tx.fee if tx.fee is not None else extras.get("fee")
+        raw_tax = tx.tax if tx.tax is not None else extras.get("tax")
+        price = Decimal(str(raw_price)) if raw_price is not None else Decimal(0)
+        fee = Decimal(str(raw_fee)) if raw_fee is not None else Decimal(0)
+        tax = Decimal(str(raw_tax)) if raw_tax is not None else Decimal(0)
+        return qty, price, fee, tax
+
+    for tx in txs:
+        qty, price, fee, tax = _nums_from_tx(tx)
 
         if qty > 0:
             # 매수/유입: 원가 누적

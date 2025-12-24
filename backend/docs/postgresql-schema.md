@@ -1109,11 +1109,21 @@ CREATE TABLE transactions (
     ),
     
     -- 자산 수량 변화 (핵심)
-    quantity NUMERIC(20, 8) NOT NULL,   -- 양수=증가, 음수=감소
+    quantity NUMERIC(20, 8) NOT NULL,   -- 양수=증가, 음수=감소, 0=마커
+    
+    -- 거래 가격 정보 (컬럼으로 저장, extras 폴백 지원)
+    price NUMERIC(20, 6),               -- 거래 단가 (매수/매도 시)
+    fee NUMERIC(20, 6),                 -- 수수료
+    tax NUMERIC(20, 6),                 -- 세금
+    realized_profit NUMERIC(20, 6),     -- 매도 시 실현손익 (자동 계산)
+    
+    -- 확인 상태 (사용하지 않음)
+    confirmed BOOLEAN NOT NULL DEFAULT FALSE,  -- DEPRECATED: 백엔드에서 사용하지 않음
+    
+    -- 추가 정보 (JSONB)
     extras JSONB,                       -- 거래 추가 정보 저장
-                                        -- 환전(exchange) : 'rate'(환율), 'fee'(수수료), 'tax'(세금)
-                                        -- 매수/매도 : 'price'(가격)
-                                        -- 기타 : 'balance_after'(거래 후 잔액)
+                                        -- 환전(exchange) : 'rate'(환율)
+                                        -- 기타 : 'balance_after'(거래 후 잔액), 'source_asset_id'(출발 자산)
 
     -- 거래 정보
     transaction_date TIMESTAMP WITH TIME ZONE NOT NULL,
@@ -1121,7 +1131,7 @@ CREATE TABLE transactions (
     memo TEXT,                          -- 사용자 메모
     
     -- 연결
-    related_transaction_id UUID REFERENCES transactions(id) ON DELETE SET NULL,  -- 쌍 거래 ID
+    related_transaction_id UUID REFERENCES transactions(id) ON DELETE SET NULL,  -- 복식부기 쌍 거래 ID
     
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
@@ -1131,6 +1141,9 @@ CREATE TABLE transactions (
                 'transfer_in', 'transfer_out', 'adjustment', 'invest', 'redeem', 
                 'internal_transfer', 'card_payment', 'promotion_deposit', 'auto_transfer', 'remittance', 'exchange',
                 'out_asset', 'in_asset', 'payment_cancel')
+    ),
+    CONSTRAINT valid_flow_type CHECK (
+        flow_type IN ('expense','income','transfer','investment','neutral','undefined')
     )
 );
 
@@ -1139,19 +1152,30 @@ CREATE INDEX idx_transactions_date ON transactions(transaction_date DESC);
 CREATE INDEX idx_transactions_type ON transactions(type);
 CREATE INDEX idx_transactions_category ON transactions(category_id);
 CREATE INDEX idx_transactions_flow_type ON transactions(flow_type);
+CREATE INDEX idx_transactions_confirmed ON transactions(confirmed);
+CREATE INDEX idx_transactions_profit ON transactions(realized_profit) WHERE realized_profit IS NOT NULL;
 
 ```
 
 **필드 설명**:
 - `type`: 거래 유형 (TransactionType Enum 값, 아래 표 참고)
 - `quantity`: 자산 수량 변화 (양수=증가, 음수=감소, 0=마커)
+- `price`: 거래 단가 (매수/매도/투자 시) - NUMERIC(20, 6)
+  - 폴백: `extras.price`에서도 읽음
+- `fee`: 수수료 - NUMERIC(20, 6)
+  - 폴백: `extras.fee`에서도 읽음
+- `tax`: 세금 - NUMERIC(20, 6)
+  - 폴백: `extras.tax`에서도 읽음
+- `realized_profit`: 매도 시 실현손익 - NUMERIC(20, 6)
+  - 자동 계산: (판매가 - 수수료 - 세금 - 평균매수가) × 수량
+  - 폴백: `extras.realized_profit`에서도 읽음
+- `confirmed`: **사용하지 않음** (DEPRECATED)
+  - 거래 확인 여부로 사용하지 말 것
 - `extras`: 거래 추가 정보를 담는 JSONB 필드
-  - `price`: 거래 단가 (매수/매도 시)
   - `rate`: 환율 (환전 시)
-  - `fee`: 수수료
-  - `tax`: 세금
+  - `price`, `fee`, `tax`, `realized_profit`: 컬럼이 NULL일 경우 폴백 읽음
   - `balance_after`: 거래 후 잔액
-  - `source_asset_id` : 원본 자산 ID
+  - `source_asset_id`: 원본 자산 ID
 - `flow_type`: 거래의 분류 상태 (expense, income, transfer, investment, neutral, undefined)
   - `undefined`: 아직 분류되지 않은 거래 (사용자 확인 필요)
   - 나머지: 자동/수동으로 분류된 거래
