@@ -11,6 +11,10 @@ interface Transaction {
   quantity: number;
   transaction_date: string;
   description?: string | null;
+  price?: number | null;
+  fee?: number | null;
+  tax?: number | null;
+  realized_profit?: number | null;
   asset?: {
     name: string;
   };

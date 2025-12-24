@@ -38,6 +38,10 @@ type Transaction = {
   memo?: string | null;
   flow_type: string;
   confirmed?: boolean;
+  price?: number | null;
+  fee?: number | null;
+  tax?: number | null;
+  realized_profit?: number | null;
   extras?: Record<string, any> | null;
   created_at: string;
   updated_at: string;
