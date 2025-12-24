@@ -341,9 +341,20 @@ type AssetCardProps = {
 
 function Field({ label, value, align = "left" }: { label: string; value: ReactNode; align?: "left" | "right" }) {
   return (
-    <div className="rounded-md border border-gh-border-default bg-gh-canvas-default px-3 py-2">
-      <div className="text-[12px] text-gh-fg-muted">{label}</div>
+    <div>
+      <div className="text-[10px] text-gh-fg-muted font-medium text-center bg-gh-canvas-subtle px-1 py-0.5 rounded">{label}</div>
       <div className={`text-sm font-medium text-gh-fg ${align === "right" ? "text-right" : ""}`}>{value ?? "-"}</div>
+    </div>
+  );
+}
+
+function PriceField({ price, change }: { price: ReactNode; change: ReactNode }) {
+  return (
+    <div>
+      <div className={`text-sm font-medium text-gh-fg text-right`}>
+        <div>{price ?? "-"}</div>
+        <div className="text-xs mt-0.5">{change ?? "-"}</div>
+      </div>
     </div>
   );
 }
@@ -413,25 +424,22 @@ function AssetCard({ asset, onOpen, onEdit, onRecalc, onDelete, onToggleActive }
         const changePrefix = priceChange && priceChange > 0 ? "+" : "";
         
         return (
-          <div className="grid grid-cols-2 gap-3 text-sm">
-            <Field label="티커" value={asset.symbol || "-"} />
-            <Field label="잔고" value={formatNumber(asset.balance)} align="right" />
-            <Field 
-              label="현재가" 
-              value={asset.price ? formatCurrency(asset.price, asset.currency) : "-"} 
-              align="right" 
-            />
-            <Field 
-              label="등락률" 
-              value={
+          <div className="grid grid-cols-6 gap-3 text-sm">
+            <PriceField 
+              price={asset.price ? formatNumber(asset.price) : "-"}
+              change={
                 priceChange != null ? (
                   <span className={changeColor}>
                     {changePrefix}{priceChange.toFixed(2)}%
                   </span>
                 ) : "-"
-              } 
-              align="right" 
+              }
             />
+            <div></div>
+            <div></div>
+            <div></div>
+            <Field label="잔고" value={formatNumber(asset.balance)} align="right" />
+            <Field label="평가금액" value={asset.balance && asset.price ? formatCurrency(asset.balance * asset.price, asset.currency) : "-"} align="right" />
           </div>
         );
       case "crypto":
@@ -464,14 +472,13 @@ function AssetCard({ asset, onOpen, onEdit, onRecalc, onDelete, onToggleActive }
           </div>
         );
       case "cash":
-        console.log('Cash asset:', {
-          balance: asset.balance,
-          balanceType: typeof asset.balance,
-          currency: asset.currency,
-          fullAsset: asset
-        });
         return (
-          <div className="grid grid-cols-2 gap-3 text-sm">
+          <div className="grid grid-cols-6 gap-3 text-sm">
+            <div></div>
+            <div></div>
+            <div></div>
+            <div></div>
+            <div></div>
             <Field label="잔고" value={formatCurrency(asset.balance, asset.currency)} align="right" />
           </div>
         );
@@ -486,14 +493,17 @@ function AssetCard({ asset, onOpen, onEdit, onRecalc, onDelete, onToggleActive }
   }
 
   return (
-    <article className="group relative px-4 py-3 hover:bg-gh-canvas-subtle transition">
+    <article 
+      className="group relative px-4 py-3 hover:bg-gh-canvas-subtle transition cursor-pointer"
+      onClick={() => setExpanded((prev) => !prev)}
+    >
       <div className="flex flex-col gap-3 md:grid md:grid-cols-12 md:items-center md:gap-4">
-        <div className="md:col-span-5 flex items-start gap-3">
+        <div className="md:col-span-3 flex items-start gap-3">
           <div className={`mt-1 h-8 w-1 rounded-full ${accent}`} aria-hidden />
           <div className="space-y-1">
-            <button onClick={onOpen} className="text-left text-base font-semibold text-gh-accent-fg hover:underline">
+            <button onClick={(e) => { e.stopPropagation(); onOpen(); }} className="text-left text-base font-semibold text-gh-accent-fg hover:underline">
               <span className="inline-flex items-center gap-2">
-                {asset.name}
+                {asset.name}{asset.symbol ? `(${asset.symbol})` : ''}
                 {asset.need_trade?.price != null || asset.need_trade?.quantity != null ? (
                   <span className="inline-flex items-center rounded-full bg-yellow-100 px-2 py-0.5 text-[11px] font-medium text-yellow-800 border border-yellow-200">
                     거래요청
@@ -509,48 +519,46 @@ function AssetCard({ asset, onOpen, onEdit, onRecalc, onDelete, onToggleActive }
           </div>
         </div>
 
-        <div className="md:col-span-5">
+        <div className="md:col-span-8">
           {renderSummaryByType()}
         </div>
 
-        <div className="md:col-span-2 flex items-center justify-end gap-3">
+        <div className="md:col-span-1 flex items-center justify-end gap-3">
           <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[12px] font-semibold ${asset.is_active ? "bg-emerald-50 text-emerald-700 border border-emerald-100" : "bg-slate-100 text-slate-700 border border-slate-200"}`}>
             {asset.is_active ? "활성" : "비활성"}
           </span>
-          <Button
-            size="sm"
-            variant="default"
-            onClick={() => setExpanded((prev) => !prev)}
-          >
-            {expanded ? "접기" : "확장"}
-          </Button>
         </div>
       </div>
 
       {expanded ? (
-        <div className="mt-3 rounded-lg border border-gh-border-default bg-gh-canvas-inset p-3">
-          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-            <div className="space-y-1 text-sm text-gh-fg-muted">
-              <div className="flex items-center gap-2">
-                <span className="font-semibold text-gh-fg">{asset.symbol || "-"}</span>
-                <span>{asset.market || "시장 미지정"}</span>
+        <>
+          <div className="flex flex-col md:grid md:grid-cols-12 mt-3 border-t border-gh-border-default">
+            <div className="md:col-span-1 mt-1"></div>
+            <div className="md:col-span-11 mt-1">
+              {renderByType(asset) ? (
+                <div>{renderByType(asset)}</div>
+              ) : null}
+              <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between ">
+                <div className="space-y-1 text-sm text-gh-fg-muted">
+                  <div className="flex items-center gap-2">
+                    <span className="font-semibold text-gh-fg">{asset.symbol || "-"}</span>
+                    <span>{asset.market || "시장 미지정"}</span>
+                  </div>
+                </div>
               </div>
-              <div className="text-[12px]">최근 갱신: {new Date(asset.updated_at).toLocaleString()}</div>
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <Button size="sm" variant="default" onClick={onToggleActive}>
-                {asset.is_active ? "비활성 전환" : "활성 전환"}
-              </Button>
-              <Button size="sm" variant="primary" onClick={onOpen}>열기</Button>
-              <Button size="sm" variant="default" onClick={onEdit}>편집</Button>
-              <Button size="sm" variant="default" onClick={onRecalc}>잔고재계산</Button>
-              <Button size="sm" variant="danger" onClick={onDelete}>삭제</Button>
             </div>
           </div>
-          {renderByType(asset) ? (
-            <div className="mt-3">{renderByType(asset)}</div>
-          ) : null}
-        </div>
+          <div className="text-[10px] text-right">최근 갱신: {new Date(asset.updated_at).toLocaleString()}</div>
+          <div className="flex flex-wrap items-center justify-end gap-2 pt-1 border-t border-gh-border-default" onClick={(e) => e.stopPropagation()}>
+            <Button size="sm" className="text-left px-3 py-1 text-sm hover:bg-gray-200 disabled:opacity-50" onClick={onToggleActive}>
+              {asset.is_active ? "비활성 전환" : "활성 전환"}
+            </Button>
+            <Button size="sm" className="text-left px-3 py-1 text-sm hover:bg-gray-200 disabled:opacity-50" onClick={onOpen}>열기</Button>
+            <Button size="sm" className="text-left px-3 py-1 text-sm hover:bg-gray-200 disabled:opacity-50" onClick={onEdit}>편집</Button>
+            <Button size="sm" className="text-left px-3 py-1 text-sm hover:bg-gray-200 disabled:opacity-50" onClick={onRecalc}>잔고재계산</Button>
+            <Button size="sm" className="text-left px-3 py-1 text-sm hover:bg-gray-200 disabled:opacity-50" onClick={onDelete}>삭제</Button>
+          </div>
+        </>
       ) : null}
     </article>
   );
