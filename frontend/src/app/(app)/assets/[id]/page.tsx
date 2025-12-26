@@ -184,7 +184,9 @@ export default function AssetDetailPage({ params }: { params: { id: string } }) 
   const [useSymbol, setUseSymbol] = useState(false);
   const [isTagModalOpen, setIsTagModalOpen] = useState(false);
   const [isCommentModalOpen, setIsCommentModalOpen] = useState(false);
+  const [editingActivityId, setEditingActivityId] = useState<string | null>(null);
   const [commentPreviewTab, setCommentPreviewTab] = useState<"write" | "preview">("write");
+  const [isSubmittingComment, setIsSubmittingComment] = useState(false);
 
   // 액션 메뉴 (모바일) 상태
   const [isActionMenuOpen, setIsActionMenuOpen] = useState(false);
@@ -466,22 +468,41 @@ export default function AssetDetailPage({ params }: { params: { id: string } }) 
   const handleSubmitComment = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newComment.trim()) return;
+    setIsSubmittingComment(true);
 
     try {
-      await api.post("/activities", {
-        target_type: "asset",
-        target_id: params.id,
-        activity_type: "comment",
-        content: newComment.trim(),
-        visibility: "private",
-      });
+      if (editingActivityId) {
+        await api.put(`/activities/${editingActivityId}`, {
+          content: newComment.trim(),
+        });
+      } else {
+        await api.post("/activities", {
+          target_type: "asset",
+          target_id: params.id,
+          activity_type: "comment",
+          content: newComment.trim(),
+          visibility: "private",
+        });
+      }
       setNewComment("");
+      setEditingActivityId(null);
+      setCommentPreviewTab("write");
+      setIsCommentModalOpen(false);
       activitiesQuery.refetch();
     } catch (error) {
       console.error("댓글 작성 실패:", error);
       alert("댓글 작성에 실패했습니다.");
+    } finally {
+      setIsSubmittingComment(false);
     }
   };
+
+  function startEditComment(activityId: string, content: string) {
+    setEditingActivityId(activityId);
+    setNewComment(content);
+    setCommentPreviewTab("write");
+    setIsCommentModalOpen(true);
+  }
 
   // 댓글 삭제 (소프트 삭제)
   const handleDeleteComment = async (activityId: string) => {
@@ -1133,12 +1154,20 @@ export default function AssetDetailPage({ params }: { params: { id: string } }) 
                           </div>
                           
                           {activity.activity_type === "comment" && !activity.is_immutable && !activity.is_deleted && (
-                            <button
-                              onClick={() => handleDeleteComment(activity.id)}
-                              className="text-xs text-red-600 hover:text-red-800"
-                            >
-                              삭제
-                            </button>
+                            <div className="flex gap-2 text-xs">
+                              <button
+                                onClick={() => startEditComment(activity.id, activity.content || "")}
+                                className="text-blue-600 hover:text-blue-800"
+                              >
+                                수정
+                              </button>
+                              <button
+                                onClick={() => handleDeleteComment(activity.id)}
+                                className="text-red-600 hover:text-red-800"
+                              >
+                                삭제
+                              </button>
+                            </div>
                           )}
                         </div>
 
@@ -1280,7 +1309,7 @@ export default function AssetDetailPage({ params }: { params: { id: string } }) 
           setNewComment("");
           setCommentPreviewTab("write");
         }}
-        title="검토 글 작성"
+        title={editingActivityId ? "검토 글 수정" : "검토 글 작성"}
         size="xl"
       >
         <form onSubmit={handleSubmitComment} className="space-y-4">
@@ -1367,6 +1396,7 @@ export default function AssetDetailPage({ params }: { params: { id: string } }) 
               onClick={() => {
                 setIsCommentModalOpen(false);
                 setNewComment("");
+                setEditingActivityId(null);
                 setCommentPreviewTab("write");
               }}
               className="px-4 py-2 rounded bg-gray-200 hover:bg-gray-300"
@@ -1375,10 +1405,10 @@ export default function AssetDetailPage({ params }: { params: { id: string } }) 
             </button>
             <button
               type="submit"
-              disabled={!newComment.trim()}
+              disabled={!newComment.trim() || isSubmittingComment}
               className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              작성
+              {isSubmittingComment ? (editingActivityId ? "수정 중..." : "작성 중...") : (editingActivityId ? "수정" : "작성")}
             </button>
           </div>
         </form>
