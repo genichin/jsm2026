@@ -136,7 +136,7 @@ interface ActivitiesResponse {
 export default function AssetDetailPage({ params }: { params: { id: string } }) {
   const router = useRouter();
   const queryClient = useQueryClient();
-  const [activeTab, setActiveTab] = useState<"overview" | "transactions" | "tags" | "activities">("overview");
+  const [activeTab, setActiveTab] = useState<"overview" | "transactions" | "activities">("overview");
   const [txPage, setTxPage] = useState(1);
   const [txSize] = useState(20);
   const [activityPage, setActivityPage] = useState(1);
@@ -180,6 +180,7 @@ export default function AssetDetailPage({ params }: { params: { id: string } }) 
   const [newPrice, setNewPrice] = useState<string>("");
   const [newChange, setNewChange] = useState<string>("");
   const [useSymbol, setUseSymbol] = useState(false);
+  const [isTagModalOpen, setIsTagModalOpen] = useState(false);
 
   // 액션 메뉴 (모바일) 상태
   const [isActionMenuOpen, setIsActionMenuOpen] = useState(false);
@@ -332,10 +333,10 @@ export default function AssetDetailPage({ params }: { params: { id: string } }) 
     },
   });
 
-  // 태그 제거 mutation
+  // 태그 제거 mutation (자산-태그 연결 해제)
   const removeTagMut = useMutation({
-    mutationFn: async (taggableId: string) =>
-      (await api.delete(`/tags/detach/${taggableId}`)).data,
+    mutationFn: async (tagId: string) =>
+      (await api.delete(`/assets/${params.id}/tags/${tagId}`)).data,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["asset-tags", params.id] });
     },
@@ -894,16 +895,6 @@ export default function AssetDetailPage({ params }: { params: { id: string } }) 
             전체 거래
           </button>
           <button
-            onClick={() => setActiveTab("tags")}
-            className={`px-4 py-2 border-b-2 transition-colors ${
-              activeTab === "tags"
-                ? "border-blue-600 text-blue-600 font-medium"
-                : "border-transparent text-gray-600 hover:text-gray-900"
-            }`}
-          >
-            태그
-          </button>
-          <button
             onClick={() => setActiveTab("activities")}
             className={`px-4 py-2 border-b-2 transition-colors ${
               activeTab === "activities"
@@ -919,9 +910,9 @@ export default function AssetDetailPage({ params }: { params: { id: string } }) 
       {/* 탭 내용 */}
       <div>
         {activeTab === "overview" && (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
             {/* 왼쪽: 최근 거래 */}
-            <div className="border rounded-lg p-4">
+            <div className="lg:col-span-3 border rounded-lg p-4">
               {transactionsQuery.isError ? (
                 <p className="text-red-600">거래 내역을 불러오는데 실패했습니다.</p>
               ) : (
@@ -936,16 +927,22 @@ export default function AssetDetailPage({ params }: { params: { id: string } }) 
             </div>
 
             {/* 오른쪽: 태그 + 검토 */}
-            <div className="space-y-6">
+            <div className="lg:col-span-2 space-y-6">
               {/* 태그 섹션 */}
               <div className="border rounded-lg p-4">
                 <div className="flex justify-between items-center mb-4">
                   <h2 className="text-lg font-semibold">태그</h2>
                   <button
-                    onClick={() => setActiveTab("tags")}
-                    className="text-sm text-blue-600 hover:underline"
+                    onClick={() => {
+                      allTagsQuery.refetch();
+                      setIsTagModalOpen(true);
+                    }}
+                    aria-label="태그 추가"
+                    className="p-2 text-blue-600 hover:text-blue-800"
                   >
-                    관리 →
+                  <svg className="w-4 h-4 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 5v14M5 12h14" />
+                  </svg>
                   </button>
                 </div>
                 {tagsQuery.isLoading && <p className="text-gray-500">태그 로딩 중...</p>}
@@ -959,20 +956,32 @@ export default function AssetDetailPage({ params }: { params: { id: string } }) 
                         {tagsQuery.data.tags.slice(0, 10).map((tag) => (
                           <div
                             key={tag.id}
-                            className="flex items-center gap-2 px-3 py-1.5 border rounded-full"
+                            className="group flex items-center gap-2 px-3 py-0.5 border rounded-full relative"
                             style={{ borderColor: tag.color || undefined }}
                           >
                             {tag.color && (
                               <div
-                                className="w-3 h-3 rounded-full"
+                                className="w-2 h-2 rounded-full"
                                 style={{ backgroundColor: tag.color }}
                               />
                             )}
-                            <span className="text-sm font-medium">{tag.name}</span>
+                            <span className="text-xs font-medium">{tag.name}</span>
+                            <button
+                              onClick={() => {
+                                if (confirm(`태그 "${tag.name}"을(를) 제거할까요?`)) {
+                                  removeTagMut.mutate(tag.id);
+                                }
+                              }}
+                              disabled={removeTagMut.isPending}
+                              className="ml-1 text-gray-400 hover:text-red-600 opacity-0 group-hover:opacity-100 transition-opacity text-xs disabled:opacity-50"
+                              title="태그 제거"
+                            >
+                              ×
+                            </button>
                           </div>
                         ))}
                         {tagsQuery.data.tags.length > 10 && (
-                          <span className="text-sm text-gray-500 px-3 py-1.5">
+                          <span className="text-xs text-gray-500 px-3 py-1.5">
                             +{tagsQuery.data.tags.length - 10}개 더
                           </span>
                         )}
@@ -1004,11 +1013,11 @@ export default function AssetDetailPage({ params }: { params: { id: string } }) 
                         {activitiesQuery.data.items?.slice(0, 3).map((activity) => (
                           <div key={activity.id} className="border-b pb-3 last:border-b-0">
                             <div className="flex items-center gap-2 mb-1">
+                              <span className="text-xs text-gray-500">
+                                {new Date(activity.created_at).toLocaleString("sv-SE")}
+                              </span>
                               <span className="text-xs font-medium text-gray-700">
                                 {activity.user?.username || "사용자"}
-                              </span>
-                              <span className="text-xs text-gray-500">
-                                {new Date(activity.created_at).toLocaleDateString()}
                               </span>
                             </div>
                             <p className="text-sm text-gray-800 line-clamp-2">
@@ -1069,104 +1078,6 @@ export default function AssetDetailPage({ params }: { params: { id: string } }) 
           </div>
         )}
 
-        {activeTab === "tags" && (
-          <div className="space-y-6">
-            {tagsQuery.isLoading && <p>태그 로딩 중...</p>}
-            {tagsQuery.isError && <p className="text-red-600">태그를 불러오는데 실패했습니다.</p>}
-            {tagsQuery.isSuccess && (
-              <>
-                {/* 현재 태그 목록 */}
-                <div className="border rounded-lg p-4">
-                  <h3 className="text-lg font-semibold mb-4">현재 태그</h3>
-                  {tagsQuery.data.tags.length === 0 ? (
-                    <p className="text-gray-500 text-center py-8">연결된 태그가 없습니다.</p>
-                  ) : (
-                    <div className="flex flex-wrap gap-2">
-                      {tagsQuery.data.tags.map((tag) => (
-                        <div
-                          key={tag.id}
-                          className="flex items-center gap-2 px-3 py-1.5 border rounded-full group hover:bg-red-50"
-                          style={{ borderColor: tag.color || undefined }}
-                        >
-                          {tag.color && (
-                            <div
-                              className="w-3 h-3 rounded-full"
-                              style={{ backgroundColor: tag.color }}
-                            />
-                          )}
-                          <span className="text-sm font-medium">{tag.name}</span>
-                          <button
-                            onClick={() => {
-                              const taggableId = (tag as any).taggable_id;
-                              if (taggableId) {
-                                removeTagMut.mutate(taggableId);
-                              }
-                            }}
-                            disabled={removeTagMut.isPending}
-                            className="ml-1 text-gray-400 hover:text-red-600 opacity-0 group-hover:opacity-100 disabled:opacity-50"
-                            title="태그 제거"
-                          >
-                            ×
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-
-                {/* 태그 추가 */}
-                <div className="border rounded-lg p-4">
-                  <h3 className="text-lg font-semibold mb-4">태그 추가</h3>
-                  {allTagsQuery.isLoading && <p>태그 목록 로딩 중...</p>}
-                  {allTagsQuery.isError && <p className="text-red-600">태그 목록을 불러오는데 실패했습니다.</p>}
-                  {allTagsQuery.isSuccess && (
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                      {allTagsQuery.data?.tags?.map((tag: any) => {
-                        const alreadyAdded = tagsQuery.data.tags.some(
-                          (t: any) => t.id === tag.id
-                        );
-                        return (
-                          <button
-                            key={tag.id}
-                            onClick={() => {
-                              if (!alreadyAdded) {
-                                addTagMut.mutate(tag.id);
-                              }
-                            }}
-                            disabled={alreadyAdded || addTagMut.isPending}
-                            className={`px-4 py-2 border rounded text-sm font-medium transition-colors ${
-                              alreadyAdded
-                                ? "border-gray-200 bg-gray-100 text-gray-500 cursor-not-allowed"
-                                : "border-blue-500 text-blue-600 hover:bg-blue-50 disabled:opacity-50"
-                            }`}
-                            style={
-                              tag.color && !alreadyAdded
-                                ? {
-                                    borderColor: tag.color,
-                                    color: tag.color,
-                                  }
-                                : undefined
-                            }
-                          >
-                            {tag.color && !alreadyAdded && (
-                              <span
-                                className="inline-block w-2 h-2 rounded-full mr-2"
-                                style={{ backgroundColor: tag.color }}
-                              />
-                            )}
-                            {tag.name}
-                            {alreadyAdded && " ✓"}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              </>
-            )}
-          </div>
-        )}
-
         {activeTab === "activities" && (
           <div className="space-y-6">
             {/* 댓글 작성 폼 */}
@@ -1213,11 +1124,11 @@ export default function AssetDetailPage({ params }: { params: { id: string } }) 
                             </div>
                             <div>
                               <div className="flex items-center gap-2">
+                                <span className="text-xs text-gray-500">
+                                  {new Date(activity.created_at).toLocaleString("sv-SE")}
+                                </span>
                                 <span className="font-medium text-sm">
                                   {activity.user?.username || "사용자"}
-                                </span>
-                                <span className="text-xs text-gray-500">
-                                  {new Date(activity.created_at).toLocaleString("ko-KR")}
                                 </span>
                                 {activity.activity_type === "log" && (
                                   <span className="text-xs px-2 py-0.5 bg-blue-100 text-blue-700 rounded">
@@ -1285,6 +1196,64 @@ export default function AssetDetailPage({ params }: { params: { id: string } }) 
           </div>
         )}
       </div>
+
+      {/* 태그 선택 모달 */}
+      <Modal
+        isOpen={isTagModalOpen}
+        onClose={() => setIsTagModalOpen(false)}
+        title="태그 선택"
+        size="md"
+      >
+        {allTagsQuery.isLoading && <p>태그 목록 로딩 중...</p>}
+        {allTagsQuery.isError && <p className="text-red-600">태그를 불러오는데 실패했습니다.</p>}
+        {allTagsQuery.isSuccess && (
+          <div className="space-y-4">
+            {!allTagsQuery.data?.tags?.length ? (
+              <p className="text-gray-500 text-center py-6">등록된 태그가 없습니다.</p>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                {allTagsQuery.data.tags.map((tag: any) => {
+                  const alreadyAdded = tagsQuery.data?.tags?.some((t: any) => t.id === tag.id);
+                  return (
+                    <button
+                      key={tag.id}
+                      onClick={() => {
+                        if (!alreadyAdded) {
+                          addTagMut.mutate(tag.id);
+                        }
+                      }}
+                      disabled={alreadyAdded || addTagMut.isPending}
+                      className={`px-4 py-2 border rounded text-sm font-medium transition-colors ${
+                        alreadyAdded
+                          ? "border-gray-200 bg-gray-100 text-gray-500 cursor-not-allowed"
+                          : "border-blue-500 text-blue-600 hover:bg-blue-50 disabled:opacity-50"
+                      }`}
+                      style={
+                        tag.color && !alreadyAdded
+                          ? {
+                              borderColor: tag.color,
+                              color: tag.color,
+                            }
+                          : undefined
+                      }
+                    >
+                      {tag.color && !alreadyAdded && (
+                        <span
+                          className="inline-block w-2 h-2 rounded-full mr-2"
+                          style={{ backgroundColor: tag.color }}
+                        />
+                      )}
+                      {tag.name}
+                      {alreadyAdded && " ✓"}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+            <p className="text-xs text-gray-500">이미 연결된 태그는 비활성화됩니다.</p>
+          </div>
+        )}
+      </Modal>
 
       {/* 거래 추가 모달 */}
       <Modal
