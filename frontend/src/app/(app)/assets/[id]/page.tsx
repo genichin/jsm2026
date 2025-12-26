@@ -12,6 +12,8 @@ import { AssetFormModal, type AssetFormData } from "@/components/AssetFormModal"
 import { useMemo, useState } from "react";
 import { formatNumber, formatCurrency, formatPercent } from "@/lib/number-formatter";
 import { useTransactionForm } from "@/hooks/useTransactionForm";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 
 type TransactionType = 
   | "buy" | "sell" | "deposit" | "withdraw" | "transfer_in" | "transfer_out"
@@ -181,6 +183,8 @@ export default function AssetDetailPage({ params }: { params: { id: string } }) 
   const [newChange, setNewChange] = useState<string>("");
   const [useSymbol, setUseSymbol] = useState(false);
   const [isTagModalOpen, setIsTagModalOpen] = useState(false);
+  const [isCommentModalOpen, setIsCommentModalOpen] = useState(false);
+  const [commentPreviewTab, setCommentPreviewTab] = useState<"write" | "preview">("write");
 
   // 액션 메뉴 (모바일) 상태
   const [isActionMenuOpen, setIsActionMenuOpen] = useState(false);
@@ -1080,26 +1084,15 @@ export default function AssetDetailPage({ params }: { params: { id: string } }) 
 
         {activeTab === "activities" && (
           <div className="space-y-6">
-            {/* 댓글 작성 폼 */}
-            <div className="border rounded-lg p-4 bg-gray-50">
-              <h3 className="text-sm font-semibold mb-3">검토 글 작성</h3>
-              <form onSubmit={handleSubmitComment} className="space-y-3">
-                <textarea
-                  value={newComment}
-                  onChange={(e) => setNewComment(e.target.value)}
-                  placeholder="자산에 대한 검토 내용을 작성하세요..."
-                  className="w-full border rounded px-3 py-2 min-h-[100px] focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-                <div className="flex justify-end">
-                  <button
-                    type="submit"
-                    disabled={!newComment.trim()}
-                    className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    작성
-                  </button>
-                </div>
-              </form>
+            {/* 검토 글 작성 버튼 */}
+            <div className="flex justify-between items-center">
+              <h2 className="text-lg font-semibold">활동 내역</h2>
+              <button
+                onClick={() => setIsCommentModalOpen(true)}
+                className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm font-medium"
+              >
+                검토 글 작성
+              </button>
             </div>
 
             {/* 활동 내역 목록 */}
@@ -1151,7 +1144,31 @@ export default function AssetDetailPage({ params }: { params: { id: string } }) 
 
                         <div className="mt-3 ml-11">
                           {activity.activity_type === "comment" && activity.content && (
-                            <p className="text-sm text-gray-800 whitespace-pre-wrap">{activity.content}</p>
+                            <div className="text-sm text-gray-800 prose prose-sm max-w-none">
+                              <ReactMarkdown 
+                                remarkPlugins={[remarkGfm]}
+                                components={{
+                                  p: ({node, ...props}: any) => <p className="my-2" {...props} />,
+                                  ul: ({node, ...props}: any) => <ul className="my-2 ml-4 list-disc" {...props} />,
+                                  ol: ({node, ...props}: any) => <ol className="my-2 ml-4 list-decimal" {...props} />,
+                                  li: ({node, ...props}: any) => <li className="my-1" {...props} />,
+                                  code: ({node, inline, ...props}: any) => 
+                                    inline ? 
+                                      <code className="bg-gray-100 px-2 py-1 rounded text-xs font-mono" {...props} /> :
+                                      <code className="bg-gray-100 p-2 rounded block text-xs font-mono my-2 overflow-x-auto" {...props} />,
+                                  pre: ({node, ...props}: any) => <pre className="bg-gray-100 p-3 rounded my-2 overflow-x-auto" {...props} />,
+                                  blockquote: ({node, ...props}: any) => <blockquote className="border-l-4 border-gray-300 pl-4 italic my-2 text-gray-600" {...props} />,
+                                  a: ({node, ...props}: any) => <a className="text-blue-600 hover:text-blue-800 underline" {...props} />,
+                                  strong: ({node, ...props}: any) => <strong className="font-semibold" {...props} />,
+                                  em: ({node, ...props}: any) => <em className="italic" {...props} />,
+                                  h1: ({node, ...props}: any) => <h1 className="text-lg font-bold my-2" {...props} />,
+                                  h2: ({node, ...props}: any) => <h2 className="text-base font-bold my-2" {...props} />,
+                                  h3: ({node, ...props}: any) => <h3 className="text-sm font-bold my-2" {...props} />,
+                                }}
+                              >
+                                {activity.content}
+                              </ReactMarkdown>
+                            </div>
                           )}
                           
                           {activity.activity_type === "log" && activity.payload && (
@@ -1253,6 +1270,118 @@ export default function AssetDetailPage({ params }: { params: { id: string } }) 
             <p className="text-xs text-gray-500">이미 연결된 태그는 비활성화됩니다.</p>
           </div>
         )}
+      </Modal>
+
+      {/* 검토 글 작성 모달 */}
+      <Modal
+        isOpen={isCommentModalOpen}
+        onClose={() => {
+          setIsCommentModalOpen(false);
+          setNewComment("");
+          setCommentPreviewTab("write");
+        }}
+        title="검토 글 작성"
+        size="xl"
+      >
+        <form onSubmit={handleSubmitComment} className="space-y-4">
+          {/* 탭 버튼 */}
+          <div className="flex gap-2 border-b">
+            <button
+              type="button"
+              onClick={() => setCommentPreviewTab("write")}
+              className={`px-4 py-2 font-medium text-sm border-b-2 transition-colors ${
+                commentPreviewTab === "write"
+                  ? "text-blue-600 border-blue-600"
+                  : "text-gray-600 border-transparent hover:text-gray-800"
+              }`}
+            >
+              작성
+            </button>
+            <button
+              type="button"
+              onClick={() => setCommentPreviewTab("preview")}
+              className={`px-4 py-2 font-medium text-sm border-b-2 transition-colors ${
+                commentPreviewTab === "preview"
+                  ? "text-blue-600 border-blue-600"
+                  : "text-gray-600 border-transparent hover:text-gray-800"
+              }`}
+            >
+              미리보기
+            </button>
+          </div>
+
+          {/* 작성 탭 */}
+          {commentPreviewTab === "write" && (
+            <div className="space-y-2">
+              <textarea
+                value={newComment}
+                onChange={(e) => setNewComment(e.target.value)}
+                placeholder="자산에 대한 검토 내용을 작성하세요... (마크다운 지원)"
+                className="w-full border rounded px-3 py-2 min-h-[400px] focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+              <p className="text-xs text-gray-500">
+                💡 **굵게**, *기울임*, [링크](url), 리스트, 코드블록 등 마크다운을 지원합니다.
+              </p>
+            </div>
+          )}
+
+          {/* 미리보기 탭 */}
+          {commentPreviewTab === "preview" && (
+            <div className="border rounded p-4 bg-gray-50 min-h-[400px]">
+              {newComment.trim() ? (
+                <div className="prose prose-sm max-w-none">
+                  <ReactMarkdown 
+                    remarkPlugins={[remarkGfm]}
+                    components={{
+                      p: ({node, ...props}: any) => <p className="my-2" {...props} />,
+                      ul: ({node, ...props}: any) => <ul className="my-2 ml-4 list-disc" {...props} />,
+                      ol: ({node, ...props}: any) => <ol className="my-2 ml-4 list-decimal" {...props} />,
+                      li: ({node, ...props}: any) => <li className="my-1" {...props} />,
+                      code: ({node, inline, ...props}: any) => 
+                        inline ? 
+                          <code className="bg-white px-2 py-1 rounded text-xs font-mono border border-gray-300" {...props} /> :
+                          <code className="bg-white p-2 rounded block text-xs font-mono my-2 overflow-x-auto border border-gray-300" {...props} />,
+                      pre: ({node, ...props}: any) => <pre className="bg-white p-3 rounded my-2 overflow-x-auto border border-gray-300" {...props} />,
+                      blockquote: ({node, ...props}: any) => <blockquote className="border-l-4 border-gray-400 pl-4 italic my-2 text-gray-700" {...props} />,
+                      a: ({node, ...props}: any) => <a className="text-blue-600 hover:text-blue-800 underline" {...props} />,
+                      strong: ({node, ...props}: any) => <strong className="font-semibold" {...props} />,
+                      em: ({node, ...props}: any) => <em className="italic" {...props} />,
+                      h1: ({node, ...props}: any) => <h1 className="text-lg font-bold my-2 mt-4" {...props} />,
+                      h2: ({node, ...props}: any) => <h2 className="text-base font-bold my-2 mt-3" {...props} />,
+                      h3: ({node, ...props}: any) => <h3 className="text-sm font-bold my-2 mt-2" {...props} />,
+                    }}
+                  >
+                    {newComment}
+                  </ReactMarkdown>
+                </div>
+              ) : (
+                <p className="text-gray-400 text-center py-20">작성한 내용이 여기 표시됩니다</p>
+              )}
+            </div>
+          )}
+
+          {/* 버튼 */}
+          <div className="flex justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                setIsCommentModalOpen(false);
+                setNewComment("");
+                setCommentPreviewTab("write");
+              }}
+              className="px-4 py-2 rounded bg-gray-200 hover:bg-gray-300"
+            >
+              취소
+            </button>
+            <button
+              type="submit"
+              disabled={!newComment.trim()}
+              className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              작성
+            </button>
+          </div>
+        </form>
       </Modal>
 
       {/* 거래 추가 모달 */}
