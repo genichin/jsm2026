@@ -7,6 +7,7 @@ import { DataTable } from "@/components/DataTable";
 import { ColumnDef } from "@tanstack/react-table";
 import RecentTransactions from "@/components/RecentTransactions";
 import { Modal } from "@/components/Modal";
+import { MarkdownEditorModal } from "@/components/MarkdownEditorModal";
 import { DynamicTransactionForm } from "@/components/TransactionForm/DynamicTransactionForm";
 import { AssetFormModal, type AssetFormData } from "@/components/AssetFormModal";
 import { useMemo, useState } from "react";
@@ -185,8 +186,9 @@ export default function AssetDetailPage({ params }: { params: { id: string } }) 
   const [isTagModalOpen, setIsTagModalOpen] = useState(false);
   const [isCommentModalOpen, setIsCommentModalOpen] = useState(false);
   const [editingActivityId, setEditingActivityId] = useState<string | null>(null);
-  const [commentPreviewTab, setCommentPreviewTab] = useState<"write" | "preview">("write");
   const [isSubmittingComment, setIsSubmittingComment] = useState(false);
+  const [isViewCommentModalOpen, setIsViewCommentModalOpen] = useState(false);
+  const [viewCommentContent, setViewCommentContent] = useState("");
 
   // 액션 메뉴 (모바일) 상태
   const [isActionMenuOpen, setIsActionMenuOpen] = useState(false);
@@ -484,10 +486,7 @@ export default function AssetDetailPage({ params }: { params: { id: string } }) 
           visibility: "private",
         });
       }
-      setNewComment("");
-      setEditingActivityId(null);
-      setCommentPreviewTab("write");
-      setIsCommentModalOpen(false);
+      closeCommentModal();
       activitiesQuery.refetch();
     } catch (error) {
       console.error("댓글 작성 실패:", error);
@@ -500,8 +499,29 @@ export default function AssetDetailPage({ params }: { params: { id: string } }) 
   function startEditComment(activityId: string, content: string) {
     setEditingActivityId(activityId);
     setNewComment(content);
-    setCommentPreviewTab("write");
     setIsCommentModalOpen(true);
+  }
+
+  function closeCommentModal() {
+    setIsCommentModalOpen(false);
+    setNewComment("");
+    setEditingActivityId(null);
+  }
+
+  function openCommentModalForCreate() {
+    setEditingActivityId(null);
+    setNewComment("");
+    setIsCommentModalOpen(true);
+  }
+
+  function openCommentModalForView(content: string) {
+    setViewCommentContent(content);
+    setIsViewCommentModalOpen(true);
+  }
+
+  function closeViewCommentModal() {
+    setViewCommentContent("");
+    setIsViewCommentModalOpen(false);
   }
 
   // 댓글 삭제 (소프트 삭제)
@@ -1045,11 +1065,22 @@ export default function AssetDetailPage({ params }: { params: { id: string } }) 
                                 {activity.user?.username || "사용자"}
                               </span>
                             </div>
-                            <p className="text-sm text-gray-800 line-clamp-2">
-                              {activity.activity_type === "comment" 
-                                ? activity.content 
-                                : `[로그] ${JSON.stringify(activity.payload)}`}
-                            </p>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (activity.activity_type === "comment" && activity.content) {
+                                  openCommentModalForView(activity.content);
+                                }
+                              }}
+                              className="text-left w-full"
+                              disabled={activity.activity_type !== "comment" || !activity.content}
+                            >
+                              <p className="text-sm text-gray-800 line-clamp-2 hover:text-blue-700">
+                                {activity.activity_type === "comment" 
+                                  ? activity.content 
+                                  : `[로그] ${JSON.stringify(activity.payload)}`}
+                              </p>
+                            </button>
                           </div>
                         ))}
                       </div>
@@ -1109,7 +1140,7 @@ export default function AssetDetailPage({ params }: { params: { id: string } }) 
             <div className="flex justify-between items-center">
               <h2 className="text-lg font-semibold">활동 내역</h2>
               <button
-                onClick={() => setIsCommentModalOpen(true)}
+                onClick={openCommentModalForCreate}
                 className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm font-medium"
               >
                 검토 글 작성
@@ -1301,118 +1332,33 @@ export default function AssetDetailPage({ params }: { params: { id: string } }) 
         )}
       </Modal>
 
-      {/* 검토 글 작성 모달 */}
-      <Modal
+      <MarkdownEditorModal
         isOpen={isCommentModalOpen}
-        onClose={() => {
-          setIsCommentModalOpen(false);
-          setNewComment("");
-          setCommentPreviewTab("write");
-        }}
+        onClose={closeCommentModal}
         title={editingActivityId ? "검토 글 수정" : "검토 글 작성"}
-        size="xl"
-      >
-        <form onSubmit={handleSubmitComment} className="space-y-4">
-          {/* 탭 버튼 */}
-          <div className="flex gap-2 border-b">
-            <button
-              type="button"
-              onClick={() => setCommentPreviewTab("write")}
-              className={`px-4 py-2 font-medium text-sm border-b-2 transition-colors ${
-                commentPreviewTab === "write"
-                  ? "text-blue-600 border-blue-600"
-                  : "text-gray-600 border-transparent hover:text-gray-800"
-              }`}
-            >
-              작성
-            </button>
-            <button
-              type="button"
-              onClick={() => setCommentPreviewTab("preview")}
-              className={`px-4 py-2 font-medium text-sm border-b-2 transition-colors ${
-                commentPreviewTab === "preview"
-                  ? "text-blue-600 border-blue-600"
-                  : "text-gray-600 border-transparent hover:text-gray-800"
-              }`}
-            >
-              미리보기
-            </button>
-          </div>
+        value={newComment}
+        onChange={setNewComment}
+        onSubmit={handleSubmitComment}
+        isSubmitting={isSubmittingComment}
+        submitLabel={isSubmittingComment ? (editingActivityId ? "수정 중..." : "작성 중...") : (editingActivityId ? "수정" : "작성")}
+        placeholder="자산에 대한 검토 내용을 작성하세요... (마크다운 지원)"
+        helperText="💡 **굵게**, *기울임*, [링크](url), 리스트, 코드블록 등 마크다운을 지원합니다."
+      />
 
-          {/* 작성 탭 */}
-          {commentPreviewTab === "write" && (
-            <div className="space-y-2">
-              <textarea
-                value={newComment}
-                onChange={(e) => setNewComment(e.target.value)}
-                placeholder="자산에 대한 검토 내용을 작성하세요... (마크다운 지원)"
-                className="w-full border rounded px-3 py-2 min-h-[400px] focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-              <p className="text-xs text-gray-500">
-                💡 **굵게**, *기울임*, [링크](url), 리스트, 코드블록 등 마크다운을 지원합니다.
-              </p>
-            </div>
-          )}
-
-          {/* 미리보기 탭 */}
-          {commentPreviewTab === "preview" && (
-            <div className="border rounded p-4 bg-gray-50 min-h-[400px]">
-              {newComment.trim() ? (
-                <div className="prose prose-sm max-w-none">
-                  <ReactMarkdown 
-                    remarkPlugins={[remarkGfm]}
-                    components={{
-                      p: ({node, ...props}: any) => <p className="my-2" {...props} />,
-                      ul: ({node, ...props}: any) => <ul className="my-2 ml-4 list-disc" {...props} />,
-                      ol: ({node, ...props}: any) => <ol className="my-2 ml-4 list-decimal" {...props} />,
-                      li: ({node, ...props}: any) => <li className="my-1" {...props} />,
-                      code: ({node, inline, ...props}: any) => 
-                        inline ? 
-                          <code className="bg-white px-2 py-1 rounded text-xs font-mono border border-gray-300" {...props} /> :
-                          <code className="bg-white p-2 rounded block text-xs font-mono my-2 overflow-x-auto border border-gray-300" {...props} />,
-                      pre: ({node, ...props}: any) => <pre className="bg-white p-3 rounded my-2 overflow-x-auto border border-gray-300" {...props} />,
-                      blockquote: ({node, ...props}: any) => <blockquote className="border-l-4 border-gray-400 pl-4 italic my-2 text-gray-700" {...props} />,
-                      a: ({node, ...props}: any) => <a className="text-blue-600 hover:text-blue-800 underline" {...props} />,
-                      strong: ({node, ...props}: any) => <strong className="font-semibold" {...props} />,
-                      em: ({node, ...props}: any) => <em className="italic" {...props} />,
-                      h1: ({node, ...props}: any) => <h1 className="text-lg font-bold my-2 mt-4" {...props} />,
-                      h2: ({node, ...props}: any) => <h2 className="text-base font-bold my-2 mt-3" {...props} />,
-                      h3: ({node, ...props}: any) => <h3 className="text-sm font-bold my-2 mt-2" {...props} />,
-                    }}
-                  >
-                    {newComment}
-                  </ReactMarkdown>
-                </div>
-              ) : (
-                <p className="text-gray-400 text-center py-20">작성한 내용이 여기 표시됩니다</p>
-              )}
-            </div>
-          )}
-
-          {/* 버튼 */}
-          <div className="flex justify-end gap-2">
-            <button
-              type="button"
-              onClick={() => {
-                setIsCommentModalOpen(false);
-                setNewComment("");
-                setEditingActivityId(null);
-                setCommentPreviewTab("write");
-              }}
-              className="px-4 py-2 rounded bg-gray-200 hover:bg-gray-300"
-            >
-              취소
-            </button>
-            <button
-              type="submit"
-              disabled={!newComment.trim() || isSubmittingComment}
-              className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {isSubmittingComment ? (editingActivityId ? "수정 중..." : "작성 중...") : (editingActivityId ? "수정" : "작성")}
-            </button>
-          </div>
-        </form>
-      </Modal>
+      <MarkdownEditorModal
+        isOpen={isViewCommentModalOpen}
+        onClose={closeViewCommentModal}
+        title="검토 글 보기"
+        value={viewCommentContent}
+        onChange={setViewCommentContent}
+        onSubmit={(e) => {
+          e.preventDefault();
+          closeViewCommentModal();
+        }}
+        initialMode="view"
+        enableEditToggle={true}
+        cancelLabel="닫기"
+      />
 
       {/* 거래 추가 모달 */}
       <Modal
