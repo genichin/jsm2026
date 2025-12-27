@@ -474,7 +474,7 @@ export default function AssetDetailPage({ params }: { params: { id: string } }) 
 
     try {
       if (editingActivityId) {
-        await api.put(`/activities/${editingActivityId}`, {
+        await api.patch(`/activities/${editingActivityId}`, {
           content: newComment.trim(),
         });
       } else {
